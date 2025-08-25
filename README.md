@@ -1,0 +1,250 @@
+# AIChatPageComponent
+
+### University of Cologne - ILIAS AI Integration
+
+A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered chat interfaces directly into learning pages. Each chat instance can be configured with custom system prompts for educational purposes, such as interactive exercises in AI literacy or subject-specific tutoring.
+
+## Screenshots
+
+### Chat Interface in Action
+![AI Chat Overview](docs/ChatOverview.jpg)
+
+*AI chat interface showing conversation flow with multimodal capabilities*
+ 
+### Embedded in ILIAS Pages
+![Chat Page Embedded](docs/ChatPageEmbedded.jpg)
+ 
+*PageComponent seamlessly integrated into ILIAS learning content*
+
+### Administrative Configuration
+![Chat Settings](docs/ChatSettings.jpg)
+ 
+*Comprehensive configuration options for educators*
+
+### File Upload & Preview
+![Chat Upload Preview](docs/ChatUploadPreview.jpg)
+ 
+*Multimodal file upload with image preview functionality*
+
+## Features
+
+- **Multiple AI Chats per Page**: Embed unlimited AI chat instances on a single ILIAS page
+- **Custom System Prompts**: Configure each chat with specific educational contexts and roles
+- **Multimodal Support**: Full support for text, images, and PDF document analysis
+- **Background Files**: Upload context documents (text, images, PDFs) that inform AI responses
+- **Session Management**: User-specific chat sessions with message history persistence
+- **Responsive UI**: Modern, accessible interface using ILIAS 9 UI components
+- **Production Ready**: Comprehensive logging, error handling, and security measures
+
+## Requirements
+
+### System Requirements
+- **ILIAS**: 9.x
+- **PHP**: 8.2 or higher
+- **MySQL**: 8.0 or higher
+- **Web Server**: Apache 2.4+ or Nginx 1.18+
+
+### Dependencies
+- **AIChat Plugin**: Must be installed and properly configured
+- **RAMSES AI Service**: Currently integrated with RAMSES endpoint
+- **PHP Extensions**: `curl`, `gd`, `imagick` (recommended), `ghostscript` (for PDF processing)
+
+## Installation
+
+### 1. Download and Extract
+1. Navigate to the root directory of your ILIAS installation
+2. Run the following commands to clone the plugin repository:
+```bash
+mkdir -p Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
+cd Customizing/global/plugins/Services/COPage/PageComponent/
+git clone https://github.com/cce-uzk/AIChatPageComponent.git ./AIChatPageComponent
+cd AIChatPageComponent
+git checkout main
+```
+
+### 2. Install Dependencies
+Ensure the AIChat plugin is installed and configured:
+```bash
+# Look at: https://github.com/cce-uzk/AIChatForILIAS.git
+```
+
+### 3. Install Composer Dependencies
+1. Navigate to the root directory of your ILIAS installation
+```bash
+composer du
+npm install
+php setup/setup.php update
+```
+
+### 4. Database Setup
+The plugin automatically creates required database tables:
+- `pcaic_chats`: Chat configurations per PageComponent
+- `pcaic_sessions`: User sessions per chat
+- `pcaic_messages`: Messages bound to sessions
+- `pcaic_attachments`: File attachments
+
+### 5. Install and Activate Plugin
+In ILIAS Administration:
+1. Navigate to **Administration > Extending ILIAS > Plugins**
+2. Find **AIChatPageComponent** in the list
+3. Click **Install**
+4. Click **Activate**
+
+## Configuration
+
+### AIChat Plugin Setup
+1. Configure the base AIChat plugin with RAMSES credentials
+2. Set API endpoints and authentication keys
+3. Configure available AI models and parameters
+
+### System Requirements Check
+Verify your system has required components:
+```bash
+# Check Ghostscript (for PDF processing)
+gs --version
+
+# Check ImageMagick
+identify -version
+
+# Check PHP extensions
+php -m | grep -E "(curl|gd|imagick)"
+```
+
+## Usage
+
+### For Content Creators
+
+#### Adding AI Chats to Pages
+1. Edit any ILIAS page (Course, Learning Module, Wiki, etc.)
+2. Click **Insert > AI Chat**
+3. Configure the chat:
+   - **System Prompt**: Define the AI's role and behavior
+   - **Background Files**: Upload context documents (optional)
+   - **Memory Settings**: Configure conversation history length
+
+#### Configuration Options
+- **System Prompt**: Customize AI behavior and context
+  ```
+  You are a helpful tutor for organic chemistry. 
+  Help students understand molecular structures and reactions.
+  Always provide clear explanations with examples.
+  ```
+- **Background Files**: Upload supporting materials
+  - Text files (.txt, .md, .csv): Added to AI context
+  - Images (.jpg, .png, .gif, .webp): Visual analysis
+  - PDFs (.pdf): Converted to images for analysis
+- **Memory Limit**: Number of previous messages to remember (default: 10)
+
+### For Students
+
+#### Using AI Chats
+1. Navigate to any page containing AI chat components
+2. Type messages in the chat interface
+3. Upload images or documents for AI analysis
+4. View conversation history and download files
+5. Each chat maintains separate conversation context
+
+#### File Upload Support
+- **Images**: Direct analysis and discussion
+- **PDFs**: Automatic page-by-page conversion and analysis
+- **Text Files**: Content integration into conversation context
+
+## Architecture
+
+### Plugin Structure
+```
+AIChatPageComponent/
+├── classes/                 # Core plugin classes
+│   ├── ai/                 # AI service integrations
+│   ├── objects/            # Data models (legacy)
+│   ├── platform/           # Configuration bridge
+│   └── class.*.php         # ILIAS integration classes
+├── src/                    # Modern PHP 8 classes
+│   ├── Model/              # Database models
+│   ├── Service/            # Business logic services
+│   └── Storage/            # File storage handling
+├── js/                     # Frontend JavaScript
+├── css/                    # Styling
+├── sql/                    # Database schema
+└── lang/                   # Translations
+```
+
+### Database Architecture
+The plugin uses a clean separation of concerns:
+- **Configuration**: Stored per PageComponent instance
+- **Sessions**: User-specific chat contexts
+- **Messages**: Conversation history with attachments
+- **Files**: ILIAS ResourceStorage integration
+
+### AI Integration
+Currently integrated with **RAMSES** (Mistral-based service):
+- Endpoint: `https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions`
+- Multimodal support for text, images, and document analysis
+- Configurable model parameters and memory management
+
+## Development
+
+### Code Standards
+- **PHP 8.2+** with strict types
+- **PSR-4** autoloading via Composer
+- **ILIAS 9** UI components and services
+- **Comprehensive logging** with structured context
+- **Full test coverage** (unit and integration tests)
+
+## Security
+
+This plugin implements comprehensive security measures:
+- **Input Validation**: All user inputs are validated and sanitized
+- **File Upload Security**: MIME type validation and size limits
+- **SQL Injection Prevention**: Prepared statements throughout
+- **XSS Protection**: Proper output encoding
+- **Access Control**: Integration with ILIAS permission system
+- **Secure Logging**: Sensitive data excluded from logs
+
+## Troubleshooting
+
+### Common Issues
+
+#### Plugin Not Visible
+- Ensure AIChat plugin is installed and activated
+- Check ILIAS permissions for PageComponent access
+- Verify PHP version compatibility (8.2+)
+
+#### File Upload Failures
+```bash
+# Check PHP upload settings
+php -i | grep -E "(upload_max_filesize|post_max_size|max_file_uploads)"
+
+# Verify directory permissions
+ls -la /var/www/html/ilias/data/
+```
+
+#### AI Response Errors
+- Check RAMSES endpoint connectivity
+- Verify API credentials in AIChat plugin
+- Review ILIAS logs: `/var/log/ilias/ilias.log`
+
+### Log Locations
+- **ILIAS Component Log**: Component-specific logging (`comp.pcaic`)
+- **Application Log**: ILIAS data directory logs
+
+## License
+
+This project is licensed under the GPL-3.0 License - see the [LICENSE](LICENSE) file for details.
+
+## Credits
+
+- **Based on**: [AIChatForILIAS](https://github.com/surlabs/AIChatForILIAS) by Jesus Copado (Surlabs)
+- **Development**: University of Cologne, CompetenceCenter E-Learning
+- **AI Service**: RAMSES by ITCC University of Cologne
+
+## Support
+
+For support and questions:
+- Create an issue in this repository
+- Contact: [nadimo.staszak@uni-koeln.de]
+- Documentation: [tbd]
+
+---
+
+**Note**: This plugin requires proper configuration of the AIChat base plugin and RAMSES AI service access. Contact your system administrator for setup assistance.

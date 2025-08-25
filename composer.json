@@ -1,0 +1,44 @@
+{
+  "name": "uzk/pcaic",
+  "description": "AI Chat Page Component for ILIAS",
+  "type": "project",
+  "keywords": [
+    "ilias",
+    "plugin",
+    "ai chat page component"
+  ],
+  "minimum-stability": "stable",
+  "license": "proprietary",
+  "authors": [
+    {
+      "name": "Universitaet zu Koeln - CompetenceCenter E-Learning",
+      "email": "nadimo.staszak@uni-koeln.de",
+      "role": "Developer"
+    }
+  ],
+  "support": {
+    "email": "nadimo.staszak@uni-koeln.de"
+  },
+  "require": {
+    "php": ">=8.1",
+    "ext-json": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "ILIAS\\Plugin\\pcaic\\": "src/"
+    },
+    "classmap": ["./src", "./classes"]
+  },
+  "config": {
+    "classmap-authoritative": true,
+    "optimize-autoloader": true,
+    "sort-packages": true,
+    "allow-plugins": {
+      "captainhook/plugin-composer": true
+    }
+  },
+  "scripts": {
+    "pre-autoload-dump": [
+    ]
+  }
+}

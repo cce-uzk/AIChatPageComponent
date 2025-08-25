@@ -1,0 +1,87 @@
+//
+// Copyright (c) 2025 Ingo Kleiber <ingo.kleiber@uni-koeln.de>
+// GPLv3, see LICENSE
+//
+// @author Ingo Kleiber <ingo.kleiber@uni-koeln.de>
+//
+<!-- language file start -->
+cmd_insert#:#Insert AI Chat
+content_plugin_version#:#Content last edited with version
+edit_input_field#:#Edit AI Chat
+attachments_label#:#Attachments
+clear_attachments_title#:#Clear all attachments
+attach_file_title#:#Attach file
+attach_file_label#:#Attach file
+input_aria_label#:#Type your message
+send_aria_label#:#Send message
+file_input_aria_label#:#Select files to attach
+file_too_large#:#File too large. Maximum size is 10MB.
+file_type_not_allowed#:#File type not allowed
+upload_error#:#Upload error
+uploading_file#:#Uploading file...
+file_uploaded#:#File uploaded successfully
+remove_attachment#:#Remove attachment
+download_file#:#Download file
+preview_image#:#Preview image
+copy_message_title#:#Copy message to clipboard
+copy_message_aria_label#:#Copy this message to clipboard
+message_copied#:#Message copied!
+message_copy_failed#:#Failed to copy message
+clear_chat_text#:#Clear
+clear_chat_title#:#Clear all chat messages
+clear_chat_label#:#Clear chat history
+clear_chat_confirm#:#Are you sure you want to clear all chat messages? This action cannot be undone.
+thinking_header#:#Thinking...
+like_response_title#:#Good response
+dislike_response_title#:#Poor response
+regenerate_response_title#:#Regenerate response
+message_too_long#:#Message too long. Maximum {0} characters allowed.
+api_not_configured#:#API URL not configured. Please ensure the plugin is properly installed.
+json_parse_error#:#Invalid JSON response
+unknown_error#:#Unknown error occurred
+no_ai_response#:#No AI response received
+generation_stopped#:#Generation stopped by user.
+regenerate_failed#:#Failed to regenerate response. Please try again.
+clear_chat_failed#:#Failed to clear chat. Please try again.
+clear_chat_error#:#Error clearing chat
+error_prefix#:#Error
+welcome_message#:#Start a conversation...
+loading_text#:#Thinking...
+send_button_text#:#Send
+stop_generation#:#Stop generation
+background_files_label#:#Background Files
+background_files_info#:#Upload files that provide context for AI conversations. Supported formats: PDF, images (JPG, PNG, GIF), text files (TXT, MD), Word documents (DOC, DOCX).
+existing_background_files_label#:#Currently Uploaded Files
+default_chat_title#:#AI Chat
+chat_title_label#:#Chat Title
+chat_title_info#:#Title for this AI chat component
+system_prompt_label#:#System Prompt
+system_prompt_info#:#Define the AI assistant's role and behavior for this chat
+ai_service_label#:#AI Service
+ai_service_info#:#Select the AI service to use for this chat (based on AIChat plugin configuration)
+max_memory_label#:#Max Memory Messages
+max_memory_info#:#Number of previous messages to keep in conversation context
+char_limit_label#:#Character Limit
+char_limit_info#:#Maximum characters allowed per user message
+persistent_chat_label#:#Persistent Chat
+persistent_chat_info#:#If enabled, chat messages will be saved and restored when users return. If disabled, each session starts fresh.
+include_page_context_label#:#Include Page Context
+include_page_context_info#:#If enabled, the AI will have access to the content of the page where this chat is embedded. This helps provide more relevant and contextual responses.
+enable_chat_uploads_label#:#Enable Chat File Uploads
+enable_chat_uploads_info#:#If enabled, users can upload files directly in the chat interface. If disabled, only background files (configured above) will be available to the AI.
+legal_disclaimer_label#:#Legal Disclaimer
+legal_disclaimer_info#:#Optional legal disclaimer shown to users
+create_ai_chat_title#:#Create AI Chat
+edit_ai_chat_title#:#Edit AI Chat
+use_global_default#:#Use Global Default
+openai_service#:#OpenAI GPT
+ramses_service#:#RAMSES
+ollama_service#:#Ollama
+gwdg_service#:#GWDG
+background_files_upload_label#:#Upload Background Files
+existing_background_files_label#:#Existing Background Files
+no_background_files#:#No background files available
+remove_file_label#:#Remove
+check_files_to_remove_info#:#Check the files you want to remove.
+background_files_upload_info#:#Select multiple files to serve as context for AI conversations. Supported formats: Images, PDFs, text documents.
+selected_files_label#:#Selected files

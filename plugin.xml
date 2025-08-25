@@ -1,0 +1,10 @@
+<?xml version = "1.1" encoding = "UTF-8"?>
+<plugin id="pcaic">
+    <events>
+        <event type="listen" id="Services/Authentication" />
+    </events>
+    <ctrl>
+        <class>ilAIChatPageComponentPluginGUI</class>
+        <class>ilAIChatApiGUI</class>
+    </ctrl>
+</plugin>

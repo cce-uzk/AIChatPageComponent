@@ -1,0 +1,96 @@
+<div class="ai-chat-container" id="{CONTAINER_ID}" data-chat-id="{CHAT_ID}" data-api-url="{API_URL}" data-system-prompt="{SYSTEM_PROMPT}" data-max-memory="{MAX_MEMORY}" data-char-limit="{CHAR_LIMIT}" data-persistent="{PERSISTENT}" data-ai-service="{AI_SERVICE}" data-page-id="{PAGE_ID}" data-parent-id="{PARENT_ID}" data-parent-type="{PARENT_TYPE}" data-include-page-context="{INCLUDE_PAGE_CONTEXT}" data-background-files="{BACKGROUND_FILES}" data-enable-chat-uploads="{ENABLE_CHAT_UPLOADS}" data-clear-chat-confirm="{CLEAR_CHAT_CONFIRM}" data-copy-message-title="{COPY_MESSAGE_TITLE}" data-like-response-title="{LIKE_RESPONSE_TITLE}" data-dislike-response-title="{DISLIKE_RESPONSE_TITLE}" data-regenerate-response-title="{REGENERATE_RESPONSE_TITLE}" data-message-copied="{MESSAGE_COPIED}" data-message-copy-failed="{MESSAGE_COPY_FAILED}" data-thinking-header="{THINKING_HEADER}" data-generation-stopped="{GENERATION_STOPPED}" data-regenerate-failed="{REGENERATE_FAILED}" data-welcome-message="{WELCOME_MESSAGE}" data-stop-generation="{STOP_GENERATION}">
+    <!-- Chat Header -->
+    <div class="ai-chat-header">
+        <h3>{CHAT_TITLE}</h3>
+        <button class="ai-chat-clear-btn" title="{CLEAR_CHAT_TITLE}" aria-label="{CLEAR_CHAT_LABEL}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+            </svg>
+        </button>
+    </div>
+    
+    <!-- Chat Messages Area -->
+    <div class="ai-chat-messages" id="{MESSAGES_ID}">
+        <!-- Messages will be dynamically inserted here -->
+    </div>
+    
+    <!-- Loading Animation -->
+    <div class="ai-chat-loading" style="display: none;">
+        <div class="ai-chat-loading-dots">
+            <div class="ai-chat-loading-dot"></div>
+            <div class="ai-chat-loading-dot"></div>
+            <div class="ai-chat-loading-dot"></div>
+        </div>
+        <span>{LOADING_TEXT}</span>
+    </div>
+    
+    <!-- File Attachments Preview -->
+    <div class="ai-chat-attachments" style="display: none;">
+        <!-- Attachment thumbnails will be inserted here -->
+    </div>
+    
+    <!-- Input Area with CSS Grid -->
+    <div class="ai-chat-composer" data-expanded="false">
+        <div class="ai-chat-composer-inner">
+            <!-- Input Text Area (grows dynamically) -->
+            <div class="ai-chat-composer-content">
+                <div class="ai-chat-input-wrapper">
+                    <textarea class="ai-chat-input" 
+                              placeholder="{INPUT_PLACEHOLDER}" 
+                              maxlength="{CHAR_LIMIT}" 
+                              aria-label="{INPUT_ARIA_LABEL}" 
+                              rows="1"></textarea>
+                </div>
+            </div>
+            
+            <!-- Left Actions (Attach Button) -->
+            <div class="ai-chat-composer-leading">
+                <button class="ai-chat-composer-btn ai-chat-attach-btn" 
+                        title="{ATTACH_FILE_TITLE}" 
+                        aria-label="{ATTACH_FILE_LABEL}">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M9.33496 16.5V10.665H3.5C3.13273 10.665 2.83496 10.3673 2.83496 10C2.83496 9.63273 3.13273 9.33496 3.5 9.33496H9.33496V3.5C9.33496 3.13273 9.63273 2.83496 10 2.83496C10.3673 2.83496 10.665 3.13273 10.665 3.5V9.33496H16.5L16.6338 9.34863C16.9369 9.41057 17.165 9.67857 17.165 10C17.165 10.3214 16.9369 10.5894 16.6338 10.6514L16.5 10.665H10.665V16.5C10.665 16.8673 10.3673 17.165 10 17.165C9.63273 17.165 9.33496 16.8673 9.33496 16.5Z"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Right Actions (Send/Stop Buttons) -->
+            <div class="ai-chat-composer-trailing">
+                <div class="ai-chat-actions">
+                    <!-- Send Button -->
+                    <button class="ai-chat-composer-btn ai-chat-send" aria-label="{SEND_ARIA_LABEL}">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M8.99992 16V6.41407L5.70696 9.70704C5.31643 10.0976 4.68342 10.0976 4.29289 9.70704C3.90237 9.31652 3.90237 8.6835 4.29289 8.29298L9.29289 3.29298L9.36907 3.22462C9.76184 2.90427 10.3408 2.92686 10.707 3.29298L15.707 8.29298L15.7753 8.36915C16.0957 8.76192 16.0731 9.34092 15.707 9.70704C15.3408 10.0732 14.7618 10.0958 14.3691 9.7754L14.2929 9.70704L10.9999 6.41407V16C10.9999 16.5523 10.5522 17 9.99992 17C9.44764 17 8.99992 16.5523 8.99992 16Z"></path>
+                        </svg>
+                    </button>
+                    
+                    <!-- Stop Button (hidden by default) -->
+                    <button class="ai-chat-composer-btn ai-chat-stop" style="display: none;" aria-label="Stop Generation">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Character Counter (positioned below when expanded) -->
+        <div class="ai-chat-char-counter">
+            <span class="ai-chat-char-count">0</span> / <span class="ai-chat-char-limit">{CHAR_LIMIT}</span>
+        </div>
+    </div>
+    
+    <!-- Hidden File Input -->
+    <input type="file" class="ai-chat-file-input" multiple accept="image/*,.pdf,.txt,.csv,.md" aria-label="{FILE_INPUT_ARIA_LABEL}">
+    
+    <!-- Legal Disclaimer -->
+    <!-- BEGIN disclaimer -->
+    <div class="ai-chat-disclaimer">
+        {DISCLAIMER}
+    </div>
+    <!-- END disclaimer -->
+    
+    <!-- Session Management (hidden) -->
+    {SESSION_MANAGEMENT_HTML}
+</div>

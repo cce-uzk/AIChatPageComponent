@@ -1,0 +1,86 @@
+//
+// Copyright (c) 2025 Ingo Kleiber <ingo.kleiber@uni-koeln.de>
+// GPLv3, see LICENSE
+//
+// @author Ingo Kleiber <ingo.kleiber@uni-koeln.de>
+//
+<!-- language file start -->
+cmd_insert#:#KI-Chat einfügen
+content_plugin_version#:#Inhalt zuletzt bearbeitet mit Version
+edit_input_field#:#KI-Chat bearbeiten
+attachments_label#:#Anhänge
+clear_attachments_title#:#Alle Anhänge entfernen
+attach_file_title#:#Datei anhängen
+attach_file_label#:#Datei anhängen
+input_aria_label#:#Nachricht eingeben
+send_aria_label#:#Nachricht senden
+file_input_aria_label#:#Dateien zum Anhängen auswählen
+file_too_large#:#Datei zu groß. Maximale Größe ist 10MB.
+file_type_not_allowed#:#Dateityp nicht erlaubt
+upload_error#:#Upload-Fehler
+uploading_file#:#Lade Datei hoch...
+file_uploaded#:#Datei erfolgreich hochgeladen
+remove_attachment#:#Anhang entfernen
+download_file#:#Datei herunterladen
+preview_image#:#Bild-Vorschau
+copy_message_title#:#Nachricht in Zwischenablage kopieren
+copy_message_aria_label#:#Diese Nachricht in Zwischenablage kopieren
+message_copied#:#Nachricht kopiert!
+message_copy_failed#:#Kopieren fehlgeschlagen
+clear_chat_text#:#Löschen
+clear_chat_title#:#Alle Chat-Nachrichten löschen
+clear_chat_label#:#Chat-Verlauf löschen
+clear_chat_confirm#:#Sind Sie sicher, dass Sie alle Chat-Nachrichten löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.
+thinking_header#:#Nachdenken...
+like_response_title#:#Gute Antwort
+dislike_response_title#:#Schlechte Antwort
+regenerate_response_title#:#Antwort neu generieren
+message_too_long#:#Nachricht zu lang. Maximal {0} Zeichen erlaubt.
+api_not_configured#:#API-URL nicht konfiguriert. Bitte stellen Sie sicher, dass das Plugin korrekt installiert ist.
+json_parse_error#:#Ungültige JSON-Antwort
+unknown_error#:#Unbekannter Fehler aufgetreten
+no_ai_response#:#Keine KI-Antwort erhalten
+generation_stopped#:#Generierung vom Benutzer gestoppt.
+regenerate_failed#:#Antwort konnte nicht neu generiert werden. Bitte versuchen Sie es erneut.
+clear_chat_failed#:#Chat konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.
+clear_chat_error#:#Fehler beim Löschen des Chats
+error_prefix#:#Fehler
+welcome_message#:#Starten Sie eine Unterhaltung...
+loading_text#:#Nachdenken...
+send_button_text#:#Senden
+stop_generation#:#Generierung stoppen
+default_chat_title#:#KI-Chat
+background_files_label#:#Hintergrunddateien
+background_files_info#:#Laden Sie Hintergrunddateien (Bilder, PDFs, Dokumente) hoch, die Kontext für die KI-Unterhaltung liefern. Diese Dateien werden verarbeitet und der KI zusammen mit dem System-Prompt zur Verfügung gestellt.
+chat_title_label#:#Chat-Titel
+chat_title_info#:#Titel für diese KI-Chat-Komponente
+system_prompt_label#:#System-Prompt
+system_prompt_info#:#Definieren Sie die Rolle und das Verhalten des KI-Assistenten für diesen Chat
+ai_service_label#:#KI-Dienst
+ai_service_info#:#Wählen Sie den KI-Dienst für diesen Chat aus (basierend auf der AIChat-Plugin-Konfiguration)
+max_memory_label#:#Max. Nachrichten im Gedächtnis
+max_memory_info#:#Anzahl der vorherigen Nachrichten, die im Unterhaltungskontext behalten werden
+char_limit_label#:#Zeichenlimit
+char_limit_info#:#Maximale Anzahl Zeichen pro Benutzernachricht
+persistent_chat_label#:#Persistenter Chat
+persistent_chat_info#:#Wenn aktiviert, werden Chat-Nachrichten gespeichert und bei der Rückkehr des Benutzers wiederhergestellt. Wenn deaktiviert, startet jede Sitzung neu.
+include_page_context_label#:#Seitenkontext einbeziehen
+include_page_context_info#:#Wenn aktiviert, hat die KI Zugriff auf den Inhalt der Seite, in die dieser Chat eingebettet ist. Dies hilft bei relevanteren und kontextbezogeneren Antworten.
+enable_chat_uploads_label#:#Chat-Dateiuploads aktivieren
+enable_chat_uploads_info#:#Wenn aktiviert, können Benutzer Dateien direkt in der Chat-Oberfläche hochladen. Wenn deaktiviert, stehen der KI nur die oben konfigurierten Hintergrunddateien zur Verfügung.
+legal_disclaimer_label#:#Rechtlicher Haftungsausschluss
+legal_disclaimer_info#:#Optionaler rechtlicher Haftungsausschluss, der den Benutzern angezeigt wird
+create_ai_chat_title#:#KI-Chat erstellen
+edit_ai_chat_title#:#KI-Chat bearbeiten
+use_global_default#:#Globale Standardeinstellung verwenden
+openai_service#:#OpenAI GPT
+ramses_service#:#RAMSES
+ollama_service#:#Ollama
+gwdg_service#:#GWDG
+background_files_upload_label#:#Hintergrunddateien hochladen
+existing_background_files_label#:#Bestehende Hintergrunddateien
+no_background_files#:#Keine Hintergrunddateien vorhanden
+remove_file_label#:#Entfernen
+check_files_to_remove_info#:#Markieren Sie die Dateien, die entfernt werden sollen.
+background_files_upload_info#:#Wählen Sie mehrere Dateien aus, die als Kontext für die KI-Unterhaltung dienen sollen. Unterstützte Formate: Bilder, PDFs, Textdateien.
+selected_files_label#:#Ausgewählte Dateien
