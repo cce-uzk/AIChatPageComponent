@@ -65,7 +65,7 @@ git checkout main
 ### 2. Install Dependencies
 Ensure the AIChat plugin is installed and configured:
 ```bash
-# Look at: https://github.com/cce-uzk/AIChatForILIAS.git
+# Look at: [https://github.com/cce-uzk/AIChatForILIAS.git](https://github.com/nstaszak/AIChatForILIAS)
 ```
 
 ### 3. Install Composer Dependencies
