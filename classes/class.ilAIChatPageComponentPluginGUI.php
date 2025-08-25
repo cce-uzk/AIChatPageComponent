@@ -726,8 +726,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Add CSS
         $tpl->addCss($this->plugin->getDirectory() . "/css/ai_chat.css");
         
-        // Add JavaScript - marked.js for markdown parsing
-        $tpl->addJavaScript("https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js");
+        // Add JavaScript - marked.js for markdown parsing (local version)
+        $tpl->addJavaScript($this->plugin->getDirectory() . "/js/vendor/marked.min.js");
         $tpl->addJavaScript($this->plugin->getDirectory() . "/js/ai_chat.js");
     }
 

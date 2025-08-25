@@ -43,6 +43,9 @@ yarn.lock
 /vendor/
 composer.lock
 
+# JavaScript vendor libraries (keep these in version control)
+!/js/vendor/
+
 # Build artifacts
 /build/
 /dist/
