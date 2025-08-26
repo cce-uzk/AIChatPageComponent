@@ -1299,14 +1299,14 @@ class AIChatPageComponent {
             return;
         }
         
-        // Create local preview for images
+        // Generate preview URL for images to show in upload thumbnail
         let dataUrl = null;
         if (file.type.startsWith('image/')) {
             dataUrl = await this.createImagePreview(file);
         }
         
-        // Show upload progress
-        const progressDiv = this.showUploadProgress(file.name);
+        // Create temporary upload preview with circular progress indicator
+        const uploadingThumbnail = this.createUploadPreview(file, dataUrl);
         
         try {
             const formData = new FormData();
@@ -1363,54 +1363,123 @@ class AIChatPageComponent {
             // Add attachment to list with local preview if available
             const attachment = data.attachment;
             debug('AIChatPageComponent: Server attachment data:', attachment);
+            // Add local preview URL to attachment for immediate display
             if (dataUrl && attachment.is_image) {
-                attachment.data_url = dataUrl; // Add local preview for immediate display
+                attachment.data_url = dataUrl;
                 debug('AIChatPageComponent: Added local data_url to attachment');
             }
+            
+            // Remove temporary upload preview before rebuilding attachment display
+            if (uploadingThumbnail) {
+                this.clearThumbnailUploading(uploadingThumbnail);
+            }
+            
             this.attachments.push(attachment);
             this.updateAttachmentsDisplay();
-            
-            // Remove progress indicator
-            if (progressDiv) {
-                progressDiv.remove();
-            }
             
         } catch (error) {
             debugError('File upload failed:', error);
             this.showAlert('File upload failed: ' + error.message);
             
-            if (progressDiv) {
-                progressDiv.remove();
+            // Remove temporary upload preview on error
+            if (uploadingThumbnail) {
+                this.clearThumbnailUploading(uploadingThumbnail);
             }
         }
     }
     
-    showUploadProgress(filename) {
-        const progressDiv = document.createElement('div');
-        progressDiv.className = 'ai-chat-upload-progress';
-        progressDiv.innerHTML = `
-            <div>Uploading: ${filename}</div>
-            <div class="ai-chat-upload-progress-bar">
-                <div class="ai-chat-upload-progress-fill" style="width: 0%"></div>
-            </div>
+    /**
+     * Creates a temporary thumbnail preview with circular progress indicator for file uploads
+     * @param {File} file - The file being uploaded
+     * @param {string|null} dataUrl - Preview URL for images, null for other file types
+     * @returns {HTMLElement|null} The created upload preview element
+     */
+    createUploadPreview(file, dataUrl) {
+        if (!this.attachmentsList) return null;
+        
+        // Ensure attachment area is visible and styled
+        this.attachmentsArea.style.display = 'flex';
+        this.attachmentsArea.style.cssText += `
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 8px;
+            padding: 8px;
         `;
         
-        this.container.appendChild(progressDiv);
+        // Create thumbnail container with upload styling
+        const uploadPreview = document.createElement('div');
+        uploadPreview.className = 'ai-chat-attachment-uploading';
+        uploadPreview.style.cssText = `
+            position: relative;
+            margin: 4px 0;
+            border-radius: 8px;
+            overflow: hidden;
+            width: 80px;
+            height: 80px;
+            cursor: pointer;
+            flex-shrink: 0;
+        `;
         
-        // Animate progress bar
-        const fill = progressDiv.querySelector('.ai-chat-upload-progress-fill');
-        let progress = 0;
-        const interval = setInterval(() => {
-            progress += Math.random() * 20;
-            if (progress > 90) progress = 90;
-            fill.style.width = progress + '%';
-        }, 200);
+        if (file.type.startsWith('image/') && dataUrl) {
+            // Create image preview from file data
+            const img = document.createElement('img');
+            img.style.cssText = `
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                border-radius: 8px;
+            `;
+            img.src = dataUrl;
+            uploadPreview.appendChild(img);
+        } else {
+            // Create file type icon for non-images
+            const fileIcon = document.createElement('div');
+            fileIcon.style.cssText = `
+                width: 100%;
+                height: 100%;
+                background: var(--chat-bg-secondary, #f5f5f5);
+                border: 1px solid var(--chat-border, #ddd);
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 24px;
+            `;
+            fileIcon.textContent = file.type.includes('pdf') ? '📄' : '📎';
+            uploadPreview.appendChild(fileIcon);
+        }
         
-        // Store interval reference for cleanup
-        progressDiv._interval = interval;
+        // Add animated circular progress indicator
+        const circleDiv = document.createElement('div');
+        circleDiv.className = 'ai-chat-upload-circle';
+        circleDiv.innerHTML = `
+            <svg viewBox="0 0 20 20">
+                <circle cx="10" cy="10" r="8"></circle>
+            </svg>
+        `;
+        uploadPreview.appendChild(circleDiv);
         
-        return progressDiv;
+        // Insert into attachment display area
+        this.attachmentsList.appendChild(uploadPreview);
+        
+        return uploadPreview;
     }
+    
+    
+    /**
+     * Removes the temporary upload preview thumbnail
+     * @param {HTMLElement} thumbnail - The upload preview element to remove
+     */
+    clearThumbnailUploading(thumbnail) {
+        if (!thumbnail) return;
+        
+        // Remove temporary upload preview - real attachment thumbnail will be created by updateAttachmentsDisplay()
+        thumbnail.remove();
+    }
+    
+    
+    
+    
     
     updateAttachmentsDisplay() {
         if (!this.attachmentsList) return;

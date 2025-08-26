@@ -1271,3 +1271,48 @@ em, i {
     line-height: 1.5;
 }
 
+/* Upload Progress Indicators */
+
+/* Container for file thumbnails during upload */
+.ai-chat-attachment-uploading {
+    position: relative;
+}
+
+/* Circular progress overlay positioned at center of thumbnail */
+.ai-chat-upload-circle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    height: 24px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+
+/* SVG circle rotated to start progress from 12 o'clock */
+.ai-chat-upload-circle svg {
+    width: 16px;
+    height: 16px;
+    transform: rotate(-90deg);
+}
+
+/* Animated progress circle that fills clockwise */
+.ai-chat-upload-circle circle {
+    fill: none;
+    stroke: var(--chat-accent, #2196F3);
+    stroke-width: 2;
+    stroke-dasharray: 50;
+    stroke-dashoffset: 50;
+    animation: upload-progress 2s linear infinite;
+}
+
+/* Keyframe animation for clockwise progress fill */
+@keyframes upload-progress {
+    0% { stroke-dashoffset: 50; }
+    100% { stroke-dashoffset: 0; }
+}
