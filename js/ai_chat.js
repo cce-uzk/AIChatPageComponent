@@ -1185,7 +1185,7 @@ class AIChatPageComponent {
                 </svg>
             `;
             this.sendButton.className = 'ai-chat-composer-btn ai-chat-send';
-            this.sendButton.title = 'Send message';
+            this.sendButton.title = this.container.dataset.sendAriaLabel || 'Nachricht senden';
             this.sendButton.disabled = false;
         }
         
@@ -1676,7 +1676,7 @@ class AIChatPageComponent {
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
         `;
         removeBtn.textContent = '×';
-        removeBtn.title = 'Remove attachment';
+        removeBtn.title = this.container.dataset.removeAttachment || 'Anhang entfernen';
         removeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.removeAttachment(index);

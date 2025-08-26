@@ -608,6 +608,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Feedback messages
         $tpl->setVariable("MESSAGE_COPIED", htmlspecialchars($this->plugin->txt('message_copied')));
         $tpl->setVariable("MESSAGE_COPY_FAILED", htmlspecialchars($this->plugin->txt('message_copy_failed')));
+        
+        // Attachment actions
+        $tpl->setVariable("REMOVE_ATTACHMENT", htmlspecialchars($this->plugin->txt('remove_attachment')));
         $tpl->setVariable("THINKING_HEADER", htmlspecialchars($this->plugin->txt('thinking_header')));
         
         // Error messages
