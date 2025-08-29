@@ -27,7 +27,16 @@ class AIChatPageComponentConfig
             'available_services' => [
                 'ramses' => '1',
                 'openai' => '1'
-            ]
+            ],
+            
+            // File upload and processing limits
+            'max_file_size_mb' => 5,
+            'max_images_per_message' => 5,
+            'max_pdf_pages' => 20,
+            'max_total_image_data_mb' => 15,
+            'max_page_context_chars' => 50000,
+            'image_max_dimension' => 1024,
+            'pdf_image_quality' => 85
         ];
         
         try {
@@ -40,18 +49,40 @@ class AIChatPageComponentConfig
                 if (class_exists('\\platform\\AIChatConfig')) {
                     $value = \platform\AIChatConfig::get($key);
                     if ($value !== null) {
+                        // Successfully loaded from central AIChat config
+                        try {
+                            global $DIC;
+                            $DIC->logger()->comp('pcaic')->debug("Config loaded from AIChat plugin", [
+                                'key' => $key,
+                                'value' => $value,
+                                'source' => 'aichat_plugin'
+                            ]);
+                        } catch (\Exception $e) {
+                            // Ignore logging errors during early bootstrap
+                        }
                         return $value;
                     }
                 }
             }
             
             // Fallback to defaults
-            return $defaults[$key] ?? null;
+            $default_value = $defaults[$key] ?? null;
+            try {
+                global $DIC;
+                $DIC->logger()->comp('pcaic')->debug("Config using built-in default", [
+                    'key' => $key,
+                    'default_value' => $default_value,
+                    'source' => 'built_in_default',
+                    'aichat_file_exists' => file_exists($aichat_config_path),
+                    'aichat_class_exists' => class_exists('\\platform\\AIChatConfig')
+                ]);
+            } catch (\Exception $e) {
+                // Ignore logging errors during early bootstrap
+            }
+            return $default_value;
             
         } catch (\Exception $e) {
-            global $DIC;
-            $DIC->logger()->comp('pcaic')->warning("Error loading config", ['error' => $e->getMessage()]);
-            // Return default value
+            // Return default value on error
             return $defaults[$key] ?? null;
         }
     }

@@ -179,11 +179,28 @@ abstract class AIChatPageComponentLLM
             ];
         }
         
-        // Add image attachments with size limit check
+        // Add image attachments with configurable limits
         $totalImageSize = 0;
-        $maxTotalImageSize = 15 * 1024 * 1024; // 15MB total for all images in Base64
+        $maxTotalImageSizeMBConfig = \platform\AIChatPageComponentConfig::get('max_total_image_data_mb');
+        $maxTotalImageSizeMB = $maxTotalImageSizeMBConfig ? (int)$maxTotalImageSizeMBConfig : 15;
+        $maxTotalImageSize = $maxTotalImageSizeMB * 1024 * 1024;
         $imageCount = 0;
-        $maxImages = 5; // Limit number of images
+        $maxImagesConfig = \platform\AIChatPageComponentConfig::get('max_images_per_message');
+        $maxImages = $maxImagesConfig ? (int)$maxImagesConfig : 5;
+        
+        // Log configuration source
+        $this->logger->debug("AI processing limits configuration", [
+            'total_image_mb' => [
+                'source' => $maxTotalImageSizeMBConfig !== null ? 'central_config' : 'fallback',
+                'config_value' => $maxTotalImageSizeMBConfig,
+                'effective_mb' => $maxTotalImageSizeMB
+            ],
+            'max_images' => [
+                'source' => $maxImagesConfig !== null ? 'central_config' : 'fallback', 
+                'config_value' => $maxImagesConfig,
+                'effective_count' => $maxImages
+            ]
+        ]);
         
         foreach ($attachments as $attachment) {
             if ($attachment->isImage() || $attachment->isPdf()) {

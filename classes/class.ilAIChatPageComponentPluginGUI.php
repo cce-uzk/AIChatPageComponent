@@ -613,6 +613,26 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("REMOVE_ATTACHMENT", htmlspecialchars($this->plugin->txt('remove_attachment')));
         $tpl->setVariable("THINKING_HEADER", htmlspecialchars($this->plugin->txt('thinking_header')));
         
+        // Configuration limits
+        $max_size_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
+        $max_size_mb = $max_size_config ? (int)$max_size_config : 5;
+        $tpl->setVariable("MAX_FILE_SIZE_MB", $max_size_mb);
+        
+        // Log config source for debugging
+        global $DIC;
+        if ($max_size_config !== null) {
+            $DIC->logger()->comp('pcaic')->debug("Template: Using central config for file size", [
+                'source' => 'central_config',
+                'value' => $max_size_config,
+                'effective_mb' => $max_size_mb
+            ]);
+        } else {
+            $DIC->logger()->comp('pcaic')->debug("Template: Using fallback file size limit", [
+                'source' => 'fallback',
+                'effective_mb' => $max_size_mb
+            ]);
+        }
+        
         // Error messages
         $tpl->setVariable("GENERATION_STOPPED", htmlspecialchars($this->plugin->txt('generation_stopped')));
         $tpl->setVariable("REGENERATE_FAILED", htmlspecialchars($this->plugin->txt('regenerate_failed')));

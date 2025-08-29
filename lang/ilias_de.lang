@@ -15,7 +15,7 @@ attach_file_label#:#Datei anhängen
 input_aria_label#:#Nachricht eingeben
 send_aria_label#:#Nachricht senden
 file_input_aria_label#:#Dateien zum Anhängen auswählen
-file_too_large#:#Datei zu groß. Maximale Größe ist 10MB.
+file_too_large#:#Datei zu groß. Maximale Größe ist 5MB.
 file_type_not_allowed#:#Dateityp nicht erlaubt
 upload_error#:#Upload-Fehler
 uploading_file#:#Lade Datei hoch...
@@ -84,3 +84,6 @@ remove_file_label#:#Entfernen
 check_files_to_remove_info#:#Markieren Sie die Dateien, die entfernt werden sollen.
 background_files_upload_info#:#Wählen Sie mehrere Dateien aus, die als Kontext für die KI-Unterhaltung dienen sollen. Unterstützte Formate: Bilder, PDFs, Textdateien.
 selected_files_label#:#Ausgewählte Dateien
+chat_limitations_info#:#<strong>Chat-Limitierungen & Empfehlungen:</strong><br>• <strong>Dateigröße:</strong> Maximal 5MB pro Datei<br>• <strong>Bilder/PDFs:</strong> Maximal 5 pro Nachricht, 15MB Base64-Daten total<br>• <strong>PDF-Seiten:</strong> Maximal 20 Seiten werden verarbeitet<br>• <strong>Nachrichtenlänge:</strong> Konfigurierbar (Standard: 2000 Zeichen)<br>• <strong>Chat-Gedächtnis:</strong> Konfigurierbar (Standard: 10 Nachrichten)<br>• <strong>Empfehlung:</strong> Für beste Ergebnisse verwenden Sie hochauflösende Bilder und klar strukturierte PDFs
+file_processing_info#:#<strong>Dateiverarbeitung:</strong><br>• <strong>Bilder:</strong> Automatische Optimierung auf 1024px, JPEG 85% Qualität<br>• <strong>PDFs:</strong> Conversion zu Bildern für OCR-Textanalyse<br>• <strong>Textdateien:</strong> Direkter Inhalt wird dem System-Prompt hinzugefügt
+usage_recommendations#:#<strong>Verwendungsempfehlungen:</strong><br>• Verwenden Sie spezifische System-Prompts für bessere Ergebnisse<br>• Aktivieren Sie Seitenkontext für kontextbezogene Antworten<br>• Begrenzen Sie große PDFs auf wesentliche Seiten<br>• Verwenden Sie persistente Chats für längere Unterhaltungen

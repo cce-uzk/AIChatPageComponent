@@ -15,7 +15,7 @@ attach_file_label#:#Attach file
 input_aria_label#:#Type your message
 send_aria_label#:#Send message
 file_input_aria_label#:#Select files to attach
-file_too_large#:#File too large. Maximum size is 10MB.
+file_too_large#:#File too large. Maximum size is 5MB.
 file_type_not_allowed#:#File type not allowed
 upload_error#:#Upload error
 uploading_file#:#Uploading file...
@@ -85,3 +85,6 @@ remove_file_label#:#Remove
 check_files_to_remove_info#:#Check the files you want to remove.
 background_files_upload_info#:#Select multiple files to serve as context for AI conversations. Supported formats: Images, PDFs, text documents.
 selected_files_label#:#Selected files
+chat_limitations_info#:#<strong>Chat Limitations & Recommendations:</strong><br>• <strong>File Size:</strong> Maximum 5MB per file<br>• <strong>Images/PDFs:</strong> Maximum 5 per message, 15MB Base64 data total<br>• <strong>PDF Pages:</strong> Maximum 20 pages processed<br>• <strong>Message Length:</strong> Configurable (Default: 2000 characters)<br>• <strong>Chat Memory:</strong> Configurable (Default: 10 messages)<br>• <strong>Recommendation:</strong> Use high-resolution images and clearly structured PDFs for best results
+file_processing_info#:#<strong>File Processing:</strong><br>• <strong>Images:</strong> Automatic optimization to 1024px, JPEG 85% quality<br>• <strong>PDFs:</strong> Converted to images for OCR text analysis<br>• <strong>Text Files:</strong> Content directly added to system prompt
+usage_recommendations#:#<strong>Usage Recommendations:</strong><br>• Use specific system prompts for better results<br>• Enable page context for contextual responses<br>• Limit large PDFs to essential pages<br>• Use persistent chats for longer conversations

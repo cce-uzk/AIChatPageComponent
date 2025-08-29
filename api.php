@@ -552,6 +552,35 @@ function getPageContextForChat(ChatConfig $chatConfig): string
     if ($description !== '') { $result .= "Page Description: $description\n\n"; }
     if ($content !== '')     { $result .= "Page Content: $content\n\n"; }
 
+    // Apply page context character limit to prevent token overflow
+    $max_context_chars_config = \platform\AIChatPageComponentConfig::get('max_page_context_chars');
+    $max_context_chars = $max_context_chars_config ? (int)$max_context_chars_config : 50000;
+    
+    // Log config source
+    if ($max_context_chars_config !== null) {
+        $logger->debug("Using central config for page context limit", [
+            'source' => 'central_config',
+            'config_value' => $max_context_chars_config,
+            'effective_limit' => $max_context_chars
+        ]);
+    } else {
+        $logger->debug("Using fallback page context limit", [
+            'source' => 'fallback',
+            'effective_limit' => $max_context_chars
+        ]);
+    }
+    
+    if (strlen($result) > $max_context_chars) {
+        $original_length = strlen($result);
+        $result = substr($result, 0, $max_context_chars) . "\n\n[Content truncated due to length limit]";
+        $logger->info("Page context truncated", [
+            'original_length' => $original_length,
+            'truncated_length' => strlen($result) - 42, // minus truncation message
+            'limit' => $max_context_chars,
+            'truncated_chars' => $original_length - $max_context_chars
+        ]);
+    }
+
     $logger->debug("Return content, len=" . strlen($result) . ", type=" . $copage_type);
     return $result;
 }
@@ -1019,10 +1048,37 @@ function handleFileUpload(array $data): array
         return ['error' => 'File upload failed'];
     }
     
-    // File size check (max 10MB)
-    $max_size = 10 * 1024 * 1024;
+    // File size check (configurable, default 5MB)
+    $max_size_mb_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
+    $max_size_mb = $max_size_mb_config ? (int)$max_size_mb_config : 5;
+    $max_size = $max_size_mb * 1024 * 1024;
+    
+    global $DIC;
+    $logger = $DIC->logger()->comp('pcaic');
+    
+    // Log whether using central config or fallback
+    if ($max_size_mb_config !== null) {
+        $logger->debug("Using central config for file size limit", [
+            'source' => 'central_config',
+            'config_value' => $max_size_mb_config,
+            'effective_limit_mb' => $max_size_mb
+        ]);
+    } else {
+        $logger->info("Using fallback file size limit - central config not available", [
+            'source' => 'fallback',
+            'fallback_limit_mb' => 5,
+            'effective_limit_mb' => $max_size_mb
+        ]);
+    }
+    
+    $logger->debug("File upload validation", [
+        'max_size_bytes' => $max_size,
+        'upload_size_bytes' => $upload_info['size'],
+        'filename' => $upload_info['name'] ?? 'unknown'
+    ]);
+    
     if ($upload_info['size'] > $max_size) {
-        return ['error' => 'File too large'];
+        return ['error' => "File too large. Maximum size is {$max_size_mb}MB."];
     }
     
     // MIME type validation

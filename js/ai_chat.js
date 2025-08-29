@@ -1279,10 +1279,11 @@ class AIChatPageComponent {
     }
     
     async uploadFile(file) {
-        // Validate file size (10MB limit)
-        const maxSize = 10 * 1024 * 1024;
+        // Validate file size (configurable limit)
+        const maxSizeMB = parseInt(this.container.dataset.maxFileSizeMb) || 5;
+        const maxSize = maxSizeMB * 1024 * 1024;
         if (file.size > maxSize) {
-            this.showAlert('File too large. Maximum size is 10MB.');
+            this.showAlert(`File too large. Maximum size is ${maxSizeMB}MB.`);
             return;
         }
         
