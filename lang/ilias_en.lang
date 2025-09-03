@@ -48,9 +48,23 @@ error_prefix#:#Error
 welcome_message#:#Start a conversation...
 loading_text#:#Thinking...
 send_button_text#:#Send
+config_file_restrictions_title#:#File Handling & Upload Control
+config_file_restrictions_info#:#Enable AI file processing and control which file types are allowed for background files and chat uploads across all chat instances.
+config_enable_file_handling#:#Enable File Handling for AI
+config_enable_file_handling_info#:#When enabled, the AI can process background files and chat uploads. Administrators can control which file types are allowed and restrict different upload contexts separately.
+config_allowed_file_types#:#Allowed File Types
+config_allowed_file_types_info#:#Comma-separated list of allowed file extensions (e.g., txt,md,pdf,csv,png,jpg). Leave empty to allow all types when restrictions are disabled.
+config_allow_background_files#:#Allow Background File Attachments
+config_allow_background_files_info#:#When checked, users can attach background files to page components for AI context.
+config_allow_chat_uploads#:#Allow Chat Upload Files
+config_allow_chat_uploads_info#:#When checked, users can upload files directly in chat conversations.
+setting_disabled_by_admin#:#Setting disabled by administrator.
+setting_disabled_by_admin_info#:#This setting has been globally disabled by the administrator.
+background_files_disabled#:#Background file uploads are disabled by administrator.
+chat_uploads_disabled#:#Chat file uploads are disabled by administrator.
 stop_generation#:#Stop generation
 background_files_label#:#Background Files
-background_files_info#:#Upload files that provide context for AI conversations. Supported formats: PDF, images (JPG, PNG, GIF), text files (TXT, MD), Word documents (DOC, DOCX).
+background_files_info#:#Upload files that provide context for AI conversations. Supported formats: PDF, images (JPG, PNG, GIF, WEBP), text files (TXT, MD), CSV data files.
 existing_background_files_label#:#Currently Uploaded Files
 default_chat_title#:#AI Chat
 chat_title_label#:#Chat Title
@@ -69,6 +83,8 @@ include_page_context_label#:#Include Page Context
 include_page_context_info#:#If enabled, the AI will have access to the content of the page where this chat is embedded. This helps provide more relevant and contextual responses.
 enable_chat_uploads_label#:#Enable Chat File Uploads
 enable_chat_uploads_info#:#If enabled, users can upload files directly in the chat interface. If disabled, only background files (configured above) will be available to the AI.
+enable_streaming_label#:#Enable Streaming Responses
+enable_streaming_info#:#If enabled, AI responses will be streamed in real-time as they are generated. If disabled, full responses will be shown after completion.
 legal_disclaimer_label#:#Legal Disclaimer
 legal_disclaimer_info#:#Optional legal disclaimer shown to users
 create_ai_chat_title#:#Create AI Chat
@@ -85,6 +101,50 @@ remove_file_label#:#Remove
 check_files_to_remove_info#:#Check the files you want to remove.
 background_files_upload_info#:#Select multiple files to serve as context for AI conversations. Supported formats: Images, PDFs, text documents.
 selected_files_label#:#Selected files
-chat_limitations_info#:#<strong>Chat Limitations & Recommendations:</strong><br>• <strong>File Size:</strong> Maximum 5MB per file<br>• <strong>Images/PDFs:</strong> Maximum 5 per message, 15MB Base64 data total<br>• <strong>PDF Pages:</strong> Maximum 20 pages processed<br>• <strong>Message Length:</strong> Configurable (Default: 2000 characters)<br>• <strong>Chat Memory:</strong> Configurable (Default: 10 messages)<br>• <strong>Recommendation:</strong> Use high-resolution images and clearly structured PDFs for best results
+chat_limitations_info#:#<strong>Chat Limitations & Recommendations:</strong><br>• <strong>File Size:</strong> Maximum 5MB per file<br>• <strong>Attachments:</strong> Maximum 5 files per message<br>• <strong>PDF Pages:</strong> 20 pages processed per PDF<br>• <strong>Message Length:</strong> Configurable (Default: 2000 characters)<br>• <strong>Chat Memory:</strong> Configurable (Default: 10 messages)<br>• <strong>Recommendation:</strong> Use high-resolution images and clearly structured PDFs for best results
 file_processing_info#:#<strong>File Processing:</strong><br>• <strong>Images:</strong> Automatic optimization to 1024px, JPEG 85% quality<br>• <strong>PDFs:</strong> Converted to images for OCR text analysis<br>• <strong>Text Files:</strong> Content directly added to system prompt
 usage_recommendations#:#<strong>Usage Recommendations:</strong><br>• Use specific system prompts for better results<br>• Enable page context for contextual responses<br>• Limit large PDFs to essential pages<br>• Use persistent chats for longer conversations
+// Configuration GUI
+config_title#:#AI Chat Page Component Configuration
+config_defaults_title#:#Default Values
+config_defaults_info#:#Set default values used when creating new AI chat instances
+config_default_prompt#:#Default System Prompt
+config_default_prompt_info#:#Default system prompt for new AI chat instances
+config_default_char_limit#:#Default Character Limit
+config_default_char_limit_info#:#Default maximum characters per message
+config_default_max_memory#:#Default Memory Messages
+config_default_max_memory_info#:#Default number of previous messages to include in AI context
+config_default_disclaimer#:#Default Disclaimer
+config_default_disclaimer_info#:#Default disclaimer text shown to users
+config_services_title#:#AI Services
+config_services_info#:#Configure which AI services are available for selection
+config_service_ramses#:#RAMSES Service
+config_service_ramses_info#:#Enable RAMSES (University of Cologne Mistral) service
+config_service_openai#:#OpenAI Service  
+config_service_openai_info#:#Enable OpenAI GPT service
+config_files_title#:#File Upload Constraints
+config_files_info#:#Configure limits for file uploads and processing
+config_max_file_size#:#Maximum File Size (MB)
+config_max_file_size_info#:#Maximum size per uploaded file in megabytes
+config_max_attachments#:#Maximum Attachments per Message
+config_max_attachments_info#:#Maximum number of files that can be attached to a single chat message
+config_max_upload_size#:#Maximum Total Upload Size (MB)
+config_max_upload_size_info#:#Maximum combined size of all files uploaded in a single chat message in megabytes
+config_pdf_pages_processed#:#PDF Pages Processed
+config_pdf_pages_processed_info#:#Number of pages processed from each PDF document (not a limit, but how many pages are analyzed)
+config_max_image_data#:#Maximum Total Image Data
+config_max_image_data_info#:#Maximum total Base64 image data per chat message (for AI processing)
+config_enable_streaming#:#Enable Streaming Responses
+config_enable_streaming_info#:#When enabled, AI responses are streamed in real-time as they are generated, providing immediate feedback to users
+config_saved_success#:#Configuration saved successfully
+config_saved_error#:#Error saving configuration
+config_aichat_not_available#:#AIChat plugin configuration not available
+config_aichat_not_found#:#AIChat plugin not found
+config_save_error#:#Error saving configuration
+config_form_invalid#:#Please check your form inputs
+config_load_error#:#Error loading configuration form
+// File upload error messages
+error_max_attachments#:#Maximum %d attachments per message allowed
+error_file_too_large#:#File too large. Maximum size is %dMB
+error_file_type_not_allowed#:#File type not allowed: %s
+error_file_upload_failed#:#File upload failed: %s

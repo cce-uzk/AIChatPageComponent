@@ -3,6 +3,8 @@
 use ILIAS\Plugin\pcaic\Model\ChatConfig;
 use ILIAS\Plugin\pcaic\Model\ChatSession;
 use ILIAS\Plugin\pcaic\Model\ChatMessage;
+use ILIAS\Plugin\pcaic\Model\Attachment;
+use ILIAS\Plugin\pcaic\Validation\FileUploadValidator;
 
 /**
  * AI Chat Page Component REST API
@@ -130,8 +132,17 @@ try {
         case 'send_message':
             $result = handleSendMessage($data);
             break;
+        case 'send_message_stream':
+            handleSendMessageStream($data);
+            return; // Stream response, no JSON output
         case 'upload_file':
             $result = handleFileUpload($data);
+            break;
+        case 'get_upload_config':
+            $result = getUploadConfig($data);
+            break;
+        case 'get_global_config':
+            $result = getGlobalConfig($data);
             break;
         case 'load_chat':
             $result = handleLoadChat($data);
@@ -247,6 +258,12 @@ function handleSendMessage(array $data): array
     
     if (empty($chat_id) || empty($user_message)) {
         return ['error' => 'Missing required parameters: chat_id and message'];
+    }
+    
+    // Validate message length against configuration
+    $char_limit = (int)(\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000);
+    if (strlen($user_message) > $char_limit) {
+        return ['error' => sprintf('Message too long. Maximum %d characters allowed.', $char_limit)];
     }
     
     // Ensure attachment_ids is an array
@@ -478,6 +495,236 @@ function handleSendMessage(array $data): array
         $logger->debug("Send message error: " . $e->getMessage());
         return ['error' => 'Failed to send message'];
     }
+}
+
+/**
+ * Handle send message with Server-Sent Events streaming
+ */
+function handleSendMessageStream(array $data): void
+{
+    global $DIC;
+    $logger = $DIC->logger()->root();
+    
+    // Set Server-Sent Events headers
+    header('Content-Type: text/event-stream');
+    header('Cache-Control: no-cache');
+    header('Connection: keep-alive');
+    
+    // Extract required data from frontend
+    $chat_id = $data['chat_id'] ?? '';
+    $user_message = $data['message'] ?? '';
+    
+    // Handle attachment_ids - could be JSON string from GET parameters or array from POST
+    $attachment_ids = $data['attachment_ids'] ?? [];
+    if (is_string($attachment_ids) && !empty($attachment_ids)) {
+        $attachment_ids = json_decode($attachment_ids, true) ?: [];
+    }
+    if (!is_array($attachment_ids)) {
+        $attachment_ids = [];
+    }
+    
+    if (empty($chat_id) || empty($user_message)) {
+        echo "data: " . json_encode(['error' => 'Missing required parameters']) . "\n\n";
+        exit;
+    }
+    
+    // Validate message length
+    $char_limit = (int)(\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000);
+    if (strlen($user_message) > $char_limit) {
+        echo "data: " . json_encode(['error' => 'Message too long']) . "\n\n";
+        exit;
+    }
+    
+    $user_id = $DIC->user()->getId();
+    
+    try {
+        // Load chat configuration 
+        $chatConfig = new ChatConfig($chat_id);
+        if (!$chatConfig->exists()) {
+            echo "data: " . json_encode(['error' => 'Chat configuration not found']) . "\n\n";
+            exit;
+        }
+        
+        // Get or create session
+        $session = ChatSession::getOrCreateForUserAndChat($user_id, $chat_id);
+        
+        // Add user message to session
+        $userMessage = $session->addMessage('user', $user_message);
+        
+        // Process attachments if provided
+        if (!empty($attachment_ids)) {
+            foreach ($attachment_ids as $attachment_id) {
+                if (is_numeric($attachment_id)) {
+                    $userMessage->addAttachment($attachment_id);
+                }
+            }
+        }
+        
+        // Get recent messages for context
+        $recent_limit = min($chatConfig->getMaxMemory(), 20);
+        $recentMessages = $session->getRecentMessages($recent_limit);
+        
+        // Build context resources (background files, page context, etc.)
+        $contextResources = [];
+        
+        // Add page context if enabled
+        if ($chatConfig->isIncludePageContext()) {
+            $pageContext = getPageContextForChat($chatConfig);
+            if (!empty($pageContext)) {
+                $contextResources[] = [
+                    'kind' => 'page_context',
+                    'title' => 'Page Context',
+                    'content' => $pageContext,
+                    'mime_type' => 'text/plain'
+                ];
+            }
+        }
+        
+        // Add background files as resources 
+        $background_files = $chatConfig->getBackgroundFiles();
+        if (!empty($background_files)) {
+            $irss = $DIC->resourceStorage();
+            
+            foreach ($background_files as $file_id) {
+                try {
+                    $identification = $irss->manage()->find($file_id);
+                    if ($identification === null) continue;
+                    
+                    $revision = $irss->manage()->getCurrentRevision($identification);
+                    if ($revision === null) continue;
+                    
+                    $suffix = strtolower($revision->getInformation()->getSuffix());
+                    $mime_type = $revision->getInformation()->getMimeType();
+                    
+                    // Process ALL file types as structured resources
+                    if (in_array($suffix, ['txt', 'md', 'csv'])) {
+                        // Text files
+                        $content = extractFileContentFromIRSS($identification);
+                        if (!empty($content)) {
+                            $contextResources[] = [
+                                'kind' => 'text_file',
+                                'id' => 'bg-text-' . $file_id,
+                                'title' => $revision->getTitle(),
+                                'mime_type' => $mime_type,
+                                'content' => $content
+                            ];
+                        }
+                    } elseif (in_array($suffix, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+                        // Single images
+                        $content = extractFileContentFromIRSS($identification);
+                        if (!empty($content)) {
+                            $contextResources[] = [
+                                'kind' => 'image_file',
+                                'id' => 'bg-img-' . $file_id,
+                                'title' => $revision->getTitle(),
+                                'mime_type' => $mime_type,
+                                'url' => $content
+                            ];
+                        }
+                    } elseif ($suffix === 'pdf') {
+                        // PDF pages (converted to images)
+                        $content = extractFileContentFromIRSS($identification);
+                        if (!empty($content) && is_array($content)) {
+                            foreach ($content as $pageIndex => $pageDataUrl) {
+                                if (!empty($pageDataUrl)) {
+                                    $contextResources[] = [
+                                        'kind' => 'pdf_page',
+                                        'id' => 'bg-pdf-' . $file_id . '-p' . ($pageIndex + 1),
+                                        'title' => $revision->getTitle() . ' (Page ' . ($pageIndex + 1) . ')',
+                                        'mime_type' => 'image/png',
+                                        'page_number' => $pageIndex + 1,
+                                        'source_file' => $revision->getTitle(),
+                                        'url' => $pageDataUrl
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    $logger->debug("Background file processing failed: " . $e->getMessage());
+                    continue;
+                }
+            }
+        }
+        
+        // Initialize AI service with streaming enabled
+        $llm = createLLMInstance($chatConfig->getAiService());
+        $llm->setStreaming(true); // Enable streaming
+        $llm->setPrompt($chatConfig->getSystemPrompt());
+        $llm->setMaxMemoryMessages($chatConfig->getMaxMemory());
+        
+        // Send start event
+        echo "data: " . json_encode(['type' => 'start']) . "\n\n";
+        flush();
+        
+        // Convert messages to AI format
+        $aiMessages = [];
+        foreach ($recentMessages as $msg) {
+            $content = $msg->getMessage();
+            $attachments = $msg->getAttachments();
+            
+            if (!empty($attachments)) {
+                $multimodalContent = [];
+                if (!empty(trim($content))) {
+                    $multimodalContent[] = ['type' => 'text', 'text' => $content];
+                }
+                
+                foreach ($attachments as $attachment) {
+                    try {
+                        if ($attachment->isImage()) {
+                            $imageData = $attachment->getOptimizedContentAsBase64();
+                            if ($imageData) {
+                                $multimodalContent[] = [
+                                    'type' => 'image_url',
+                                    'image_url' => ['url' => $imageData]
+                                ];
+                            }
+                        } elseif ($attachment->isPdf()) {
+                            $pdfDataUrls = $attachment->getDataUrl();
+                            if ($pdfDataUrls && is_array($pdfDataUrls)) {
+                                foreach ($pdfDataUrls as $pageDataUrl) {
+                                    if ($pageDataUrl) {
+                                        $multimodalContent[] = [
+                                            'type' => 'image_url',
+                                            'image_url' => ['url' => $pageDataUrl]
+                                        ];
+                                    }
+                                }
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        $logger->debug("Attachment processing failed: " . $e->getMessage());
+                    }
+                }
+                
+                $aiMessages[] = [
+                    'role' => $msg->getRole(),
+                    'content' => $multimodalContent
+                ];
+            } else {
+                $aiMessages[] = [
+                    'role' => $msg->getRole(),
+                    'content' => $content
+                ];
+            }
+        }
+        
+        // Send to AI with streaming (this will output chunks directly)
+        $aiResponse = $llm->sendMessagesArray($aiMessages, $contextResources);
+        
+        // Send completion event
+        echo "data: " . json_encode(['type' => 'complete', 'message' => $aiResponse]) . "\n\n";
+        flush();
+        
+        // Add AI response to session
+        $session->addMessage('assistant', $aiResponse);
+        
+    } catch (\Exception $e) {
+        $logger->error("Streaming message error: " . $e->getMessage());
+        echo "data: " . json_encode(['error' => 'Failed to send message']) . "\n\n";
+    }
+    
+    exit;
 }
 
 /**
@@ -1036,6 +1283,24 @@ function handleFileUpload(array $data): array
         return ['error' => 'Missing chat_id parameter'];
     }
     
+    // Check attachment limit (server-side validation)
+    try {
+        $chatSession = ChatSession::getOrCreateForUserAndChat($DIC->user()->getId(), $chat_id);
+        $recentMessages = ChatMessage::getRecentForSession($chatSession->getSessionId(), 1);
+        if (!empty($recentMessages)) {
+            $latestMessage = $recentMessages[0];
+            $existingAttachments = Attachment::getByMessageId($latestMessage->getMessageId());
+            $maxAttachments = (int)(\platform\AIChatPageComponentConfig::get('max_attachments_per_message') ?: 5);
+            
+            if (count($existingAttachments) >= $maxAttachments) {
+                return ['error' => "Maximum {$maxAttachments} attachments per message allowed"];
+            }
+        }
+    } catch (\Exception $e) {
+        // Log error but continue - this is just additional validation
+        $logger->warning("Could not check attachment limit", ['error' => $e->getMessage()]);
+    }
+    
     // Check if file was uploaded
     if (empty($_FILES) || !isset($_FILES['file'])) {
         return ['error' => 'No file uploaded'];
@@ -1048,52 +1313,21 @@ function handleFileUpload(array $data): array
         return ['error' => 'File upload failed'];
     }
     
-    // File size check (configurable, default 5MB)
-    $max_size_mb_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
-    $max_size_mb = $max_size_mb_config ? (int)$max_size_mb_config : 5;
-    $max_size = $max_size_mb * 1024 * 1024;
-    
-    global $DIC;
-    $logger = $DIC->logger()->comp('pcaic');
-    
-    // Log whether using central config or fallback
-    if ($max_size_mb_config !== null) {
-        $logger->debug("Using central config for file size limit", [
-            'source' => 'central_config',
-            'config_value' => $max_size_mb_config,
-            'effective_limit_mb' => $max_size_mb
+    // Use new FileUploadValidator for comprehensive validation
+    $validation_result = FileUploadValidator::validateUpload($upload_info, 'chat', $chat_id);
+    if (!$validation_result['success']) {
+        $logger->info("File upload validation failed", [
+            'filename' => $upload_info['name'] ?? 'unknown',
+            'size' => $upload_info['size'],
+            'error' => $validation_result['error']
         ]);
-    } else {
-        $logger->info("Using fallback file size limit - central config not available", [
-            'source' => 'fallback',
-            'fallback_limit_mb' => 5,
-            'effective_limit_mb' => $max_size_mb
-        ]);
+        return ['error' => $validation_result['error']];
     }
     
-    $logger->debug("File upload validation", [
-        'max_size_bytes' => $max_size,
-        'upload_size_bytes' => $upload_info['size'],
-        'filename' => $upload_info['name'] ?? 'unknown'
+    $logger->debug("File upload validation passed", [
+        'filename' => $upload_info['name'] ?? 'unknown',
+        'size' => $upload_info['size']
     ]);
-    
-    if ($upload_info['size'] > $max_size) {
-        return ['error' => "File too large. Maximum size is {$max_size_mb}MB."];
-    }
-    
-    // MIME type validation
-    $allowed_types = [
-        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-        'application/pdf', 'text/plain', 'text/csv', 'text/json', 'text/markdown'
-    ];
-    
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime_type = finfo_file($finfo, $upload_info['tmp_name']);
-    finfo_close($finfo);
-    
-    if (!in_array($mime_type, $allowed_types)) {
-        return ['error' => 'File type not allowed'];
-    }
     
     try {
         // Store file using ILIAS Resource Storage
@@ -1143,6 +1377,139 @@ function handleFileUpload(array $data): array
     } catch (\Exception $e) {
         $logger->debug("File upload failed: " . $e->getMessage());
         return ['error' => 'File upload failed'];
+    }
+}
+
+/**
+ * Get upload configuration and restrictions for frontend
+ * 
+ * Provides information about allowed file types, size limits,
+ * and whether uploads are enabled for different contexts.
+ * 
+ * @param array $data Request data
+ * @return array Configuration response
+ */
+function getUploadConfig(array $data): array
+{
+    $upload_type = $data['upload_type'] ?? 'chat'; // 'chat' or 'background'
+    
+    try {
+        // Get upload restrictions
+        $is_enabled = FileUploadValidator::isUploadEnabled($upload_type);
+        $allowed_extensions = FileUploadValidator::getAllowedExtensions($upload_type);
+        
+        // Get size limits from configuration
+        $max_file_size_mb = \platform\AIChatPageComponentConfig::get('max_file_size_mb') ?? 5;
+        $max_attachments = \platform\AIChatPageComponentConfig::get('max_attachments_per_message') ?? 5;
+        $max_total_upload_mb = \platform\AIChatPageComponentConfig::get('max_total_upload_size_mb') ?? 25;
+        
+        // Build MIME type mapping for allowed extensions
+        $extension_to_mime = [
+            'pdf' => 'application/pdf',
+            'txt' => 'text/plain',
+            'md' => 'text/markdown',
+            'csv' => 'text/csv',
+            'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp'
+        ];
+        
+        $allowed_mime_types = [];
+        foreach ($allowed_extensions as $ext) {
+            if (isset($extension_to_mime[$ext])) {
+                $allowed_mime_types[] = $extension_to_mime[$ext];
+            }
+        }
+        
+        return [
+            'success' => true,
+            'upload_enabled' => $is_enabled,
+            'upload_type' => $upload_type,
+            'allowed_extensions' => $allowed_extensions,
+            'allowed_mime_types' => array_unique($allowed_mime_types),
+            'max_file_size_mb' => $max_file_size_mb,
+            'max_attachments_per_message' => $max_attachments,
+            'max_total_upload_size_mb' => $max_total_upload_mb,
+            'extensions_display' => implode(', ', $allowed_extensions)
+        ];
+        
+    } catch (\Exception $e) {
+        global $DIC;
+        $DIC->logger()->comp('pcaic')->error('Failed to get upload config', [
+            'error' => $e->getMessage(),
+            'upload_type' => $upload_type
+        ]);
+        
+        return [
+            'success' => false,
+            'error' => 'Failed to load upload configuration'
+        ];
+    }
+}
+
+/**
+ * Get global configuration with administrator limits
+ * 
+ * Returns global configuration settings that may override local PageComponent
+ * settings. Administrators can set system-wide limits that take precedence.
+ * 
+ * @param array $data Request data
+ * @return array Configuration response
+ */
+function getGlobalConfig(array $data): array
+{
+    try {
+        // Get upload configuration (existing functionality)
+        $upload_config = getUploadConfig(['upload_type' => 'chat']);
+        
+        if (!$upload_config['success']) {
+            return $upload_config; // Return error from upload config
+        }
+        
+        // Get global chat limits from plugin configuration
+        // Use the standard plugin settings as global limits (administrator-configured)
+        $max_char_limit = \platform\AIChatPageComponentConfig::get('characters_limit');
+        $max_memory_limit = \platform\AIChatPageComponentConfig::get('max_memory_messages');
+        
+        // Convert to proper integers, ensuring valid values
+        $max_char_limit = $max_char_limit ? (int)$max_char_limit : null;
+        $max_memory_limit = $max_memory_limit ? (int)$max_memory_limit : null;
+        
+        global $DIC;
+        $DIC->logger()->comp('pcaic')->debug('Global limits from plugin configuration', [
+            'characters_limit_from_config' => \platform\AIChatPageComponentConfig::get('characters_limit'),
+            'max_memory_from_config' => \platform\AIChatPageComponentConfig::get('max_memory_messages'),
+            'final_char_limit' => $max_char_limit,
+            'final_memory_limit' => $max_memory_limit
+        ]);
+        
+        // Combine upload configuration with chat limits
+        $global_config = $upload_config;
+        $global_config['max_char_limit'] = $max_char_limit ? (int)$max_char_limit : null;
+        $global_config['max_memory_limit'] = $max_memory_limit ? (int)$max_memory_limit : null;
+        
+        global $DIC;
+        $DIC->logger()->comp('pcaic')->debug('Global configuration requested', [
+            'upload_enabled' => $global_config['upload_enabled'],
+            'max_char_limit' => $global_config['max_char_limit'],
+            'max_memory_limit' => $global_config['max_memory_limit'],
+            'allowed_extensions_count' => count($global_config['allowed_extensions'])
+        ]);
+        
+        return $global_config;
+        
+    } catch (\Exception $e) {
+        global $DIC;
+        $DIC->logger()->comp('pcaic')->error('Failed to get global config', [
+            'error' => $e->getMessage()
+        ]);
+        
+        return [
+            'success' => false,
+            'error' => 'Failed to load global configuration'
+        ];
     }
 }
 

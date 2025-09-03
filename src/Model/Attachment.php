@@ -1087,15 +1087,6 @@ class Attachment
             return 'image';
         } elseif ($mime_type === 'application/pdf') {
             return 'pdf';
-        } elseif (in_array($mime_type, [
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/vnd.ms-powerpoint',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-        ])) {
-            return 'document';
         } elseif (strpos($mime_type, 'text/') === 0) {
             return 'text';
         }

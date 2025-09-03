@@ -363,3 +363,154 @@ if ($db->tableExists('pcaic_messages')) {
     ));
 }
 ?>
+
+<#4>
+<?php
+/**
+ * Step 4: Create dedicated plugin configuration table (v1.0.6)
+ * 
+ * This update creates a dedicated configuration table for the AIChatPageComponent plugin,
+ * independent of the AIChat plugin configuration. This ensures proper separation of
+ * concerns and allows the plugin to function independently.
+ * 
+ * Table: pcaic_config
+ * Purpose: Store plugin-wide configuration settings like default values,
+ *          AI service availability, and file upload constraints.
+ */
+global $DIC;
+$db = $DIC->database();
+
+// Create pcaic_config table for plugin configuration
+if (!$db->tableExists('pcaic_config')) {
+    $fields = array(
+        'config_key' => array(
+            'type' => 'text',
+            'length' => 250,
+            'notnull' => true
+        ),
+        'config_value' => array(
+            'type' => 'clob', // Support for JSON arrays and long text values
+            'notnull' => false
+        ),
+        'created_at' => array(
+            'type' => 'timestamp',
+            'notnull' => true
+        ),
+        'updated_at' => array(
+            'type' => 'timestamp',
+            'notnull' => true
+        )
+    );
+    
+    $db->createTable('pcaic_config', $fields);
+    $db->addPrimaryKey('pcaic_config', array('config_key'));
+    
+    // Insert default configuration values
+    $default_configs = array(
+        // Default chat settings
+        array(
+            'config_key' => 'default_prompt',
+            'config_value' => 'You are a helpful AI assistant. Please provide accurate and helpful responses.'
+        ),
+        array(
+            'config_key' => 'default_disclaimer',
+            'config_value' => ''
+        ),
+        array(
+            'config_key' => 'characters_limit',
+            'config_value' => '2000'
+        ),
+        array(
+            'config_key' => 'max_memory_messages',
+            'config_value' => '10'
+        ),
+        
+        // AI service availability (JSON format)
+        array(
+            'config_key' => 'available_services',
+            'config_value' => '{"ramses":"1","openai":"1"}'
+        ),
+        
+        // File upload constraints
+        array(
+            'config_key' => 'max_file_size_mb',
+            'config_value' => '5'
+        ),
+        array(
+            'config_key' => 'max_attachments_per_message',
+            'config_value' => '5'
+        ),
+        array(
+            'config_key' => 'max_total_upload_size_mb',
+            'config_value' => '25'
+        ),
+        
+        // Processing limits
+        array(
+            'config_key' => 'pdf_pages_processed',
+            'config_value' => '20'
+        ),
+        array(
+            'config_key' => 'max_image_data_mb',
+            'config_value' => '15'
+        )
+    );
+    
+    $current_time = date('Y-m-d H:i:s');
+    
+    foreach ($default_configs as $config) {
+        $db->insert('pcaic_config', array(
+            'config_key' => array('text', $config['config_key']),
+            'config_value' => array('clob', $config['config_value']),
+            'created_at' => array('timestamp', $current_time),
+            'updated_at' => array('timestamp', $current_time)
+        ));
+    }
+}
+?>
+
+<#5>
+<?php
+/**
+ * Step 5: Add streaming configuration support (v1.0.7)
+ * 
+ * This update adds streaming support for AI responses, allowing both global
+ * and per-chat configuration of streaming functionality.
+ * 
+ * Changes:
+ * - Add enable_streaming column to pcaic_chats table
+ * - Add global streaming configuration to pcaic_config table
+ */
+global $DIC;
+$db = $DIC->database();
+
+// Add enable_streaming column to pcaic_chats table
+if ($db->tableExists('pcaic_chats')) {
+    if (!$db->tableColumnExists('pcaic_chats', 'enable_streaming')) {
+        $db->addTableColumn('pcaic_chats', 'enable_streaming', array(
+            'type' => 'integer',
+            'length' => 1,
+            'notnull' => true,
+            'default' => 1  // Default to enabled
+        ));
+    }
+}
+
+// Add global streaming configuration to pcaic_config table
+if ($db->tableExists('pcaic_config')) {
+    // Check if enable_streaming config already exists
+    $query = "SELECT config_key FROM pcaic_config WHERE config_key = " . $db->quote('enable_streaming', 'text');
+    $result = $db->query($query);
+    
+    if (!$db->fetchAssoc($result)) {
+        // Insert default streaming configuration
+        $current_time = date('Y-m-d H:i:s');
+        $db->insert('pcaic_config', array(
+            'config_key' => array('text', 'enable_streaming'),
+            'config_value' => array('clob', '1'),  // Default to enabled
+            'created_at' => array('timestamp', $current_time),
+            'updated_at' => array('timestamp', $current_time)
+        ));
+    }
+}
+?>

@@ -221,6 +221,10 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             "stream" => $this->isStreaming()
         ]);
         
+        if ($payload === false) {
+            throw new AIChatPageComponentException("Failed to encode API payload: " . json_last_error_msg());
+        }
+        
         $this->logger->debug("RAMSES API payload prepared", ['payload' => $payload]);
 
         return $this->executeApiRequest($apiUrl, $payload);
@@ -326,9 +330,30 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         if ($this->isStreaming()) {
             curl_setopt($curlSession, CURLOPT_WRITEFUNCTION, function ($curlSession, $chunk) use (&$responseContent) {
                 $responseContent .= $chunk;
-                echo $chunk;
-                ob_flush();
-                flush();
+                
+                // Parse and reformat the chunk for Server-Sent Events
+                $lines = explode("\n", $chunk);
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if (empty($line)) continue;
+                    
+                    if (strpos($line, 'data: ') === 0) {
+                        $jsonData = substr($line, strlen('data: '));
+                        if ($jsonData === '[DONE]') {
+                            continue; // Skip [DONE] marker
+                        }
+                        
+                        $json = json_decode($jsonData, true);
+                        if ($json && isset($json['choices'][0]['delta']['content'])) {
+                            $content = $json['choices'][0]['delta']['content'];
+                            // Output as Server-Sent Event format
+                            echo "data: " . json_encode(['type' => 'chunk', 'content' => $content]) . "\n\n";
+                            ob_flush();
+                            flush();
+                        }
+                    }
+                }
+                
                 return strlen($chunk);
             });
         }

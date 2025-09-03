@@ -193,6 +193,14 @@ class ChatSession
     {
         return ChatMessage::getForSession($this->sessionId);
     }
+    
+    /**
+     * Get recent messages for this session with limit
+     */
+    public function getRecentMessages(int $limit = 10): array
+    {
+        return ChatMessage::getRecentForSession($this->sessionId, $limit);
+    }
 
     /**
      * Add message to this session

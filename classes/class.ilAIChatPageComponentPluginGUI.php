@@ -2,6 +2,8 @@
 
 require_once __DIR__ . "/../vendor/autoload.php";
 
+use ILIAS\Plugin\pcaic\Validation\FileUploadValidator;
+
 /**
  * AI Chat Page Component GUI Controller
  * 
@@ -233,23 +235,62 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Load bootstrap for new models
         require_once(__DIR__ . '/../src/bootstrap.php');
         
-        // Create upload handler
-        require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatBackgroundFileUploadHandlerGUI.php');
-        $upload_handler = new ilAIChatBackgroundFileUploadHandlerGUI();
+        // Check global file handling and specific upload permissions
+        $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
+        $file_handling_enabled = ($file_restrictions['enabled'] ?? false);
+        $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
+        $allowed_extensions = FileUploadValidator::getAllowedExtensions('background');
         
-        // Create the modern UI FileUpload component with multi-file support
-        $file_upload = $ui_factory->input()->field()->file(
-            $upload_handler,
-            $this->plugin->txt('background_files_upload_label'),
-            $this->plugin->txt('background_files_upload_info')
-        )
-        ->withDedicatedName('background_files')
-        ->withAcceptedMimeTypes([
-            'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-            'application/pdf', 'text/plain', 'text/csv', 'text/json',
-            'text/markdown'
-        ])
-        ->withMaxFiles(10);
+        if (!$file_handling_enabled) {
+            // File handling completely disabled - show clear message
+            $file_upload = $ui_factory->input()->field()->text(
+                $this->plugin->txt('background_files_upload_label'),
+                $this->plugin->txt('setting_disabled_by_admin_info')
+            )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('background_files');
+        } elseif (!$background_files_enabled) {
+            // Create disabled placeholder if background files are globally disabled
+            $file_upload = $ui_factory->input()->field()->text(
+                $this->plugin->txt('background_files_upload_label'),
+                $this->plugin->txt('setting_disabled_by_admin_info')
+            )->withValue($this->plugin->txt('background_files_disabled'))->withDisabled(true)->withDedicatedName('background_files');
+        } else {
+            // Create upload handler
+            require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatBackgroundFileUploadHandlerGUI.php');
+            $upload_handler = new ilAIChatBackgroundFileUploadHandlerGUI();
+            
+            // Build allowed MIME types from configured extensions
+            $extension_to_mime = [
+                'pdf' => 'application/pdf',
+                'txt' => 'text/plain',
+                'md' => 'text/markdown',
+                'csv' => 'text/csv',
+                'jpg' => 'image/jpeg',
+                'jpeg' => 'image/jpeg',
+                'png' => 'image/png',
+                'gif' => 'image/gif',
+                'webp' => 'image/webp'
+            ];
+            
+            $allowed_mimes = [];
+            foreach ($allowed_extensions as $ext) {
+                if (isset($extension_to_mime[$ext])) {
+                    $allowed_mimes[] = $extension_to_mime[$ext];
+                }
+            }
+            
+            $extensions_display = implode(', ', array_map('strtoupper', $allowed_extensions));
+            $info_text = $this->plugin->txt('background_files_upload_info') . ' Allowed types: ' . $extensions_display;
+            
+            // Create the modern UI FileUpload component with multi-file support
+            $file_upload = $ui_factory->input()->field()->file(
+                $upload_handler,
+                $this->plugin->txt('background_files_upload_label'),
+                $info_text
+            )
+            ->withDedicatedName('background_files')
+            ->withAcceptedMimeTypes($allowed_mimes)
+            ->withMaxFiles(10);
+        }
 
         // Get AIChat defaults
         $defaults = $this->getAIChatDefaults();
@@ -277,6 +318,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                             'persistent' => $chatConfig->isPersistent(),
                             'include_page_context' => $chatConfig->isIncludePageContext(),
                             'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
+                            'enable_streaming' => $chatConfig->isEnableStreaming(),
                             'disclaimer' => $chatConfig->getDisclaimer(),
                             'background_files' => json_encode($chatConfig->getBackgroundFiles())
                         ];
@@ -358,11 +400,43 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('include_page_context_info')
         )->withDedicatedName('include_page_context')->withValue($this->toBool($prop['include_page_context'] ?? true));
 
-        // Enable chat file uploads
-        $enable_chat_uploads = $ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('enable_chat_uploads_label'),
-            $this->plugin->txt('enable_chat_uploads_info')
-        )->withDedicatedName('enable_chat_uploads')->withValue($this->toBool($prop['enable_chat_uploads'] ?? false));
+        // Enable chat file uploads - check both file handling and specific chat upload permissions
+        $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
+        if (!$file_handling_enabled) {
+            // File handling completely disabled
+            $enable_chat_uploads = $ui_factory->input()->field()->text(
+                $this->plugin->txt('enable_chat_uploads_label'),
+                $this->plugin->txt('setting_disabled_by_admin_info')
+            )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('enable_chat_uploads_disabled');
+        } elseif ($chat_uploads_globally_enabled) {
+            // Chat uploads enabled - show checkbox
+            $enable_chat_uploads = $ui_factory->input()->field()->checkbox(
+                $this->plugin->txt('enable_chat_uploads_label'),
+                $this->plugin->txt('enable_chat_uploads_info')
+            )->withDedicatedName('enable_chat_uploads')->withValue($this->toBool($prop['enable_chat_uploads'] ?? false));
+        } else {
+            // Chat uploads specifically disabled (but file handling is enabled)
+            $enable_chat_uploads = $ui_factory->input()->field()->text(
+                $this->plugin->txt('enable_chat_uploads_label'),
+                $this->plugin->txt('setting_disabled_by_admin_info')
+            )->withValue($this->plugin->txt('chat_uploads_disabled'))->withDisabled(true)->withDedicatedName('enable_chat_uploads_disabled');
+        }
+
+        // Enable streaming responses - check global streaming setting
+        $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
+        if (!$streaming_globally_enabled) {
+            // Streaming globally disabled 
+            $enable_streaming = $ui_factory->input()->field()->text(
+                $this->plugin->txt('enable_streaming_label'),
+                $this->plugin->txt('setting_disabled_by_admin_info')
+            )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('enable_streaming_disabled');
+        } else {
+            // Streaming globally enabled - show checkbox
+            $enable_streaming = $ui_factory->input()->field()->checkbox(
+                $this->plugin->txt('enable_streaming_label'),
+                $this->plugin->txt('enable_streaming_info')
+            )->withDedicatedName('enable_streaming')->withValue($this->toBool($prop['enable_streaming'] ?? true));
+        }
 
         // Disclaimer
         $disclaimer = $ui_factory->input()->field()->textarea(
@@ -372,7 +446,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         // Create the complete UI form with all fields
         $form_action = $a_create ? $this->ctrl->getFormAction($this, 'create') : $this->ctrl->getFormAction($this, 'update');
-        $form = $ui_factory->input()->container()->form()->standard($form_action, [
+        // Build form fields array, conditionally including background files
+        $form_fields = [
             'chat_title' => $chat_title,
             'system_prompt' => $system_prompt,
             // 'ai_service' => $ai_service, // DISABLED: Hardcoded to RAMSES
@@ -381,9 +456,14 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             'persistent' => $persistent,
             'include_page_context' => $include_context,
             'enable_chat_uploads' => $enable_chat_uploads,
-            'disclaimer' => $disclaimer,
-            'background_files' => $file_upload
-        ]);
+            'enable_streaming' => $enable_streaming,
+            'disclaimer' => $disclaimer
+        ];
+        
+        // Always include background files field (will show disabled state when necessary)
+        $form_fields['background_files'] = $file_upload;
+        
+        $form = $ui_factory->input()->container()->form()->standard($form_action, $form_fields);
         
         
         return $form;
@@ -403,20 +483,26 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $chat_id = $properties['chat_id'] ?? uniqid('chat_', true);
         }
         
-        // Handle file uploads - always process the form field, even if empty
-        $background_files = $form_data['background_files'] ?? [];
-        if (!is_array($background_files)) {
-            $background_files = [];
-        }
+        // Handle file uploads - only process if file handling is enabled and background files are allowed
+        $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
+        $file_handling_enabled = ($file_restrictions['enabled'] ?? false);
+        $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
         
         $file_ids = [];
-        foreach ($background_files as $file_id) {
-            // AbstractCtrlAwareIRSSUploadHandler returns string IDs directly, not ResourceIdentification objects
-            if (is_string($file_id) && !empty($file_id)) {
-                $file_ids[] = $file_id;
-            } elseif ($file_id instanceof \ILIAS\ResourceStorage\Identification\ResourceIdentification) {
-                // Fallback: if it's still a ResourceIdentification object
-                $file_ids[] = $file_id->serialize();
+        if ($file_handling_enabled && $background_files_enabled) {
+            $background_files = $form_data['background_files'] ?? [];
+            
+            // Only process if it's an array (file upload field), not a string (disabled text field)
+            if (is_array($background_files)) {
+                foreach ($background_files as $file_id) {
+                    // AbstractCtrlAwareIRSSUploadHandler returns string IDs directly, not ResourceIdentification objects
+                    if (is_string($file_id) && !empty($file_id)) {
+                        $file_ids[] = $file_id;
+                    } elseif ($file_id instanceof \ILIAS\ResourceStorage\Identification\ResourceIdentification) {
+                        // Fallback: if it's still a ResourceIdentification object
+                        $file_ids[] = $file_id->serialize();
+                    }
+                }
             }
         }
         
@@ -444,7 +530,20 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $chatConfig->setBackgroundFiles($file_ids);
             $chatConfig->setPersistent((bool) ($form_data['persistent'] ?? true));
             $chatConfig->setIncludePageContext((bool) ($form_data['include_page_context'] ?? true));
-            $chatConfig->setEnableChatUploads((bool) ($form_data['enable_chat_uploads'] ?? false));
+            // Only set chat uploads if file handling is enabled AND chat uploads are globally enabled
+            $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
+            if ($file_handling_enabled && $chat_uploads_globally_enabled) {
+                $chatConfig->setEnableChatUploads((bool) ($form_data['enable_chat_uploads'] ?? false));
+            } else {
+                $chatConfig->setEnableChatUploads(false); // Force disabled when globally disabled
+            }
+            // Only set streaming if globally enabled AND form field is present
+            $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
+            if ($streaming_globally_enabled) {
+                $chatConfig->setEnableStreaming((bool) ($form_data['enable_streaming'] ?? true));
+            } else {
+                $chatConfig->setEnableStreaming(false); // Force disabled when globally disabled
+            }
             $chatConfig->setDisclaimer($form_data['disclaimer'] ?? '');
             
             // Save to database
@@ -556,6 +655,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     'persistent' => $chatConfig->isPersistent(),
                     'include_page_context' => $chatConfig->isIncludePageContext(),
                     'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
+                    'enable_streaming' => $chatConfig->isEnableStreaming(),
                     'disclaimer' => $chatConfig->getDisclaimer(),
                     'background_files' => json_encode($chatConfig->getBackgroundFiles())
                 ];
@@ -618,6 +718,46 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $max_size_mb = $max_size_config ? (int)$max_size_config : 5;
         $tpl->setVariable("MAX_FILE_SIZE_MB", $max_size_mb);
         
+        $max_attachments_config = \platform\AIChatPageComponentConfig::get('max_attachments_per_message');
+        $max_attachments = $max_attachments_config ? (int)$max_attachments_config : 5;
+        $tpl->setVariable("MAX_ATTACHMENTS_PER_MESSAGE", $max_attachments);
+        
+        // Error messages for file upload validation - format with sprintf
+        $error_max_attachments_template = $this->plugin->txt('error_max_attachments');
+        $error_file_too_large_template = $this->plugin->txt('error_file_too_large');
+        $error_file_type_not_allowed_template = $this->plugin->txt('error_file_type_not_allowed');
+        $error_file_upload_failed_template = $this->plugin->txt('error_file_upload_failed');
+        
+        // Fallback if language key not found (when txt() returns the key itself) or if still using old format
+        if ($error_max_attachments_template === 'error_max_attachments' || empty($error_max_attachments_template) || strpos($error_max_attachments_template, '{maxAttachments}') !== false) {
+            $error_max_attachments_template = 'Maximum %d attachments per message allowed';
+        }
+        if ($error_file_too_large_template === 'error_file_too_large' || empty($error_file_too_large_template)) {
+            $error_file_too_large_template = 'File too large. Maximum size is %dMB';
+        }
+        if ($error_file_type_not_allowed_template === 'error_file_type_not_allowed' || empty($error_file_type_not_allowed_template)) {
+            $error_file_type_not_allowed_template = 'File type not allowed: %s';
+        }
+        if ($error_file_upload_failed_template === 'error_file_upload_failed' || empty($error_file_upload_failed_template)) {
+            $error_file_upload_failed_template = 'File upload failed: %s';
+        }
+        
+        // Format the error messages with actual values
+        $error_max_attachments = sprintf($error_max_attachments_template, $max_attachments);
+        $max_file_size_mb_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
+        $max_file_size_mb = $max_file_size_mb_config ? (int)$max_file_size_mb_config : 5;
+        $error_file_too_large = sprintf($error_file_too_large_template, $max_file_size_mb);
+        
+        // These messages need JavaScript to fill in dynamic values, so pass templates directly
+        $error_file_type_not_allowed = $error_file_type_not_allowed_template;
+        $error_file_upload_failed = $error_file_upload_failed_template;
+        
+        
+        $tpl->setVariable("ERROR_MAX_ATTACHMENTS", $error_max_attachments);
+        $tpl->setVariable("ERROR_FILE_TOO_LARGE", $error_file_too_large);
+        $tpl->setVariable("ERROR_FILE_TYPE_NOT_ALLOWED", $error_file_type_not_allowed);
+        $tpl->setVariable("ERROR_FILE_UPLOAD_FAILED", $error_file_upload_failed);
+        
         // Log config source for debugging
         global $DIC;
         if ($max_size_config !== null) {
@@ -649,10 +789,23 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("PERSISTENT", $is_persistent ? 'true' : 'false');
         $tpl->setVariable("AI_SERVICE", htmlspecialchars($config_properties['ai_service'] ?? 'default'));
         
-        // Chat file uploads setting
+        // Chat file uploads setting - respect global restrictions
         $enable_chat_uploads = ($config_properties['enable_chat_uploads'] ?? false);
         $is_chat_uploads_enabled = ($enable_chat_uploads === true || $enable_chat_uploads === '1' || $enable_chat_uploads === 1);
-        $tpl->setVariable("ENABLE_CHAT_UPLOADS", $is_chat_uploads_enabled ? 'true' : 'false');
+        $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
+        
+        // Both page component setting AND global setting must be enabled
+        $effective_chat_uploads_enabled = $is_chat_uploads_enabled && $chat_uploads_globally_enabled;
+        $tpl->setVariable("ENABLE_CHAT_UPLOADS", $effective_chat_uploads_enabled ? 'true' : 'false');
+        
+        // Streaming setting - respect global restrictions
+        $enable_streaming = ($config_properties['enable_streaming'] ?? true);
+        $is_streaming_enabled = ($enable_streaming === true || $enable_streaming === '1' || $enable_streaming === 1);
+        $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
+        
+        // Both page component setting AND global setting must be enabled
+        $effective_streaming_enabled = $is_streaming_enabled && $streaming_globally_enabled;
+        $tpl->setVariable("ENABLE_STREAMING", $effective_streaming_enabled ? 'true' : 'false');
         
         // Add page info for context extraction in backend
         $page_info = $this->getPageInfo();
@@ -672,6 +825,18 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         if (!empty($config_properties['disclaimer'])) {
             $tpl->setCurrentBlock("disclaimer");
             $tpl->setVariable("DISCLAIMER", htmlspecialchars($config_properties['disclaimer']));
+            $tpl->parseCurrentBlock();
+        }
+        
+        // Handle chat uploads - only render upload elements if enabled
+        if ($effective_chat_uploads_enabled) {
+            $tpl->setCurrentBlock("chat_attachments_area");
+            $tpl->parseCurrentBlock();
+            
+            $tpl->setCurrentBlock("chat_attach_button");
+            $tpl->parseCurrentBlock();
+            
+            $tpl->setCurrentBlock("chat_file_input");
             $tpl->parseCurrentBlock();
         }
         
@@ -834,7 +999,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         try {
             require_once($this->plugin->getPluginBaseDir() . '/classes/platform/class.AIChatPageComponentConfig.php');
             
-            $prompt = \platform\AIChatPageComponentConfig::get('prompt');
+            $prompt = \platform\AIChatPageComponentConfig::get('default_prompt');
             if (!empty($prompt)) {
                 $defaults['prompt'] = $prompt;
             }
@@ -849,7 +1014,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $defaults['max_memory_messages'] = (int)$max_memory;
             }
             
-            $disclaimer = \platform\AIChatPageComponentConfig::get('disclaimer');
+            $disclaimer = \platform\AIChatPageComponentConfig::get('default_disclaimer');
             if (!empty($disclaimer)) {
                 $defaults['disclaimer'] = $disclaimer;
             }

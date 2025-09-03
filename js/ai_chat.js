@@ -1,13 +1,77 @@
 /**
  * AI Chat Page Component JavaScript
+ * 
+ * A comprehensive chat interface component for ILIAS Page Components that provides
+ * AI-powered conversations with support for file attachments, markdown rendering,
+ * streaming responses, and message persistence.
+ * 
+ * Features:
+ * - Real-time AI chat with streaming responses
+ * - File upload support (images, PDFs, text files)
+ * - Markdown rendering with code syntax highlighting
+ * - Message history persistence
+ * - Responsive design
+ * - Accessibility compliance
+ * - Copy and regenerate functionality
+ * 
+ * @file ai_chat.js
+ * @version 2.0.0
+ * @author ILIAS AI Chat Team
+ * @requires ILIAS 9.x
+ * @since 1.0.0
  */
 
-// Production debug control - set to false for production deployment
+'use strict';
+
+// ============================================================================
+// Debug Configuration
+// ============================================================================
+
+/**
+ * Production debug control - set to false for production deployment
+ * @type {boolean}
+ * @const
+ */
 const AICHAT_DEBUG = false;
+
+/**
+ * Debug logging function - disabled in production
+ * @type {Function}
+ * @const
+ */
 const debug = AICHAT_DEBUG ? console.log.bind(console) : () => {};
+
+/**
+ * Error logging function - disabled in production  
+ * @type {Function}
+ * @const
+ */
 const debugError = AICHAT_DEBUG ? console.error.bind(console) : () => {};
 
+// ============================================================================
+// Main AIChatPageComponent Class
+// ============================================================================
+
+/**
+ * AI Chat Page Component
+ * 
+ * Main class that handles the AI chat interface, including message management,
+ * file uploads, streaming responses, and user interactions.
+ * 
+ * @class AIChatPageComponent
+ * @example
+ * // Initialize a new chat component
+ * const chat = new AIChatPageComponent('ai-chat-container-123');
+ * 
+ * @param {string} containerId - The ID of the HTML container element
+ */
 class AIChatPageComponent {
+    /**
+     * Creates an instance of AIChatPageComponent
+     * 
+     * @param {string} containerId - The ID of the HTML container element
+     * @throws {Error} When container element is not found
+     */
     constructor(containerId) {
         this.containerId = containerId;
         this.container = document.getElementById(containerId);
@@ -24,6 +88,15 @@ class AIChatPageComponent {
         this.init();
     }
     
+    /**
+     * Initialize the chat component by setting up DOM elements and configuration
+     * 
+     * Sets up all necessary DOM references, extracts configuration from data attributes,
+     * initializes event listeners, and loads chat history if persistence is enabled.
+     * 
+     * @private
+     * @throws {Error} When required DOM elements are not found
+     */
     init() {
         this.messagesArea = this.container.querySelector('.ai-chat-messages');
         this.inputArea = this.container.querySelector('.ai-chat-input');
@@ -31,19 +104,19 @@ class AIChatPageComponent {
         this.welcomeMsg = this.container.querySelector('.ai-chat-welcome');
         this.loadingDiv = this.container.querySelector('.ai-chat-loading');
         
-        // File upload elements
+        // Initialize file upload DOM elements
         this.attachBtn = this.container.querySelector('.ai-chat-attach-btn');
         this.fileInput = this.container.querySelector('.ai-chat-file-input');
         this.attachmentsArea = this.container.querySelector('.ai-chat-attachments');
-        this.attachmentsList = this.attachmentsArea; // Use the attachments area directly for thumbnails
+        this.attachmentsList = this.attachmentsArea; // Direct reference for thumbnails
         this.clearAttachmentsBtn = this.container.querySelector('.ai-chat-clear-attachments');
         this.charCounter = this.container.querySelector('.ai-chat-char-count');
-        this.charLimit = this.container.querySelector('.ai-chat-char-limit');
+        this.charLimitElement = this.container.querySelector('.ai-chat-char-limit');
         
-        // Clear chat element
+        // Initialize clear chat functionality
         this.clearChatBtn = this.container.querySelector('.ai-chat-clear-btn');
         
-        // Get configuration from data attributes
+        // Extract configuration from DOM data attributes
         this.chatId = this.container.dataset.chatId;
         this.apiUrl = this.container.dataset.apiUrl;
         this.systemPrompt = this.container.dataset.systemPrompt;
@@ -52,8 +125,13 @@ class AIChatPageComponent {
         this.persistent = this.container.dataset.persistent === 'true';
         this.aiService = this.container.dataset.aiService || 'default';
         this.enableChatUploads = this.container.dataset.enableChatUploads === 'true';
+        this.enableStreaming = this.container.dataset.enableStreaming === 'true';
         
-        // Get language strings from data attributes
+        // Initialize upload configuration (updated via API call)
+        this.globalChatUploadsEnabled = true; // Default assumption until API check
+        this.allowedFileTypes = []; // Populated from server configuration
+        
+        // Initialize localized UI text from data attributes
         this.lang = {
             copyMessageTitle: this.container.dataset.copyMessageTitle || 'Copy message',
             likeResponseTitle: this.container.dataset.likeResponseTitle || 'Good response',
@@ -68,7 +146,7 @@ class AIChatPageComponent {
             stopGeneration: this.container.dataset.stopGeneration || 'Stop generation'
         };
         
-        // Page context data
+        // Initialize ILIAS page context integration
         this.pageId = parseInt(this.container.dataset.pageId) || 0;
         this.parentId = parseInt(this.container.dataset.parentId) || 0;
         this.parentType = this.container.dataset.parentType || '';
@@ -90,11 +168,267 @@ class AIChatPageComponent {
         }
         
         this.bindEvents();
+        this.checkUploadConfiguration(); // Check global configuration and apply limits
         this.loadChatHistory();
     }
     
+    /**
+     * Check global configuration and apply administrator overrides
+     * 
+     * Fetches global administrator settings and applies limits that override
+     * local PageComponent settings. Global limits take precedence over local
+     * settings to ensure compliance with administrator policies.
+     * 
+     * @async
+     * @private
+     * @returns {Promise<void>}
+     * @throws {Error} When API request fails
+     */
+    async checkUploadConfiguration() {
+        try {
+            const response = await fetch(this.apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    action: 'get_global_config',
+                    config_type: 'all'
+                })
+            });
+            
+            if (!response.ok) {
+                debugError('AIChatPageComponent: Upload config check failed');
+                return;
+            }
+            
+            const data = await response.json();
+            
+            debug('AIChatPageComponent: Global config API response', {
+                success: data.success,
+                upload_enabled: data.upload_enabled,
+                max_char_limit: data.max_char_limit,
+                max_memory_limit: data.max_memory_limit,
+                allowed_extensions: data.allowed_extensions?.length || 0,
+                rawData: data
+            });
+            
+            if (data.success) {
+                // Apply global upload configuration
+                this.globalChatUploadsEnabled = data.upload_enabled;
+                this.allowedFileTypes = data.allowed_mime_types || [];
+                this.allowedExtensions = data.allowed_extensions || [];
+                
+                // Apply global limits that override local PageComponent settings
+                this.applyGlobalLimits(data);
+                
+                // Update file input restrictions based on server configuration
+                this.updateFileInputAcceptAttribute();
+                
+                // Determine effective upload state (both page and global settings must allow)
+                const effectiveUploadsEnabled = this.enableChatUploads && this.globalChatUploadsEnabled;
+                
+                if (!effectiveUploadsEnabled && this.enableChatUploads) {
+                    // Global admin settings override page component settings
+                    this.hideFileUploadElements();
+                    debug('AIChatPageComponent: Chat uploads disabled by global administrator settings');
+                }
+                
+                debug('AIChatPageComponent: Global configuration loaded', {
+                    originalCharLimit: originalCharLimit,
+                    originalMaxMemory: originalMaxMemory,
+                    finalCharLimit: this.charLimit,
+                    finalMaxMemory: this.maxMemory,
+                    globalConfigReceived: {
+                        max_char_limit: data.max_char_limit,
+                        max_memory_limit: data.max_memory_limit
+                    }
+                });
+                
+                debug('AIChatPageComponent: Upload configuration applied', {
+                    pageComponentEnabled: this.enableChatUploads,
+                    globalEnabled: this.globalChatUploadsEnabled,
+                    effectiveEnabled: effectiveUploadsEnabled,
+                    allowedTypes: this.allowedFileTypes,
+                    allowedExtensions: this.allowedExtensions
+                });
+            }
+        } catch (error) {
+            debugError('AIChatPageComponent: Error checking global configuration:', error);
+        }
+    }
+    
+    /**
+     * Apply global administrator limits that override local PageComponent settings
+     * 
+     * Global limits take precedence over local settings to ensure system-wide
+     * compliance with administrator policies. This includes character limits,
+     * memory limits, and other configurable restrictions.
+     * 
+     * @private
+     * @param {Object} globalConfig - Global configuration data from server
+     */
+    applyGlobalLimits(globalConfig) {
+        const originalCharLimit = this.charLimit;
+        const originalMaxMemory = this.maxMemory;
+        
+        debug('AIChatPageComponent: Applying global limits', {
+            currentCharLimit: this.charLimit,
+            currentMaxMemory: this.maxMemory,
+            globalCharLimit: globalConfig.max_char_limit,
+            globalMemoryLimit: globalConfig.max_memory_limit
+        });
+        
+        // Apply global character limit if it's more restrictive than local setting
+        debug('AIChatPageComponent: Checking global character limit', {
+            hasGlobalLimit: !!globalConfig.max_char_limit,
+            globalLimitValue: globalConfig.max_char_limit,
+            globalLimitGreaterZero: globalConfig.max_char_limit > 0,
+            localLimit: this.charLimit,
+            shouldApply: globalConfig.max_char_limit && globalConfig.max_char_limit > 0 && this.charLimit > globalConfig.max_char_limit
+        });
+        
+        if (globalConfig.max_char_limit && globalConfig.max_char_limit > 0) {
+            if (this.charLimit > globalConfig.max_char_limit) {
+                this.charLimit = globalConfig.max_char_limit;
+                debug('AIChatPageComponent: Character limit REDUCED by global admin setting', {
+                    original: originalCharLimit,
+                    enforced: this.charLimit,
+                    reason: 'Global administrator limit override'
+                });
+                
+                // Update UI display if char limit element exists
+                if (this.charLimitElement) {
+                    debug('AIChatPageComponent: Updating character limit display', {
+                        element: this.charLimitElement,
+                        newValue: this.charLimit
+                    });
+                    this.charLimitElement.textContent = this.charLimit;
+                } else {
+                    debug('AIChatPageComponent: Character limit element not found!');
+                }
+            } else {
+                debug('AIChatPageComponent: Local character limit is within global limit, no change needed', {
+                    local: this.charLimit,
+                    global: globalConfig.max_char_limit
+                });
+            }
+        } else {
+            debug('AIChatPageComponent: No global character limit set or limit is 0');
+        }
+        
+        // Apply global memory limit if it's more restrictive than local setting
+        if (globalConfig.max_memory_limit && globalConfig.max_memory_limit > 0) {
+            if (this.maxMemory > globalConfig.max_memory_limit) {
+                this.maxMemory = globalConfig.max_memory_limit;
+                debug('AIChatPageComponent: Memory limit reduced by global admin setting', {
+                    original: originalMaxMemory,
+                    enforced: this.maxMemory,
+                    reason: 'Global administrator limit override'
+                });
+            }
+        }
+        
+        // Log and optionally notify user if any limits were applied
+        if (this.charLimit !== originalCharLimit || this.maxMemory !== originalMaxMemory) {
+            debug('AIChatPageComponent: Global administrator limits applied', {
+                charLimit: {
+                    original: originalCharLimit,
+                    enforced: this.charLimit,
+                    overridden: this.charLimit !== originalCharLimit
+                },
+                maxMemory: {
+                    original: originalMaxMemory,
+                    enforced: this.maxMemory,
+                    overridden: this.maxMemory !== originalMaxMemory
+                }
+            });
+            
+            // Show a subtle info message about global limits (only if enabled in config)
+            if (this.container.dataset.showGlobalLimitInfo === 'true') {
+                const limitInfo = [];
+                if (this.charLimit !== originalCharLimit) {
+                    limitInfo.push(`Character limit: ${this.charLimit}`);
+                }
+                if (this.maxMemory !== originalMaxMemory) {
+                    limitInfo.push(`Memory limit: ${this.maxMemory} messages`);
+                }
+                
+                if (limitInfo.length > 0) {
+                    this.showGlobalLimitInfo(limitInfo.join(', '));
+                }
+            }
+        } else {
+            debug('AIChatPageComponent: Local settings within global limits, no overrides needed');
+        }
+    }
+    
+    /**
+     * Show subtle information about applied global limits
+     * 
+     * Displays a temporary, non-intrusive message informing users that
+     * administrator-configured limits have been applied to their chat.
+     * 
+     * @private
+     * @param {string} limitInfo - Description of applied limits
+     */
+    showGlobalLimitInfo(limitInfo) {
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'ai-chat-global-limit-info';
+        infoDiv.style.cssText = `
+            position: absolute;
+            top: -30px;
+            right: 0;
+            background: #f8f9fa;
+            color: #6c757d;
+            font-size: 0.8em;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        `;
+        
+        infoDiv.textContent = `Administrator limits applied: ${limitInfo}`;
+        
+        // Position relative to chat container
+        this.container.style.position = 'relative';
+        this.container.appendChild(infoDiv);
+        
+        // Fade in
+        setTimeout(() => {
+            infoDiv.style.opacity = '1';
+        }, 100);
+        
+        // Fade out and remove after 5 seconds
+        setTimeout(() => {
+            infoDiv.style.opacity = '0';
+            setTimeout(() => {
+                if (infoDiv.parentNode) {
+                    infoDiv.parentNode.removeChild(infoDiv);
+                }
+            }, 300);
+        }, 5000);
+    }
+    
+    /**
+     * Bind all event listeners for user interactions
+     * 
+     * Sets up event listeners for:
+     * - Send button clicks (message sending or generation stopping)
+     * - Enter key presses in textarea
+     * - Input changes for character counting and textarea resizing
+     * - File upload button clicks and file selection
+     * - Clear attachments and clear chat functionality
+     * 
+     * Conditionally binds file upload events based on upload configuration.
+     * 
+     * @private
+     */
     bindEvents() {
-        // Send button click
+        // Bind primary interaction events
         this.sendButton.addEventListener('click', (e) => {
             e.preventDefault();
             if (this.isLoading) {
@@ -104,7 +438,7 @@ class AIChatPageComponent {
             }
         });
         
-        // Enter key in textarea
+        // Handle Enter key for message sending (Shift+Enter for new line)
         this.inputArea.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -112,13 +446,13 @@ class AIChatPageComponent {
             }
         });
         
-        // Character counter and dynamic resize
+        // Handle input changes for UI updates
         this.inputArea.addEventListener('input', (e) => {
             this.updateCharacterCounter();
             this.resizeComposer();
         });
         
-        // File upload events - only if enabled
+        // Initialize file upload event handlers (if enabled by configuration)
         if (this.enableChatUploads) {
             if (this.attachBtn) {
                 this.attachBtn.addEventListener('click', (e) => {
@@ -140,11 +474,11 @@ class AIChatPageComponent {
                 });
             }
         } else {
-            // Hide file upload elements when disabled
+            // Hide upload UI when feature is disabled
             this.hideFileUploadElements();
         }
         
-        // Clear chat event
+        // Initialize clear chat functionality
         if (this.clearChatBtn) {
             debug('AIChatPageComponent: Clear chat button found, adding event listener');
             this.clearChatBtn.addEventListener('click', (e) => {
@@ -157,20 +491,54 @@ class AIChatPageComponent {
         }
     }
     
+    /**
+     * Send a message to the AI service
+     * 
+     * Validates the message, adds it to the chat history, shows loading state,
+     * and makes an API request. Handles both streaming and non-streaming responses.
+     * Includes file attachments if any are selected.
+     * 
+     * @public
+     * @async
+     * @returns {Promise<void>}
+     * @throws {Error} When API request fails or response is invalid
+     */
     sendMessage() {
+        // Prevent multiple concurrent requests
         if (this.isLoading) {
-            debug('AIChatPageComponent: Already loading, skipping');
+            debug('AIChatPageComponent: Request already in progress, skipping');
             return;
         }
         
+        // Validate message content
         const message = this.inputArea.value.trim();
         if (!message) {
             this.inputArea.focus();
             return;
         }
         
+        // Validate message length (using potentially overridden global limit)
         if (message.length > this.charLimit) {
-            this.showAlert(`Message too long. Maximum ${this.charLimit} characters allowed.`);
+            const errorMsg = this.container.dataset.errorMessageTooLong || 
+                `Message too long. Maximum ${this.charLimit} characters allowed.`;
+            this.showAlert(errorMsg);
+            return;
+        }
+        
+        // Validate API configuration before sending
+        if (!this.apiUrl) {
+            this.showAlert('AI service is not configured. Please contact your administrator.');
+            return;
+        }
+        
+        if (!this.chatId) {
+            this.showAlert('Chat configuration error. Please refresh the page and try again.');
+            return;
+        }
+        
+        // Check session validity before sending
+        if (!this.isSessionValid()) {
+            this.handleSessionExpired();
             return;
         }
         
@@ -189,6 +557,7 @@ class AIChatPageComponent {
         
         // Reset composer size and state after sending
         this.resizeComposer();
+        this.updateCharacterCounter(); // Hide character counter since input is now empty
         
         // Clear attachments from input area immediately
         this.clearAttachments();
@@ -198,12 +567,32 @@ class AIChatPageComponent {
         
         // Send message to AI (with attachments if any)
         if (currentAttachments.length > 0) {
-            this.sendMessageWithFiles(message, currentAttachments);
+            if (this.enableStreaming) {
+                this.sendMessageToAIStream(message, currentAttachments);
+            } else {
+                this.sendMessageWithFiles(message, currentAttachments);
+            }
         } else {
-            this.sendMessageToAI(message);
+            if (this.enableStreaming) {
+                this.sendMessageToAIStream(message);
+            } else {
+                this.sendMessageToAI(message);
+            }
         }
     }
     
+    /**
+     * Send message to AI service using non-streaming HTTP request
+     * 
+     * Makes a standard HTTP POST request to the AI service API and processes
+     * the complete response. Used when streaming is disabled or not supported.
+     * 
+     * @async
+     * @private
+     * @param {string} message - The user message to send
+     * @returns {Promise<void>}
+     * @throws {Error} When API request fails or returns invalid response
+     */
     async sendMessageToAI(message) {
         try {
             // Check if API is available
@@ -239,6 +628,13 @@ class AIChatPageComponent {
             debug('AIChatPageComponent: Response headers:', response.headers);
             
             if (!response.ok) {
+                // Check for session expiration (redirect to login)
+                if (response.status === 302 || response.status === 401) {
+                    debug('AIChatPageComponent: Session expired (HTTP ' + response.status + ')');
+                    this.handleSessionExpired();
+                    return; // Don't throw error, already handled
+                }
+                
                 // Try to get user-friendly error from response body
                 const errorText = await response.text();
                 debugError('HTTP Error Response:', errorText);
@@ -285,20 +681,42 @@ class AIChatPageComponent {
             this.saveChatHistory();
             
         } catch (error) {
-            // Don't show error message if request was aborted by user
+            // Handle user-initiated request cancellation gracefully
             if (error.name === 'AbortError') {
-                debug('AIChatPageComponent: Request was aborted');
+                debug('AIChatPageComponent: Request was aborted by user');
                 return;
             }
             
-            debugError('AIChatPageComponent: Error:', error);
+            // Log technical details for debugging
+            debugError('AIChatPageComponent: API request failed:', {
+                error: error.message,
+                apiUrl: this.apiUrl,
+                chatId: this.chatId
+            });
+            
+            // Clean up request state
             this.currentRequest = null;
             this.setLoading(false);
-            debug('AIChatPageComponent: API URL:', this.apiUrl);
-            this.addMessageToDisplay('system', 'Error: ' + error.message + '. Please ensure the AIChat plugin is properly configured.');
+            
+            // Show user-friendly error message
+            const userMessage = this.getErrorMessage(error);
+            this.addMessageToDisplay('system', userMessage);
         }
     }
     
+    /**
+     * Send message with file attachments to AI service
+     * 
+     * Similar to sendMessageToAI but includes file attachment IDs in the request.
+     * The server will process and include the files in the AI context.
+     * 
+     * @async
+     * @private
+     * @param {string} message - The user message to send
+     * @param {Array<Object>} [attachments=null] - Array of attachment objects with id property
+     * @returns {Promise<void>}
+     * @throws {Error} When API request fails or returns invalid response
+     */
     async sendMessageWithFiles(message, attachments = null) {
         try {
             if (!this.apiUrl || this.apiUrl === '') {
@@ -328,6 +746,13 @@ class AIChatPageComponent {
             });
             
             if (!response.ok) {
+                // Check for session expiration (redirect to login)
+                if (response.status === 302 || response.status === 401) {
+                    debug('AIChatPageComponent: Session expired in file upload (HTTP ' + response.status + ')');
+                    this.handleSessionExpired();
+                    return; // Don't throw error, already handled
+                }
+                
                 // Try to get user-friendly error from response body
                 const errorText = await response.text();
                 debugError('HTTP Error Response:', errorText);
@@ -373,20 +798,289 @@ class AIChatPageComponent {
             this.saveChatHistory();
             
         } catch (error) {
-            // Don't show error message if request was aborted by user
+            // Handle user-initiated request cancellation gracefully
             if (error.name === 'AbortError') {
-                debug('AIChatPageComponent: Request was aborted');
+                debug('AIChatPageComponent: File upload request was aborted by user');
                 return;
             }
             
-            debugError('AIChatPageComponent: Error:', error);
+            // Log technical details for debugging
+            debugError('AIChatPageComponent: File upload API request failed:', {
+                error: error.message,
+                apiUrl: this.apiUrl,
+                chatId: this.chatId,
+                attachmentCount: this.attachments.length
+            });
+            
+            // Clean up request state
             this.currentRequest = null;
             this.setLoading(false);
-            this.addMessageToDisplay('system', 'Error: ' + error.message + '. Please ensure the AIChat plugin is properly configured.');
+            
+            // Show user-friendly error message
+            const userMessage = this.getErrorMessage(error);
+            this.addMessageToDisplay('system', userMessage);
+        }
+    }
+    
+    /**
+     * Send message to AI service using Server-Sent Events streaming
+     * 
+     * Uses EventSource to establish a streaming connection with the server,
+     * receiving AI response chunks in real-time. Provides better user experience
+     * for long responses by showing partial results as they arrive.
+     * 
+     * @async
+     * @private
+     * @param {string} message - The user message to send
+     * @param {Array<Object>} [attachments=null] - Array of attachment objects with id property
+     * @returns {Promise<void>}
+     * @throws {Error} When streaming connection fails or receives error response
+     */
+    async sendMessageToAIStream(message, attachments = null) {
+        try {
+            if (!this.apiUrl || this.apiUrl === '') {
+                throw new Error('API URL not configured. Please ensure the plugin is properly installed.');
+            }
+            
+            debug('AIChatPageComponent: Starting streaming message to API:', message);
+            
+            // Create request body
+            const requestBody = {
+                action: 'send_message_stream',
+                chat_id: this.chatId,
+                message: message
+            };
+            
+            // Add attachments if provided
+            if (attachments && attachments.length > 0) {
+                requestBody.attachment_ids = attachments.map(att => att.id);
+            }
+            
+            // EventSource only supports GET, so we need to pass data as URL parameters
+            const params = new URLSearchParams();
+            params.append('action', requestBody.action);
+            params.append('chat_id', requestBody.chat_id);
+            params.append('message', requestBody.message);
+            if (requestBody.attachment_ids) {
+                params.append('attachment_ids', JSON.stringify(requestBody.attachment_ids));
+            }
+            
+            const eventSource = new EventSource(this.apiUrl + '?' + params.toString());
+            
+            // Store reference for abort capability
+            this.currentEventSource = eventSource;
+            
+            // Create placeholder message for streaming content
+            const messageElement = this.createStreamingMessageElement();
+            let streamedContent = '';
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    debug('AIChatPageComponent: Streaming data received:', data);
+                    
+                    if (data.type === 'start') {
+                        // Stream started
+                        debug('AIChatPageComponent: Streaming started');
+                    } else if (data.type === 'complete') {
+                        // Stream completed
+                        debug('AIChatPageComponent: Streaming completed');
+                        this.finalizeStreamedMessage(messageElement, data.message || streamedContent);
+                        eventSource.close();
+                        this.currentEventSource = null;
+                        this.setLoading(false);
+                        this.saveChatHistory();
+                    } else if (data.error) {
+                        // Error occurred
+                        throw new Error(data.error);
+                    } else if (data.type === 'chunk' && data.content) {
+                        // Streaming chunk
+                        const chunk = data.content;
+                        streamedContent += chunk;
+                        this.appendToStreamingMessage(messageElement, chunk);
+                    }
+                } catch (error) {
+                    debugError('AIChatPageComponent: Error parsing streaming data:', {
+                        error: error.message,
+                        eventData: event.data,
+                        chatId: this.chatId
+                    });
+                    eventSource.close();
+                    this.currentEventSource = null;
+                    this.setLoading(false);
+                    this.addMessageToDisplay('system', 'Streaming error: Unable to process AI response. Please try again.');
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                debugError('AIChatPageComponent: EventSource error:', error);
+                eventSource.close();
+                this.currentEventSource = null;
+                this.setLoading(false);
+                
+                // Check if this might be a session expiration (common with streaming)
+                if (!this.isSessionValid()) {
+                    this.handleSessionExpired();
+                } else {
+                    this.addMessageToDisplay('system', 'Streaming connection error. Please try again.');
+                }
+            };
+            
+        } catch (error) {
+            debugError('AIChatPageComponent: Streaming setup failed:', {
+                error: error.message,
+                apiUrl: this.apiUrl,
+                chatId: this.chatId
+            });
+            this.setLoading(false);
+            
+            const userMessage = this.getErrorMessage(error);
+            this.addMessageToDisplay('system', userMessage);
+        }
+    }
+    
+    /**
+     * Create a placeholder message element for streaming content
+     * 
+     * Creates a new message element in the chat area with streaming styles
+     * and a cursor indicator. Returns references to both the message container
+     * and content area for use during streaming.
+     * 
+     * @private
+     * @returns {{messageEl: HTMLElement, contentEl: HTMLElement}} References to message and content elements
+     */
+    createStreamingMessageElement() {
+        const messageEl = document.createElement('div');
+        messageEl.className = 'ai-chat-message assistant streaming';
+        
+        const contentEl = document.createElement('div');
+        contentEl.className = 'ai-chat-message-content';
+        contentEl.innerHTML = '<div class="streaming-cursor">|</div>';
+        
+        messageEl.appendChild(contentEl);
+        this.messagesArea.appendChild(messageEl);
+        this.scrollToBottom();
+        
+        return { messageEl, contentEl };
+    }
+    
+    /**
+     * Append a text chunk to the streaming message element
+     * 
+     * Updates the streaming message with new content chunk, maintaining
+     * the raw content for final markdown processing and showing escaped
+     * HTML with line breaks during streaming.
+     * 
+     * @private
+     * @param {{messageEl: HTMLElement, contentEl: HTMLElement}} messageElement - Message element references
+     * @param {string} chunk - New text content to append
+     */
+    appendToStreamingMessage(messageElement, chunk) {
+        const { contentEl } = messageElement;
+        
+        // Store raw content during streaming (without markdown processing)
+        if (!contentEl.dataset.rawContent) {
+            contentEl.dataset.rawContent = '';
+        }
+        contentEl.dataset.rawContent += chunk;
+        
+        // Remove cursor and add chunk as plain text (no markdown processing during streaming)
+        const cursor = contentEl.querySelector('.streaming-cursor');
+        if (cursor) {
+            cursor.remove();
+        }
+        
+        // Show plain text with line breaks during streaming, add cursor
+        const rawContent = contentEl.dataset.rawContent;
+        contentEl.innerHTML = this.escapeHtml(rawContent).replace(/\n/g, '<br>') + '<span class="streaming-cursor">|</span>';
+        this.scrollToBottom();
+    }
+    
+    /**
+     * Finalize the streamed message with full formatting
+     * 
+     * Removes streaming styles and cursor, applies markdown formatting
+     * to the complete content, adds action buttons, and saves to history.
+     * 
+     * @private
+     * @param {{messageEl: HTMLElement, contentEl: HTMLElement}} messageElement - Message element references
+     * @param {string} finalContent - Complete message content for formatting
+     */
+    finalizeStreamedMessage(messageElement, finalContent) {
+        const { messageEl, contentEl } = messageElement;
+        
+        // Remove streaming class and cursor
+        messageEl.classList.remove('streaming');
+        const cursor = contentEl.querySelector('.streaming-cursor');
+        if (cursor) {
+            cursor.remove();
+        }
+        
+        // Use stored raw content if available, otherwise use finalContent
+        const contentToFormat = contentEl.dataset.rawContent || finalContent;
+        
+        // Set final content with markdown formatting
+        contentEl.innerHTML = this.formatMessage(contentToFormat);
+        
+        // Clear the raw content data
+        delete contentEl.dataset.rawContent;
+        
+        // Add message action buttons
+        const actionsEl = this.createMessageActions();
+        messageEl.appendChild(actionsEl);
+        
+        // Add to message history
+        this.messageHistory.push({
+            role: 'assistant',
+            content: contentToFormat,
+            timestamp: Date.now()
+        });
+        
+        this.scrollToBottom();
+    }
+    
+    /**
+     * Stop current streaming operation if active
+     * 
+     * Closes the EventSource connection, cleans up streaming state,
+     * and adds a "stopped by user" indicator to any active streaming messages.
+     * 
+     * @public
+     */
+    stopStreaming() {
+        if (this.currentEventSource) {
+            this.currentEventSource.close();
+            this.currentEventSource = null;
+            this.setLoading(false);
+            
+            // Add stopped message indicator
+            const streamingMessages = this.messagesArea.querySelectorAll('.ai-chat-message.streaming');
+            streamingMessages.forEach(msg => {
+                msg.classList.remove('streaming');
+                const contentEl = msg.querySelector('.ai-chat-message-content');
+                if (contentEl) {
+                    const cursor = contentEl.querySelector('.streaming-cursor');
+                    if (cursor) {
+                        cursor.remove();
+                    }
+                    contentEl.innerHTML += '<em class="generation-stopped"> [Generation stopped by user]</em>';
+                }
+            });
         }
     }
     
     
+    /**
+     * Add a message to both the display and message history
+     * 
+     * Creates a visible message element in the chat area and adds the message
+     * to the internal history for context. Handles attachments if provided.
+     * 
+     * @public
+     * @param {string} role - Message role ('user', 'assistant', or 'system')
+     * @param {string} content - Message content text
+     * @param {Array<Object>} [attachments=[]] - Array of attachment objects to display
+     */
     addMessageToDisplay(role, content, attachments = []) {
         this.displayMessageOnly(role, content, attachments);
         
@@ -403,6 +1097,18 @@ class AIChatPageComponent {
         }
     }
     
+    /**
+     * Display a message in the chat area without adding to history
+     * 
+     * Creates and renders a message element with proper styling based on role.
+     * Handles markdown rendering for assistant messages and attachment display.
+     * Does not modify the message history.
+     * 
+     * @public
+     * @param {string} role - Message role ('user', 'assistant', or 'system')
+     * @param {string} content - Message content text
+     * @param {Array<Object>} [attachments=[]] - Array of attachment objects to display
+     */
     displayMessageOnly(role, content, attachments = []) {
         debug('AIChatPageComponent: displayMessageOnly called with attachments:', attachments);
         
@@ -534,6 +1240,17 @@ class AIChatPageComponent {
     /**
      * Basic markdown renderer for AI responses
      */
+    /**
+     * Render markdown text to HTML with AI-specific formatting
+     * 
+     * Uses marked.js library if available, falls back to custom implementation.
+     * Supports code blocks, inline code, headers, bold/italic, links, lists,
+     * tables, blockquotes, and Mistral-specific thinking blocks.
+     * 
+     * @public
+     * @param {string} text - Raw markdown text to render
+     * @returns {string} HTML-formatted string
+     */
     renderMarkdown(text) {
         if (!text) return '';
         
@@ -558,7 +1275,15 @@ class AIChatPageComponent {
     }
     
     /**
-     * Fallback markdown rendering (simplified)
+     * Fallback markdown rendering when marked.js is not available
+     * 
+     * Custom implementation that handles basic markdown features using
+     * regular expressions. Less robust than marked.js but provides
+     * essential formatting support.
+     * 
+     * @private
+     * @param {string} text - Raw markdown text to render
+     * @returns {string} HTML-formatted string
      */
     renderMarkdownFallback(text) {
         // Start with HTML escaping
@@ -580,12 +1305,32 @@ class AIChatPageComponent {
         return html;
     }
     
+    /**
+     * Escape HTML special characters to prevent XSS attacks
+     * 
+     * Uses DOM API to safely escape HTML entities in user-provided text.
+     * Essential for security when rendering user input or AI responses.
+     * 
+     * @public
+     * @param {string} text - Raw text that may contain HTML characters
+     * @returns {string} HTML-escaped text safe for display
+     */
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
     
+    /**
+     * Render code blocks with syntax highlighting support
+     * 
+     * Converts markdown code blocks (```language\ncode\n```) to HTML
+     * with proper CSS classes for syntax highlighting.
+     * 
+     * @private
+     * @param {string} text - Text containing code block markdown
+     * @returns {string} Text with code blocks converted to HTML
+     */
     renderCodeBlocks(text) {
         // Multi-line code blocks with language
         text = text.replace(/```(\w+)?\n([\s\S]*?)\n```/g, (match, language, code) => {
@@ -1154,16 +1899,40 @@ class AIChatPageComponent {
         `);
     }
     
+    /**
+     * Stop current AI generation request
+     * 
+     * Cancels both regular HTTP requests and streaming connections.
+     * Updates UI to show generation was stopped by user.
+     * 
+     * @public
+     */
     stopGeneration() {
+        // Handle regular HTTP request abort
         if (this.currentRequest) {
-            debug('AIChatPageComponent: Stopping generation');
+            debug('AIChatPageComponent: Stopping HTTP request');
             this.currentRequest.abort();
             this.currentRequest = null;
             this.setLoading(false);
             this.addMessageToDisplay('system', this.lang.generationStopped);
         }
+        
+        // Handle streaming connection close
+        if (this.currentEventSource) {
+            debug('AIChatPageComponent: Stopping streaming');
+            this.stopStreaming(); // This method handles EventSource cleanup
+        }
     }
     
+    /**
+     * Set the loading state of the chat interface
+     * 
+     * Updates the send button to show stop icon during loading,
+     * toggles loading indicators, and manages interaction state.
+     * 
+     * @public
+     * @param {boolean} loading - Whether the chat is in loading state
+     */
     setLoading(loading) {
         this.isLoading = loading;
         
@@ -1186,7 +1955,20 @@ class AIChatPageComponent {
             `;
             this.sendButton.className = 'ai-chat-composer-btn ai-chat-send';
             this.sendButton.title = this.container.dataset.sendAriaLabel || 'Nachricht senden';
-            this.sendButton.disabled = false;
+            
+            // Check if button should remain disabled due to character limit
+            const inputLength = this.inputArea.value.length;
+            const isOverLimit = inputLength > this.charLimit;
+            
+            if (isOverLimit) {
+                this.sendButton.disabled = true;
+                this.sendButton.classList.add('disabled-over-limit');
+                this.sendButton.title = this.container.dataset.sendDisabledOverLimit || 
+                    `Message too long (${inputLength}/${this.charLimit} characters). Please shorten your message.`;
+            } else {
+                this.sendButton.disabled = false;
+                this.sendButton.classList.remove('disabled-over-limit');
+            }
         }
         
         if (this.loadingDiv) {
@@ -1194,17 +1976,43 @@ class AIChatPageComponent {
         }
     }
     
+    /**
+     * Update the character counter display and styling
+     * 
+     * Shows current character count, applies warning/error styles
+     * when approaching or exceeding character limits.
+     * 
+     * @private
+     */
     updateCharacterCounter() {
         if (this.charCounter) {
             const length = this.inputArea.value.length;
             this.charCounter.textContent = length;
             
-            // Add warning/error classes
+            // Get the character counter container
+            const charCounterContainer = this.container.querySelector('.ai-chat-char-counter');
+            
+            // Show/hide character counter based on text length
+            if (charCounterContainer) {
+                if (length > 0) {
+                    charCounterContainer.classList.add('has-text');
+                } else {
+                    charCounterContainer.classList.remove('has-text');
+                }
+            }
+            
+            // Check if over character limit
+            const isOverLimit = length > this.charLimit;
+            
+            // Update send button state based on character limit
+            this.updateSendButtonState(isOverLimit, length === 0);
+            
+            // Add warning/error classes to character counter
             this.charCounter.classList.remove('warning', 'error');
             if (length > this.charLimit * 0.9) {
                 this.charCounter.classList.add('warning');
             }
-            if (length > this.charLimit) {
+            if (isOverLimit) {
                 this.charCounter.classList.add('error');
             }
         }
@@ -1265,6 +2073,59 @@ class AIChatPageComponent {
         }
     }
     
+    /**
+     * Update send button state based on input validation
+     * 
+     * Disables send button when character limit is exceeded or when loading.
+     * Provides visual feedback about why the button is disabled.
+     * 
+     * @private
+     * @param {boolean} isOverLimit - Whether character limit is exceeded
+     * @param {boolean} isEmpty - Whether input is empty
+     */
+    updateSendButtonState(isOverLimit, isEmpty) {
+        if (!this.sendButton) return;
+        
+        // Don't modify button if currently loading (handled by setLoading)
+        if (this.isLoading) return;
+        
+        const wasDisabled = this.sendButton.disabled;
+        
+        // Disable button if over character limit
+        if (isOverLimit) {
+            this.sendButton.disabled = true;
+            this.sendButton.title = this.container.dataset.sendDisabledOverLimit || 
+                `Message too long (${this.inputArea.value.length}/${this.charLimit} characters). Please shorten your message.`;
+            this.sendButton.classList.add('disabled-over-limit');
+        } else {
+            // Enable button if not over limit and not empty
+            this.sendButton.disabled = false;
+            this.sendButton.title = this.container.dataset.sendAriaLabel || 'Send message';
+            this.sendButton.classList.remove('disabled-over-limit');
+        }
+        
+        // Log state changes for debugging
+        if (wasDisabled !== this.sendButton.disabled) {
+            debug('AIChatPageComponent: Send button state changed', {
+                disabled: this.sendButton.disabled,
+                reason: isOverLimit ? 'over_limit' : 'enabled',
+                charCount: this.inputArea.value.length,
+                charLimit: this.charLimit
+            });
+        }
+    }
+    
+    /**
+     * Handle file selection from input element
+     * 
+     * Processes selected files by uploading them and adding to attachments.
+     * Clears the file input to allow re-selection of the same file.
+     * 
+     * @async
+     * @public
+     * @param {FileList} files - Files selected by user
+     * @returns {Promise<void>}
+     */
     async handleFileSelection(files) {
         if (!files || files.length === 0) {
             return;
@@ -1278,25 +2139,35 @@ class AIChatPageComponent {
         this.fileInput.value = '';
     }
     
+
     async uploadFile(file) {
+        // Check attachment limit first
+        const maxAttachments = parseInt(this.container.dataset.maxAttachmentsPerMessage) || 5;
+        if (this.attachments.length >= maxAttachments) {
+            const errorMessage = this.container.dataset.errorMaxAttachments || `Maximum ${maxAttachments} attachments per message allowed.`;
+            this.showAlert(errorMessage);
+            return;
+        }
+        
         // Validate file size (configurable limit)
         const maxSizeMB = parseInt(this.container.dataset.maxFileSizeMb) || 5;
         const maxSize = maxSizeMB * 1024 * 1024;
         if (file.size > maxSize) {
-            this.showAlert(`File too large. Maximum size is ${maxSizeMB}MB.`);
+            const errorMessage = this.container.dataset.errorFileTooLarge || `File too large. Maximum size is ${maxSizeMB}MB.`;
+            this.showAlert(errorMessage);
             return;
         }
         
-        // Validate file type
-        const allowedTypes = [
+        // Validate file type against configured allowed types
+        const allowedTypes = this.allowedFileTypes.length > 0 ? this.allowedFileTypes : [
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-            'application/pdf', 'text/plain', 'text/csv',
-            'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            'application/pdf', 'text/plain', 'text/csv', 'text/markdown'
         ];
         
         if (!allowedTypes.includes(file.type)) {
-            this.showAlert('File type not allowed: ' + file.type);
+            let errorMessage = this.container.dataset.errorFileTypeNotAllowed || `File type not allowed: ${file.type}`;
+            errorMessage = errorMessage.replace('%s', file.type);
+            this.showAlert(errorMessage);
             return;
         }
         
@@ -1380,7 +2251,9 @@ class AIChatPageComponent {
             
         } catch (error) {
             debugError('File upload failed:', error);
-            this.showAlert('File upload failed: ' + error.message);
+            let errorMessage = this.container.dataset.errorFileUploadFailed || `File upload failed: ${error.message}`;
+            errorMessage = errorMessage.replace('%s', error.message);
+            this.showAlert(errorMessage);
             
             // Remove temporary upload preview on error
             if (uploadingThumbnail) {
@@ -1871,9 +2744,17 @@ class AIChatPageComponent {
         // Regenerate the response
         try {
             if (lastUserAttachments.length > 0) {
-                await this.sendMessageWithFiles(userContent, lastUserAttachments);
+                if (this.enableStreaming) {
+                    await this.sendMessageToAIStream(userContent, lastUserAttachments);
+                } else {
+                    await this.sendMessageWithFiles(userContent, lastUserAttachments);
+                }
             } else {
-                await this.sendMessageToAI(userContent);
+                if (this.enableStreaming) {
+                    await this.sendMessageToAIStream(userContent);
+                } else {
+                    await this.sendMessageToAI(userContent);
+                }
             }
         } catch (error) {
             debugError('AIChatPageComponent: Regenerate failed:', error);
@@ -1994,6 +2875,16 @@ class AIChatPageComponent {
     
     /**
      * Clear chat history
+     */
+    /**
+     * Clear all chat messages and history
+     * 
+     * Shows confirmation dialog, then clears local storage and server-side
+     * chat data if persistent. Resets the chat interface to welcome state.
+     * 
+     * @async
+     * @public
+     * @returns {Promise<void>}
      */
     async clearChatHistory() {
         debug('AIChatPageComponent: clearChatHistory called');
@@ -2397,27 +3288,285 @@ class AIChatPageComponent {
     
     /**
      * Hide file upload elements when chat uploads are disabled
+     * Note: With server-side conditional rendering, these elements may not exist at all
      */
     hideFileUploadElements() {
-        // Hide attach button
+        // Hide attach button (may not exist if server-side disabled)
         if (this.attachBtn) {
             this.attachBtn.style.display = 'none';
         }
         
-        // Hide attachments area
+        // Hide attachments area (may not exist if server-side disabled)
         if (this.attachmentsArea) {
             this.attachmentsArea.style.display = 'none';
         }
         
-        // Hide clear attachments button
+        // Hide clear attachments button (may not exist if server-side disabled)
         if (this.clearAttachmentsBtn) {
             this.clearAttachmentsBtn.style.display = 'none';
         }
         
-        // Hide file input
+        // Hide file input (may not exist if server-side disabled)
         if (this.fileInput) {
             this.fileInput.style.display = 'none';
         }
+    }
+    
+    /**
+     * Update file input accept attribute based on global configuration
+     */
+    updateFileInputAcceptAttribute() {
+        if (!this.fileInput || !this.allowedExtensions || this.allowedExtensions.length === 0) {
+            return;
+        }
+        
+        // Build accept attribute from allowed extensions
+        const acceptValues = [];
+        
+        // Add MIME types first
+        if (this.allowedFileTypes && this.allowedFileTypes.length > 0) {
+            acceptValues.push(...this.allowedFileTypes);
+        }
+        
+        // Add file extensions as fallback
+        this.allowedExtensions.forEach(ext => {
+            acceptValues.push('.' + ext);
+        });
+        
+        // Set the accept attribute on file input
+        const acceptString = acceptValues.join(',');
+        this.fileInput.setAttribute('accept', acceptString);
+        
+        debug('AIChatPageComponent: Updated file input accept attribute:', acceptString);
+    }
+    
+    /**
+     * Check if ILIAS session is still valid
+     * 
+     * Uses ILIAS session management patterns to detect expired sessions
+     * before making API calls to provide better user experience.
+     * 
+     * @private
+     * @returns {boolean} True if session appears to be valid
+     */
+    isSessionValid() {
+        // Check if ILIAS session reminder is available and indicates valid session
+        if (typeof $ !== 'undefined' && $.fn.ilSessionReminder) {
+            // Check for ILIAS session cookies that indicate an active session
+            const sessionCookies = document.cookie.split(';').filter(cookie => 
+                cookie.trim().includes('PHPSESSID') || 
+                cookie.trim().includes('il_') ||
+                cookie.trim().includes('authtoken')
+            );
+            
+            if (sessionCookies.length === 0) {
+                debug('AIChatPageComponent: No ILIAS session cookies found');
+                return false;
+            }
+        }
+        
+        // Additional check: if we're in an ILIAS environment, check for common ILIAS globals
+        if (typeof window.il === 'undefined' && typeof window.ILIAS === 'undefined') {
+            debug('AIChatPageComponent: ILIAS globals not available, session may be expired');
+            return false;
+        }
+        
+        return true; // Assume valid if checks pass
+    }
+    
+    /**
+     * Handle expired session with user-friendly messaging
+     * 
+     * Shows appropriate message and optionally redirects to login or
+     * provides refresh option to restore session.
+     * 
+     * @private
+     */
+    handleSessionExpired() {
+        debug('AIChatPageComponent: Session expired detected');
+        
+        // Show user-friendly session expired message
+        const sessionExpiredMsg = this.container.dataset.sessionExpiredMessage || 
+            'Your session has expired. Please refresh the page to log in again.';
+            
+        this.addMessageToDisplay('system', sessionExpiredMsg);
+        
+        // Disable input to prevent further attempts
+        this.inputArea.disabled = true;
+        this.sendButton.disabled = true;
+        
+        // Show refresh option
+        if (this.container.dataset.showRefreshOnExpiry !== 'false') {
+            this.showSessionExpiredOptions();
+        }
+    }
+    
+    /**
+     * Show options for handling expired session
+     * 
+     * Provides user with options to refresh page or redirect to login.
+     * 
+     * @private
+     */
+    showSessionExpiredOptions() {
+        const refreshText = this.container.dataset.refreshPageText || 'Refresh Page';
+        const sessionDiv = document.createElement('div');
+        sessionDiv.className = 'ai-chat-session-expired';
+        sessionDiv.style.cssText = `
+            margin: 10px 0;
+            padding: 10px;
+            border: 2px solid #f39c12;
+            border-radius: 4px;
+            background: #fff3cd;
+            text-align: center;
+        `;
+        
+        const refreshBtn = document.createElement('button');
+        refreshBtn.textContent = refreshText;
+        refreshBtn.className = 'btn btn-primary btn-sm';
+        refreshBtn.style.cssText = 'margin: 5px;';
+        refreshBtn.addEventListener('click', () => {
+            window.location.reload();
+        });
+        
+        sessionDiv.appendChild(refreshBtn);
+        this.messagesArea.appendChild(sessionDiv);
+        this.scrollToBottom();
+    }
+    
+    /**
+     * Get user-friendly error message based on error type
+     * 
+     * Converts technical errors into appropriate user-facing messages
+     * while preserving debugging information in console logs.
+     * 
+     * @private
+     * @param {Error} error - The error object to process
+     * @returns {string} User-friendly error message
+     */
+    getErrorMessage(error) {
+        // Session expired (302 redirect) - most common cause
+        if (error.message.includes('302') || error.message.includes('redirect')) {
+            return 'Your session has expired. Please refresh the page to log in again.';
+        }
+        
+        // Network and connectivity errors
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            return 'Unable to connect to the AI service. Please check your internet connection and try again.';
+        }
+        
+        if (error.name === 'NetworkError' || error.message.includes('Failed to fetch')) {
+            return 'Network connection failed. Please check your internet connection and try again.';
+        }
+        
+        // API configuration errors
+        if (error.message.includes('API URL not configured')) {
+            return 'AI service is not properly configured. Please contact your administrator.';
+        }
+        
+        // Authentication errors
+        if (error.message.includes('Invalid API key') || error.message.includes('401')) {
+            return 'Authentication failed. The AI service credentials need to be updated.';
+        }
+        
+        // Rate limiting
+        if (error.message.includes('429') || error.message.includes('rate limit')) {
+            return 'Too many requests. Please wait a moment and try again.';
+        }
+        
+        // Server errors
+        if (error.message.includes('500') || error.message.includes('503')) {
+            return 'The AI service is temporarily unavailable. Please try again later.';
+        }
+        
+        // File upload errors
+        if (error.message.includes('File too large')) {
+            return error.message; // Already user-friendly
+        }
+        
+        if (error.message.includes('file type not allowed')) {
+            return error.message; // Already user-friendly
+        }
+        
+        // JSON parsing errors
+        if (error.message.includes('JSON')) {
+            return 'Received an invalid response from the AI service. Please try again.';
+        }
+        
+        // Default fallback with generic message
+        return `An error occurred while communicating with the AI service: ${error.message}. Please try again or contact support if the problem persists.`;
+    }
+    
+    /**
+     * Scroll messages area to bottom
+     */
+    scrollToBottom() {
+        this.messagesArea.scrollTop = this.messagesArea.scrollHeight;
+    }
+    
+    /**
+     * Format message content (for streaming and regular messages)
+     * Uses the same renderMarkdown method as non-streaming for consistency
+     */
+    formatMessage(content) {
+        return this.renderMarkdown(content);
+    }
+    
+    /**
+     * Escape HTML entities
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    /**
+     * Create message action buttons (copy, regenerate, etc.)
+     */
+    createMessageActions() {
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'ai-chat-message-actions';
+        
+        // Copy button
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'ai-chat-message-action';
+        copyBtn.title = this.lang.copyMessageTitle;
+        copyBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+            </svg>
+        `;
+        copyBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            // Find the message content to copy
+            const messageDiv = e.target.closest('.ai-chat-message');
+            const contentDiv = messageDiv.querySelector('.ai-chat-message-content');
+            const content = contentDiv ? contentDiv.textContent : '';
+            this.copyMessageToClipboard(content, copyBtn);
+        });
+        
+        // Regenerate button
+        const regenBtn = document.createElement('button');
+        regenBtn.className = 'ai-chat-message-action';
+        regenBtn.title = this.lang.regenerateResponseTitle;
+        regenBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+            </svg>
+        `;
+        regenBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const messageDiv = e.target.closest('.ai-chat-message');
+            this.regenerateResponse(messageDiv);
+        });
+        
+        actionsDiv.appendChild(copyBtn);
+        actionsDiv.appendChild(regenBtn);
+        
+        return actionsDiv;
     }
 }
 

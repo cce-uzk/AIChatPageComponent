@@ -23,7 +23,32 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
 
     /** @var string */
     const SLOT_ID = "pgcp";
+	
+    private static $instance;
+	
+	/**
+     * Get plugin instance
+     * @return self
+     */
+    public static function getInstance() : self
+    {
+        if (!isset(self::$instance)) {
+            global $DIC;
 
+            $component_repository = $DIC["component.repository"];
+
+            $info = $component_repository->getPluginByName(self::PLUGIN_NAME);
+
+            $component_factory = $DIC["component.factory"];
+
+            $plugin_obj = $component_factory->getPlugin($info->getId());
+
+            self::$instance = $plugin_obj;
+        }
+
+        return self::$instance;
+    }
+	
     /**
      * Get plugin name
      * @return string
@@ -246,6 +271,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                         $newConfig->setPersistent($oldConfig->isPersistent());
                         $newConfig->setIncludePageContext($oldConfig->isIncludePageContext());
                         $newConfig->setEnableChatUploads($oldConfig->isEnableChatUploads());
+                        $newConfig->setEnableStreaming($oldConfig->isEnableStreaming());
                         $newConfig->setDisclaimer($oldConfig->getDisclaimer());
                         $newConfig->save();
                         
@@ -745,5 +771,4 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         
         return $cloned_files;
     }
-
 }

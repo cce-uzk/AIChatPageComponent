@@ -48,6 +48,20 @@ error_prefix#:#Fehler
 welcome_message#:#Starten Sie eine Unterhaltung...
 loading_text#:#Nachdenken...
 send_button_text#:#Senden
+config_file_restrictions_title#:#Datei-Verarbeitung & Upload-Kontrolle
+config_file_restrictions_info#:#KI-Dateiverarbeitung aktivieren und kontrollieren, welche Dateitypen für Hintergrunddateien und Chat-Uploads in allen Chat-Instanzen erlaubt sind.
+config_enable_file_handling#:#Datei-Verarbeitung für KI aktivieren
+config_enable_file_handling_info#:#Wenn aktiviert, kann die KI Hintergrunddateien und Chat-Uploads verarbeiten. Administratoren können kontrollieren, welche Dateitypen erlaubt sind und verschiedene Upload-Kontexte separat einschränken.
+config_allowed_file_types#:#Erlaubte Dateitypen
+config_allowed_file_types_info#:#Komma-getrennte Liste erlaubter Dateiendungen (z.B. txt,md,pdf,csv,png,jpg). Leer lassen um alle Typen zu erlauben wenn Beschränkungen deaktiviert sind.
+config_allow_background_files#:#Hintergrunddatei-Anhänge erlauben
+config_allow_background_files_info#:#Wenn aktiviert, können Benutzer Hintergrunddateien an Seitenkomponenten für KI-Kontext anhängen.
+config_allow_chat_uploads#:#Chat-Upload-Dateien erlauben
+config_allow_chat_uploads_info#:#Wenn aktiviert, können Benutzer Dateien direkt in Chat-Unterhaltungen hochladen.
+setting_disabled_by_admin#:#Einstellung durch Administrator deaktiviert.
+setting_disabled_by_admin_info#:#Diese Einstellung wurde global durch den Administrator deaktiviert.
+background_files_disabled#:#Hintergrunddatei-Uploads sind vom Administrator deaktiviert.
+chat_uploads_disabled#:#Chat-Datei-Uploads sind vom Administrator deaktiviert.
 stop_generation#:#Generierung stoppen
 default_chat_title#:#KI-Chat
 background_files_label#:#Hintergrunddateien
@@ -68,6 +82,8 @@ include_page_context_label#:#Seitenkontext einbeziehen
 include_page_context_info#:#Wenn aktiviert, hat die KI Zugriff auf den Inhalt der Seite, in die dieser Chat eingebettet ist. Dies hilft bei relevanteren und kontextbezogeneren Antworten.
 enable_chat_uploads_label#:#Chat-Dateiuploads aktivieren
 enable_chat_uploads_info#:#Wenn aktiviert, können Benutzer Dateien direkt in der Chat-Oberfläche hochladen. Wenn deaktiviert, stehen der KI nur die oben konfigurierten Hintergrunddateien zur Verfügung.
+enable_streaming_label#:#Streaming-Antworten aktivieren
+enable_streaming_info#:#Wenn aktiviert, werden KI-Antworten in Echtzeit während der Generierung gestreamt. Wenn deaktiviert, werden vollständige Antworten nach Abschluss angezeigt.
 legal_disclaimer_label#:#Rechtlicher Haftungsausschluss
 legal_disclaimer_info#:#Optionaler rechtlicher Haftungsausschluss, der den Benutzern angezeigt wird
 create_ai_chat_title#:#KI-Chat erstellen
@@ -84,6 +100,52 @@ remove_file_label#:#Entfernen
 check_files_to_remove_info#:#Markieren Sie die Dateien, die entfernt werden sollen.
 background_files_upload_info#:#Wählen Sie mehrere Dateien aus, die als Kontext für die KI-Unterhaltung dienen sollen. Unterstützte Formate: Bilder, PDFs, Textdateien.
 selected_files_label#:#Ausgewählte Dateien
-chat_limitations_info#:#<strong>Chat-Limitierungen & Empfehlungen:</strong><br>• <strong>Dateigröße:</strong> Maximal 5MB pro Datei<br>• <strong>Bilder/PDFs:</strong> Maximal 5 pro Nachricht, 15MB Base64-Daten total<br>• <strong>PDF-Seiten:</strong> Maximal 20 Seiten werden verarbeitet<br>• <strong>Nachrichtenlänge:</strong> Konfigurierbar (Standard: 2000 Zeichen)<br>• <strong>Chat-Gedächtnis:</strong> Konfigurierbar (Standard: 10 Nachrichten)<br>• <strong>Empfehlung:</strong> Für beste Ergebnisse verwenden Sie hochauflösende Bilder und klar strukturierte PDFs
+chat_limitations_info#:#<strong>Chat-Limitierungen & Empfehlungen:</strong><br>• <strong>Dateigröße:</strong> Maximal 5MB pro Datei<br>• <strong>Anhänge:</strong> Maximal 5 Dateien pro Nachricht<br>• <strong>PDF-Seiten:</strong> 20 Seiten werden pro PDF verarbeitet<br>• <strong>Nachrichtenlänge:</strong> Konfigurierbar (Standard: 2000 Zeichen)<br>• <strong>Chat-Gedächtnis:</strong> Konfigurierbar (Standard: 10 Nachrichten)<br>• <strong>Empfehlung:</strong> Für beste Ergebnisse verwenden Sie hochauflösende Bilder und klar strukturierte PDFs
 file_processing_info#:#<strong>Dateiverarbeitung:</strong><br>• <strong>Bilder:</strong> Automatische Optimierung auf 1024px, JPEG 85% Qualität<br>• <strong>PDFs:</strong> Conversion zu Bildern für OCR-Textanalyse<br>• <strong>Textdateien:</strong> Direkter Inhalt wird dem System-Prompt hinzugefügt
 usage_recommendations#:#<strong>Verwendungsempfehlungen:</strong><br>• Verwenden Sie spezifische System-Prompts für bessere Ergebnisse<br>• Aktivieren Sie Seitenkontext für kontextbezogene Antworten<br>• Begrenzen Sie große PDFs auf wesentliche Seiten<br>• Verwenden Sie persistente Chats für längere Unterhaltungen
+// Configuration GUI - Deutsche Übersetzungen (v1.0.6)
+config_title#:#AIChatPageComponent Konfiguration
+config_info#:#Diese Einstellungen gelten plugin-weit als Standardwerte für neue AI Chat-Instanzen. Die Konfiguration wird unabhängig vom AIChat Plugin in der eigenen pcaic_config Tabelle gespeichert.
+config_defaults_title#:#Standard-Werte
+config_defaults_info#:#Standard-Werte für neue AI Chat-Instanzen festlegen
+config_default_prompt#:#Standard System-Prompt
+config_default_prompt_info#:#Standard System-Prompt für neue AI Chat-Instanzen
+config_default_char_limit#:#Standard Zeichenlimit
+config_default_char_limit_info#:#Standard maximale Zeichen pro Nachricht
+config_default_max_memory#:#Standard Gedächtnis-Nachrichten
+config_default_max_memory_info#:#Standard Anzahl vorheriger Nachrichten im AI-Kontext
+config_default_disclaimer#:#Standard Haftungsausschluss
+config_default_disclaimer_info#:#Standard Haftungsausschluss-Text für Benutzer
+config_services_title#:#AI Services
+config_services_info#:#Verfügbare AI Services konfigurieren
+config_service_ramses#:#RAMSES Service
+config_service_ramses_info#:#RAMSES (Universität zu Köln Mistral) Service aktivieren
+config_service_openai#:#OpenAI Service  
+config_service_openai_info#:#OpenAI GPT Service aktivieren
+config_processing_title#:#Verarbeitungs-Limits
+config_processing_info#:#Limits für AI-Verarbeitung und Datenbearbeitung konfigurieren
+config_upload_title#:#Datei-Upload Beschränkungen
+config_upload_info#:#Limits für Datei-Uploads pro Nachricht konfigurieren
+config_max_file_size#:#Maximale Dateigröße (MB)
+config_max_file_size_info#:#Maximale Größe pro hochgeladener Datei in Megabyte
+config_max_attachments#:#Maximale Anhänge pro Nachricht
+config_max_attachments_info#:#Maximale Anzahl Dateien pro Chat-Nachricht
+config_max_upload_size#:#Maximale Gesamt-Upload-Größe (MB)
+config_max_upload_size_info#:#Maximale kombinierte Größe aller Dateien pro Chat-Nachricht in Megabyte
+config_pdf_pages_processed#:#PDF-Seiten verarbeitet
+config_pdf_pages_processed_info#:#Anzahl verarbeiteter Seiten pro PDF-Dokument (keine Begrenzung, sondern Anzahl analysierter Seiten)
+config_max_image_data#:#Maximale Gesamt-Bilddaten
+config_max_image_data_info#:#Maximale Gesamt-Base64-Bilddaten pro Chat-Nachricht (für AI-Verarbeitung)
+config_enable_streaming#:#Streaming-Antworten aktivieren
+config_enable_streaming_info#:#Wenn aktiviert, werden AI-Antworten in Echtzeit übertragen, während sie generiert werden, für sofortiges Benutzerfeedback
+config_saved_success#:#Konfiguration erfolgreich gespeichert
+config_saved_error#:#Fehler beim Speichern der Konfiguration
+config_aichat_not_available#:#AIChat Plugin-Konfiguration nicht verfügbar
+config_aichat_not_found#:#AIChat Plugin nicht gefunden
+config_save_error#:#Fehler beim Speichern der Konfiguration
+config_form_invalid#:#Bitte überprüfen Sie Ihre Formular-Eingaben
+config_load_error#:#Fehler beim Laden des Konfigurationsformulars
+error_max_attachments#:#Maximal %d Anhänge pro Nachricht erlaubt
+error_file_too_large#:#Datei zu groß. Maximale Größe ist %dMB
+error_file_type_not_allowed#:#Dateityp nicht erlaubt: %s
+error_file_upload_failed#:#Datei-Upload fehlgeschlagen: %s

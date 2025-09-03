@@ -5,6 +5,7 @@ use ILIAS\FileUpload\Handler\BasicFileInfoResult;
 use ILIAS\FileUpload\Handler\BasicHandlerResult;
 use ILIAS\FileUpload\Handler\FileInfoResult;
 use ILIAS\FileUpload\Handler\HandlerResult;
+use ILIAS\Plugin\pcaic\Validation\FileUploadValidator;
 
 /**
  * File Upload Handler for AI Chat Background Files
@@ -75,20 +76,27 @@ class ilAIChatBackgroundFileUploadHandler extends AbstractCtrlAwareUploadHandler
                     continue;
                 }
                 
-                // Validate file type
-                $mime_type = $result->getMimeType();
-                $allowed_types = [
-                    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-                    'application/pdf', 'text/plain', 'text/csv', 'text/json',
-                    'text/markdown'
-                ];
-                
-                if (!in_array($mime_type, $allowed_types)) {
+                // Check if background file uploads are enabled first
+                if (!FileUploadValidator::isUploadEnabled('background')) {
+                    $this->logger->info("Background file uploads disabled by admin");
                     continue;
                 }
                 
-                // Validate file size (max 10MB)
-                if ($result->getSize() > 10 * 1024 * 1024) {
+                // Create temporary file info for validation
+                $temp_upload_info = [
+                    'name' => $result->getName(),
+                    'size' => $result->getSize(),
+                    'tmp_name' => $result->getPath()  // ILIAS UploadResult path
+                ];
+                
+                // Use FileUploadValidator for comprehensive validation
+                $validation_result = FileUploadValidator::validateUpload($temp_upload_info, 'background', $this->chat_id);
+                if (!$validation_result['success']) {
+                    $this->logger->info("Background file validation failed", [
+                        'filename' => $result->getName(),
+                        'size' => $result->getSize(),
+                        'error' => $validation_result['error']
+                    ]);
                     continue;
                 }
 

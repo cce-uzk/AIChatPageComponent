@@ -185,7 +185,7 @@ abstract class AIChatPageComponentLLM
         $maxTotalImageSizeMB = $maxTotalImageSizeMBConfig ? (int)$maxTotalImageSizeMBConfig : 15;
         $maxTotalImageSize = $maxTotalImageSizeMB * 1024 * 1024;
         $imageCount = 0;
-        $maxImagesConfig = \platform\AIChatPageComponentConfig::get('max_images_per_message');
+        $maxImagesConfig = \platform\AIChatPageComponentConfig::get('max_attachments_per_message');
         $maxImages = $maxImagesConfig ? (int)$maxImagesConfig : 5;
         
         // Log configuration source

@@ -25,6 +25,7 @@ class ChatConfig
     private bool $persistent = true;
     private bool $includePageContext = true;
     private bool $enableChatUploads = false;
+    private bool $enableStreaming = true;
     private string $disclaimer = '';
     private ?\DateTime $createdAt = null;
     private ?\DateTime $updatedAt = null;
@@ -38,6 +39,9 @@ class ChatConfig
             $this->chatId = uniqid('chat_', true);
             $this->createdAt = new \DateTime();
             $this->updatedAt = new \DateTime();
+            
+            // Load defaults from global configuration for new instances
+            $this->loadGlobalDefaults();
         }
     }
 
@@ -73,6 +77,7 @@ class ChatConfig
             $this->persistent = (bool)$row['persistent'];
             $this->includePageContext = (bool)$row['include_page_context'];
             $this->enableChatUploads = (bool)$row['enable_chat_uploads'];
+            $this->enableStreaming = (bool)($row['enable_streaming'] ?? true);
             $this->disclaimer = $row['disclaimer'] ?? '';
             
             $this->createdAt = $row['created_at'] ? new \DateTime($row['created_at']) : null;
@@ -82,6 +87,51 @@ class ChatConfig
         }
         
         return false;
+    }
+
+    /**
+     * Load default values from global plugin configuration
+     */
+    private function loadGlobalDefaults(): void
+    {
+        try {
+            require_once(__DIR__ . '/../../classes/platform/class.AIChatPageComponentConfig.php');
+            
+            // Load defaults from global configuration
+            $default_prompt = \platform\AIChatPageComponentConfig::get('default_prompt');
+            if (!empty($default_prompt)) {
+                $this->systemPrompt = $default_prompt;
+            }
+            
+            $default_disclaimer = \platform\AIChatPageComponentConfig::get('default_disclaimer');
+            if (!empty($default_disclaimer)) {
+                $this->disclaimer = $default_disclaimer;
+            }
+            
+            $char_limit = \platform\AIChatPageComponentConfig::get('characters_limit');
+            if (!empty($char_limit)) {
+                $this->charLimit = (int)$char_limit;
+            }
+            
+            $max_memory = \platform\AIChatPageComponentConfig::get('max_memory_messages');
+            if (!empty($max_memory)) {
+                $this->maxMemory = (int)$max_memory;
+            }
+            
+            global $DIC;
+            $DIC->logger()->comp('pcaic')->debug("Loaded global defaults for new ChatConfig", [
+                'system_prompt_length' => strlen($this->systemPrompt),
+                'disclaimer_length' => strlen($this->disclaimer),
+                'char_limit' => $this->charLimit,
+                'max_memory' => $this->maxMemory
+            ]);
+            
+        } catch (\Exception $e) {
+            global $DIC;
+            $DIC->logger()->comp('pcaic')->warning("Failed to load global defaults for ChatConfig", [
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 
     /**
@@ -112,6 +162,7 @@ class ChatConfig
             'persistent' => ['integer', $this->persistent ? 1 : 0],
             'include_page_context' => ['integer', $this->includePageContext ? 1 : 0],
             'enable_chat_uploads' => ['integer', $this->enableChatUploads ? 1 : 0],
+            'enable_streaming' => ['integer', $this->enableStreaming ? 1 : 0],
             'disclaimer' => ['clob', $this->disclaimer],
             'updated_at' => ['timestamp', $this->updatedAt->format('Y-m-d H:i:s')]
         ];
@@ -206,6 +257,8 @@ class ChatConfig
     public function setIncludePageContext(bool $includePageContext): void { $this->includePageContext = $includePageContext; }
     public function isEnableChatUploads(): bool { return $this->enableChatUploads; }
     public function setEnableChatUploads(bool $enableChatUploads): void { $this->enableChatUploads = $enableChatUploads; }
+    public function isEnableStreaming(): bool { return $this->enableStreaming; }
+    public function setEnableStreaming(bool $enableStreaming): void { $this->enableStreaming = $enableStreaming; }
     public function getDisclaimer(): string { return $this->disclaimer; }
     public function setDisclaimer(string $disclaimer): void { $this->disclaimer = $disclaimer; }
     public function getCreatedAt(): ?\DateTime { return $this->createdAt; }
