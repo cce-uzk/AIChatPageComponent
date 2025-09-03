@@ -648,7 +648,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         $logger = $DIC->logger()->comp('pcaic');
         
         try {
-            $tables = ['pcaic_attachments', 'pcaic_messages', 'pcaic_sessions', 'pcaic_chats', 'pcaic_data'];
+            $tables = ['pcaic_attachments', 'pcaic_messages', 'pcaic_sessions', 'pcaic_chats', 'pcaic_config', 'pcaic_data'];
             $dropped_tables = [];
             
             foreach ($tables as $table) {

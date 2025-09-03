@@ -1,4 +1,4 @@
-<div class="ai-chat-container" id="{CONTAINER_ID}" data-chat-id="{CHAT_ID}" data-api-url="{API_URL}" data-system-prompt="{SYSTEM_PROMPT}" data-max-memory="{MAX_MEMORY}" data-char-limit="{CHAR_LIMIT}" data-persistent="{PERSISTENT}" data-ai-service="{AI_SERVICE}" data-page-id="{PAGE_ID}" data-parent-id="{PARENT_ID}" data-parent-type="{PARENT_TYPE}" data-include-page-context="{INCLUDE_PAGE_CONTEXT}" data-background-files="{BACKGROUND_FILES}" data-enable-chat-uploads="{ENABLE_CHAT_UPLOADS}" data-clear-chat-confirm="{CLEAR_CHAT_CONFIRM}" data-copy-message-title="{COPY_MESSAGE_TITLE}" data-like-response-title="{LIKE_RESPONSE_TITLE}" data-dislike-response-title="{DISLIKE_RESPONSE_TITLE}" data-regenerate-response-title="{REGENERATE_RESPONSE_TITLE}" data-message-copied="{MESSAGE_COPIED}" data-message-copy-failed="{MESSAGE_COPY_FAILED}" data-thinking-header="{THINKING_HEADER}" data-generation-stopped="{GENERATION_STOPPED}" data-regenerate-failed="{REGENERATE_FAILED}" data-welcome-message="{WELCOME_MESSAGE}" data-stop-generation="{STOP_GENERATION}" data-remove-attachment="{REMOVE_ATTACHMENT}" data-send-aria-label="{SEND_ARIA_LABEL}">
+<div class="ai-chat-container" id="{CONTAINER_ID}" data-chat-id="{CHAT_ID}" data-api-url="{API_URL}" data-system-prompt="{SYSTEM_PROMPT}" data-max-memory="{MAX_MEMORY}" data-char-limit="{CHAR_LIMIT}" data-persistent="{PERSISTENT}" data-ai-service="{AI_SERVICE}" data-page-id="{PAGE_ID}" data-parent-id="{PARENT_ID}" data-parent-type="{PARENT_TYPE}" data-include-page-context="{INCLUDE_PAGE_CONTEXT}" data-background-files="{BACKGROUND_FILES}" data-enable-chat-uploads="{ENABLE_CHAT_UPLOADS}" data-enable-streaming="{ENABLE_STREAMING}" data-clear-chat-confirm="{CLEAR_CHAT_CONFIRM}" data-copy-message-title="{COPY_MESSAGE_TITLE}" data-like-response-title="{LIKE_RESPONSE_TITLE}" data-dislike-response-title="{DISLIKE_RESPONSE_TITLE}" data-regenerate-response-title="{REGENERATE_RESPONSE_TITLE}" data-message-copied="{MESSAGE_COPIED}" data-message-copy-failed="{MESSAGE_COPY_FAILED}" data-thinking-header="{THINKING_HEADER}" data-generation-stopped="{GENERATION_STOPPED}" data-regenerate-failed="{REGENERATE_FAILED}" data-welcome-message="{WELCOME_MESSAGE}" data-stop-generation="{STOP_GENERATION}" data-remove-attachment="{REMOVE_ATTACHMENT}" data-send-aria-label="{SEND_ARIA_LABEL}" data-max-file-size-mb="{MAX_FILE_SIZE_MB}" data-max-attachments-per-message="{MAX_ATTACHMENTS_PER_MESSAGE}" data-error-max-attachments="{ERROR_MAX_ATTACHMENTS}" data-error-file-too-large="{ERROR_FILE_TOO_LARGE}" data-error-file-type-not-allowed="{ERROR_FILE_TYPE_NOT_ALLOWED}" data-error-file-upload-failed="{ERROR_FILE_UPLOAD_FAILED}">
     <!-- Chat Header -->
     <div class="ai-chat-header">
         <h3>{CHAT_TITLE}</h3>
@@ -26,9 +26,11 @@
     </div>
     
     <!-- File Attachments Preview -->
+    <!-- BEGIN chat_attachments_area -->
     <div class="ai-chat-attachments" style="display: none;">
         <!-- Attachment thumbnails will be inserted here -->
     </div>
+    <!-- END chat_attachments_area -->
     
     <!-- Input Area with CSS Grid -->
     <div class="ai-chat-composer" data-expanded="false">
@@ -45,6 +47,7 @@
             </div>
             
             <!-- Left Actions (Attach Button) -->
+            <!-- BEGIN chat_attach_button -->
             <div class="ai-chat-composer-leading">
                 <button class="ai-chat-composer-btn ai-chat-attach-btn" 
                         title="{ATTACH_FILE_TITLE}" 
@@ -54,6 +57,7 @@
                     </svg>
                 </button>
             </div>
+            <!-- END chat_attach_button -->
             
             <!-- Right Actions (Send/Stop Buttons) -->
             <div class="ai-chat-composer-trailing">
@@ -82,7 +86,9 @@
     </div>
     
     <!-- Hidden File Input -->
-    <input type="file" class="ai-chat-file-input" multiple accept="image/*,.pdf,.txt,.csv,.md" aria-label="{FILE_INPUT_ARIA_LABEL}">
+    <!-- BEGIN chat_file_input -->
+    <input type="file" class="ai-chat-file-input" multiple aria-label="{FILE_INPUT_ARIA_LABEL}">
+    <!-- END chat_file_input -->
     
     <!-- Legal Disclaimer -->
     <!-- BEGIN disclaimer -->
