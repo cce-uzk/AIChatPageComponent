@@ -4,6 +4,8 @@
 
 A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered chat interfaces directly into learning pages. Each chat instance can be configured with custom system prompts for educational purposes, such as interactive exercises in AI literacy or subject-specific tutoring.
 
+> **⚠️ Important Note**: This is a **custom/internal plugin** specifically designed for use with the University of Cologne's local RAMSES AI service. Organizations wishing to use this plugin will need to customize it according to their own AI service requirements and infrastructure. The plugin is not plug-and-play for external installations without proper adaptation.
+
 ## Screenshots
 
 ### Chat Interface in Action
@@ -33,6 +35,10 @@ A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered ch
 - **Multimodal Support**: Full support for text, images, and PDF document analysis
 - **Background Files**: Upload context documents (text, images, PDFs) that inform AI responses
 - **Session Management**: User-specific chat sessions with message history persistence
+- **Global Configuration**: Administrator limits override local chat settings
+- **Real-time Validation**: Limits with live feedback (character limits, upload limits)
+- **Session Detection**: Automatic ILIAS session validation with user-friendly expiration handling
+- **File Processing Pipeline**: Automatic image optimization, PDF-to-image conversion, multimodal AI integration
 - **Responsive UI**: Modern, accessible interface using ILIAS 9 UI components
 - **Production Ready**: Comprehensive logging, error handling, and security measures
 
@@ -40,7 +46,7 @@ A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered ch
 
 ### System Requirements
 - **ILIAS**: 9.x
-- **PHP**: 8.2 or higher
+- **PHP**: 8.1 or higher
 - **MySQL**: 8.0 or higher
 - **Web Server**: Apache 2.4+ or Nginx 1.18+
 
@@ -48,6 +54,7 @@ A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered ch
 - **AIChat Plugin**: Must be installed and properly configured
 - **RAMSES AI Service**: Currently integrated with RAMSES endpoint
 - **PHP Extensions**: `curl`, `gd`, `imagick` (recommended), `ghostscript` (for PDF processing)
+- **ILIAS ResourceStorage**: For secure file handling (built-in ILIAS 9)
 
 ## Installation
 
@@ -77,11 +84,12 @@ php setup/setup.php update
 ```
 
 ### 4. Database Setup
-The plugin automatically creates required database tables:
+The plugin automatically creates required database tables via `sql/dbupdate.php`:
 - `pcaic_chats`: Chat configurations per PageComponent
 - `pcaic_sessions`: User sessions per chat
 - `pcaic_messages`: Messages bound to sessions
 - `pcaic_attachments`: File attachments
+- `pcaic_config`: Plugin-wide configuration settings
 
 ### 5. Install and Activate Plugin
 In ILIAS Administration:
@@ -120,7 +128,6 @@ php -m | grep -E "(curl|gd|imagick)"
 3. Configure the chat:
    - **System Prompt**: Define the AI's role and behavior
    - **Background Files**: Upload context documents (optional)
-   - **Memory Settings**: Configure conversation history length
 
 #### Configuration Options
 - **System Prompt**: Customize AI behavior and context
@@ -131,23 +138,27 @@ php -m | grep -E "(curl|gd|imagick)"
   ```
 - **Background Files**: Upload supporting materials
   - Text files (.txt, .md, .csv): Added to AI context
-  - Images (.jpg, .png, .gif, .webp): Visual analysis
-  - PDFs (.pdf): Converted to images for analysis
+  - Images (.jpg, .png, .gif, .webp): Visual analysis with automatic optimization
+  - PDFs (.pdf): Converted to images for multimodal analysis (default up to 20 pages)
 - **Memory Limit**: Number of previous messages to remember (default: 10)
+- **Global Overrides**: Administrator settings take precedence over local configuration
 
 ### For Students
 
 #### Using AI Chats
 1. Navigate to any page containing AI chat components
-2. Type messages in the chat interface
-3. Upload images or documents for AI analysis
-4. View conversation history and download files
-5. Each chat maintains separate conversation context
+2. Type messages in the chat interface with real-time character counter
+3. Upload images or documents for AI analysis (drag & drop supported)
+4. View conversation history with copy/download functionality
+5. Each chat maintains separate user-specific session context
+6. Automatic session validation with user-friendly expiration handling
 
 #### File Upload Support
-- **Images**: Direct analysis and discussion
-- **PDFs**: Automatic page-by-page conversion and analysis
+- **Images**: Direct multimodal analysis and discussion
+- **PDFs**: Automatic page-by-page conversion (ghostscript) and AI analysis
 - **Text Files**: Content integration into conversation context
+- **File Persistence**: Uploads survive page reloads and session changes
+- **Preview Support**: Image previews and download links for all file types
 
 ## Architecture
 
@@ -156,40 +167,54 @@ php -m | grep -E "(curl|gd|imagick)"
 AIChatPageComponent/
 ├── classes/                 # Core plugin classes
 │   ├── ai/                 # AI service integrations
-│   ├── objects/            # Data models (legacy)
 │   ├── platform/           # Configuration bridge
 │   └── class.*.php         # ILIAS integration classes
-├── src/                    # Modern PHP 8 classes
-│   ├── Model/              # Database models
-│   ├── Service/            # Business logic services
-│   └── Storage/            # File storage handling
-├── js/                     # Frontend JavaScript
-├── css/                    # Styling
-├── sql/                    # Database schema
-└── lang/                   # Translations
+├── src/                    # Modern PHP 8+ classes
+│   └── Model/              # Database models (ChatConfig, ChatSession, ChatMessage, Attachment)
+├── js/                     # Frontend JavaScript (ES6+ with comprehensive JSDoc)
+├── css/                    # Modern CSS with ILIAS 9 UI integration
+├── sql/                    # Database schema (dbupdate.php)
+├── lang/                   # Translations (DE/EN)
+└── vendor/                 # Composer dependencies
 ```
 
 ### Database Architecture
-The plugin uses a clean separation of concerns:
-- **Configuration**: Stored per PageComponent instance
-- **Sessions**: User-specific chat contexts
-- **Messages**: Conversation history with attachments
-- **Files**: ILIAS ResourceStorage integration
+The plugin uses the following table structure with clean separation of concerns:
 
-### AI Integration
+#### **Core Tables**
+- **`pcaic_chats`**: PageComponent configuration (system_prompt, background_files, limits)
+- **`pcaic_sessions`**: User-specific chat sessions with automatic cleanup
+- **`pcaic_messages`**: Conversation history bound to sessions
+- **`pcaic_attachments`**: File attachments with ILIAS IRSS integration
+- **`pcaic_config`**: Global plugin configuration (admin overrides)
+
+#### **API Architecture**
+- **Backend-Controlled**: Configuration managed server-side
+- **Clean Frontend**: Only sends `chat_id` + `message` + `attachment_ids`
+- **Session Management**: Automatic user session creation and management
+
+### AI Integration & File Processing
 Currently integrated with **RAMSES** (Mistral-based service):
-- Endpoint: `https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions`
-- Multimodal support for text, images, and document analysis
-- Configurable model parameters and memory management
+- **Endpoint**: `https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions`
+- **Multimodal Support**: Text, images, and document analysis
+- **Configurable Parameters**: Model settings and memory management
+
+#### **Advanced File Processing Pipeline**
+- **Text Files** (txt, md, csv): Direct content integration to system prompt
+- **Images** (jpg, png, gif, webp): ILIAS Flavours compression → Base64 → Multimodal AI
+- **PDFs**: Ghostscript page-wise conversion → PNG images → Base64 → Multimodal AI
+- **Optimization**: Size limits (default: 15MB image data, 20 pages per PDF), automatic compression
+- **Error Handling**: Fallbacks for failed conversions, graceful degradation
 
 ## Development
 
 ### Code Standards
-- **PHP 8.2+** with strict types
+- **PHP 8.1+** with strict types and modern features
 - **PSR-4** autoloading via Composer
 - **ILIAS 9** UI components and services
+- **Comprehensive JSDoc documentation** for all JavaScript functions
+- **Professional error handling** with session validation and user feedback
 - **Comprehensive logging** with structured context
-- **Full test coverage** (unit and integration tests)
 
 ## Security
 
@@ -208,7 +233,8 @@ This plugin implements comprehensive security measures:
 #### Plugin Not Visible
 - Ensure AIChat plugin is installed and activated
 - Check ILIAS permissions for PageComponent access
-- Verify PHP version compatibility (8.2+)
+- Verify PHP version compatibility (8.1+)
+- Ensure database tables were created via dbupdate.php
 
 #### File Upload Failures
 ```bash
@@ -222,11 +248,18 @@ ls -la /var/www/html/ilias/data/
 #### AI Response Errors
 - Check RAMSES endpoint connectivity
 - Verify API credentials in AIChat plugin
-- Review ILIAS logs: `/var/log/ilias/ilias.log`
+- Review ILIAS logs: `/var/www/logs/ilias.log`
+- Check plugin debug logs for detailed error information
+
+#### Session Expiration Issues
+- Plugin automatically detects ILIAS session expiration
+- Users receive user-friendly session expired messages
+- No data loss - messages are preserved until proper logout
 
 ### Log Locations
 - **ILIAS Component Log**: Component-specific logging (`comp.pcaic`)
 - **Application Log**: ILIAS data directory logs
+- **Debug Log**: Plugin directory `debug.log` (development)
 
 ## License
 
@@ -247,4 +280,14 @@ For support and questions:
 
 ---
 
-**Note**: This plugin requires proper configuration of the AIChat base plugin and RAMSES AI service access. Contact your system administrator for setup assistance.
+## Customization for External Use
+
+**This plugin is designed for University of Cologne's infrastructure.** To adapt it for your organization:
+
+1. **AI Service Integration**: Modify `/classes/ai/` to integrate with your AI service endpoint
+2. **Authentication**: Update API authentication methods in the AIChat base plugin
+3. **File Processing**: Adjust file handling according to your server capabilities
+4. **Configuration**: Adapt default settings and limits to your requirements
+5. **Testing**: Thoroughly test all functionality with your specific setup
+
+**Note**: This plugin requires proper configuration of the AIChat base plugin and AI service access. Contact your system administrator for setup assistance.
