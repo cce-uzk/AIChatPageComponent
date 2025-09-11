@@ -40,7 +40,7 @@ package-lock.json
 yarn.lock
 
 # Composer (PHP dependencies)
-/vendor/
+# /vendor/ - keeping vendor for plugin distribution
 composer.lock
 
 # JavaScript vendor libraries (keep these in version control)
