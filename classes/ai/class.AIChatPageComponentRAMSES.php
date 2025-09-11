@@ -310,8 +310,8 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     {
         $curlSession = curl_init();
 
-        // Get certificate path from AIChat plugin
-        $plugin = \ilAIChatPlugin::getInstance();
+        // Get certificate path from this plugin
+        $plugin = \ilAIChatPageComponentPlugin::getInstance();
         $plugin_path = $plugin->getDirectory();
         $absolute_plugin_path = realpath($plugin_path);
         $ca_cert_path = $absolute_plugin_path . '/certs/RAMSES.pem';
