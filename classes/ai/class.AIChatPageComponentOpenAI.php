@@ -74,7 +74,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         // Add the provided messages
         $messagesArray = array_merge($messagesArray, $messages);
         
-        $apiUrl = 'https://api.openai.com/v1/chat/completions';
+        $apiUrl = \platform\AIChatPageComponentConfig::get('openai_api_url') ?: 'https://api.openai.com/v1/chat/completions';
 
         $payload = json_encode([
             "messages" => $messagesArray,
@@ -100,7 +100,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             throw new AIChatPageComponentException('Invalid chat object type');
         }
         
-        $apiUrl = 'https://api.openai.com/v1/chat/completions';
+        $apiUrl = \platform\AIChatPageComponentConfig::get('openai_api_url') ?: 'https://api.openai.com/v1/chat/completions';
 
         $payload = json_encode([
             "messages" => $this->chatToMessagesArray($chat),
@@ -207,23 +207,23 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
      * Initialize OpenAI with AIChat configuration
      * @throws AIChatPageComponentException
      */
-    public static function createFromAIChatConfig(): self
+    /**
+     * Factory method to create OpenAI instance with plugin configuration
+     * 
+     * @return self Configured OpenAI instance
+     * @throws AIChatPageComponentException If configuration loading fails
+     */
+    public static function fromConfig(): self
     {
         try {
-            // Dynamically determine AIChat plugin path
-            $ilias_root = rtrim(dirname(dirname(dirname(dirname(dirname(dirname(dirname(__DIR__))))))), '/');
-            $aichat_plugin_path = $ilias_root . '/Customizing/global/plugins/Services/Repository/RepositoryObject/AIChat/classes/objects/class.AIChat.php';
+            // Get model, API key and streaming from plugin configuration
+            $model = \platform\AIChatPageComponentConfig::get('openai_selected_model') ?: 'gpt-3.5-turbo';
+            $apiKey = \platform\AIChatPageComponentConfig::get('openai_api_token') ?: '';
+            $streaming = (\platform\AIChatPageComponentConfig::get('openai_streaming_enabled') ?? '0') === '1';
             
-            // Use the AIChat plugin's AIChat class to get proper configuration
-            require_once $aichat_plugin_path;
-            
-            // Create a temporary AIChat object to access configuration
-            $aiChatObj = new \objects\AIChat();
-            
-            // Get model, API key and streaming from AIChat object
-            $model = $aiChatObj->getOpenaiModel() ?: 'gpt-3.5-turbo';
-            $apiKey = $aiChatObj->getOpenaiApiKey() ?: '';
-            $streaming = $aiChatObj->isOpenaiStreaming();
+            if (empty($apiKey)) {
+                throw new AIChatPageComponentException("OpenAI API token not configured");
+            }
             
             $openai = new self($model);
             $openai->setApiKey($apiKey);
@@ -231,7 +231,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             
             return $openai;
         } catch (\Exception $e) {
-            throw new AIChatPageComponentException("Failed to create OpenAI instance from AIChat config: " . $e->getMessage());
+            throw new AIChatPageComponentException("Failed to create OpenAI instance from plugin config: " . $e->getMessage());
         }
     }
 }

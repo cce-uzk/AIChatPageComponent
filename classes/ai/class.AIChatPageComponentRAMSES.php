@@ -36,23 +36,41 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     /** @var bool Whether to use streaming responses (currently not implemented) */
     private bool $streaming = false;
     
-    /** 
-     * Available RAMSES model configurations
-     * Maps internal model IDs to human-readable names
+    /**
+     * Get available RAMSES models from configuration
+     * 
+     * @return array Available models from cached API response
      */
-    public const MODEL_TYPES = [
-        "mistral-small-3-2-24b-instruct-2506" => "Mistral small 3.2.24b"
-    ];
+    public static function getModelTypes(): array
+    {
+        $cached_models = \platform\AIChatPageComponentConfig::get('cached_models');
+        
+        if (is_array($cached_models) && !empty($cached_models)) {
+            return $cached_models;
+        }
+        
+        // No fallback models - models must be fetched from API
+        return [];
+    }
 
     /**
-     * Constructor - initializes RAMSES service with specified model
+     * Constructor - initializes RAMSES service with configured model and API settings
      * 
-     * @param string $model Model identifier from MODEL_TYPES
+     * @param string|null $model Optional model identifier, uses configured model if not provided
      */
-    public function __construct(string $model)
+    public function __construct(string $model = null)
     {
         parent::__construct();
+        
+        // Use configured model if none provided
+        if ($model === null) {
+            $model = \platform\AIChatPageComponentConfig::get('ramses_selected_model') ?: 'swiss-ai-apertus-70b-instruct-2509';
+        }
+        
         $this->model = $model;
+        
+        // Load API token from configuration
+        $this->apiKey = \platform\AIChatPageComponentConfig::get('ramses_api_token') ?: '';
     }
 
     /**
@@ -108,7 +126,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     {
         global $DIC;
 
-        $apiUrl = 'https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions';
+        $apiUrl = \platform\AIChatPageComponentConfig::get('ramses_chat_api_url') ?: 'https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions';
 
         $this->logger->debug("RAMSES sendMessagesArray called");
         $this->logger->debug("Processing context resources", ['count' => count($contextResources)]);
@@ -237,7 +255,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     {
         global $DIC;
 
-        $apiUrl = 'https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions';
+        $apiUrl = \platform\AIChatPageComponentConfig::get('ramses_chat_api_url') ?: 'https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions';
 
         $this->logger->debug("RAMSES sendMessagesArray prompt check", [
             'prompt_value' => $this->prompt,
@@ -402,7 +420,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                 throw new AIChatPageComponentException("Invalid JSON response from RAMSES API: " . json_last_error_msg());
             }
             if (!isset($decodedResponse['choices'][0]['message']['content'])) {
-                throw new AIChatPageComponentException("Unexpected API response structure from RAMSES");
+                throw new AIChatPageComponentException("Unexpected API response structure from RAMSES" . $response);
             }
             return $decodedResponse['choices'][0]['message']['content'];
         }
@@ -431,30 +449,28 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     }
 
     /**
-     * Initialize RAMSES with AIChat configuration
-     * @throws AIChatPageComponentException
+     * Factory method to create RAMSES instance with plugin configuration
+     * 
+     * @return self Configured RAMSES instance
+     * @throws AIChatPageComponentException If configuration loading fails
      */
-    public static function createFromAIChatConfig(): self
+    public static function fromConfig(): self
     {
         try {
-            $ilias_root = rtrim(ILIAS_ABSOLUTE_PATH, '/');
-        
-            // Use the AIChat plugin's AIChat class to get proper configuration
-            require_once $ilias_root . '/Customizing/global/plugins/Services/Repository/RepositoryObject/AIChat/classes/objects/class.AIChat.php';
+            // Get model and API key from plugin configuration
+            $model = \platform\AIChatPageComponentConfig::get('ramses_selected_model') ?: 'swiss-ai-apertus-70b-instruct-2509';
+            $apiKey = \platform\AIChatPageComponentConfig::get('ramses_api_token') ?: '';
             
-            // Create a temporary AIChat object to access configuration
-            $aiChatObj = new \objects\AIChat();
-            
-            // Get model and API key from AIChat object
-            $model = $aiChatObj->getRamsesModel() ?: 'mistral-small-3-2-24b-instruct-2506';
-            $apiKey = $aiChatObj->getRamsesApiKey() ?: '';
+            if (empty($apiKey)) {
+                throw new AIChatPageComponentException("RAMSES API token not configured");
+            }
             
             $ramses = new self($model);
             $ramses->setApiKey($apiKey);
             
             return $ramses;
         } catch (\Exception $e) {
-            throw new AIChatPageComponentException("Failed to create RAMSES instance from AIChat config: " . $e->getMessage());
+            throw new AIChatPageComponentException("Failed to create RAMSES instance from plugin config: " . $e->getMessage());
         }
     }
 }

@@ -51,10 +51,11 @@ A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered ch
 - **Web Server**: Apache 2.4+ or Nginx 1.18+
 
 ### Dependencies
-- **AIChat Plugin**: Must be installed and properly configured
-- **RAMSES AI Service**: Currently integrated with RAMSES endpoint
+- **RAMSES AI Service**: Direct integration with RAMSES API endpoint
 - **PHP Extensions**: `curl`, `gd`, `imagick` (recommended), `ghostscript` (for PDF processing)
 - **ILIAS ResourceStorage**: For secure file handling (built-in ILIAS 9)
+
+> **✅ Independent Plugin**: This plugin is now **fully independent** and does **not require the AIChat base plugin**. All RAMSES integration is handled directly within this plugin.
 
 ## Installation
 
@@ -69,14 +70,11 @@ cd AIChatPageComponent
 git checkout main
 ```
 
-### 2. Install Dependencies
-Ensure the AIChat plugin is installed and configured:
-```bash
-# Look at: [https://github.com/cce-uzk/AIChatForILIAS.git](https://github.com/nstaszak/AIChatForILIAS)
-```
+### 2. No Additional Dependencies
+This plugin is self-contained and requires no additional plugins.
 
 ### 3. Install Composer Dependencies
-1. Navigate to the root directory of your ILIAS installation
+Navigate to the root directory of your ILIAS installation:
 ```bash
 composer du
 npm install
@@ -100,10 +98,17 @@ In ILIAS Administration:
 
 ## Configuration
 
-### AIChat Plugin Setup
-1. Configure the base AIChat plugin with RAMSES credentials
-2. Set API endpoints and authentication keys
-3. Configure available AI models and parameters
+### RAMSES API Setup
+After plugin activation, configure the RAMSES integration:
+
+1. Navigate to **Administration > Extending ILIAS > Plugins**
+2. Find **AIChatPageComponent** and click **Configure**
+3. In the **RAMSES API Configuration** section:
+   - **RAMSES Chat API URL**: Set the chat completions endpoint (default: `https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions`)
+   - **RAMSES Models API URL**: Set the models endpoint (default: `https://ramses-oski.itcc.uni-koeln.de/v1/models`)
+   - **RAMSES API Token**: Enter your API authentication token
+   - **Selected Model**: Choose from available models (automatically loaded from API)
+   - **Refresh Models**: Check to reload available models from API
 
 ### System Requirements Check
 Verify your system has required components:
@@ -247,9 +252,10 @@ ls -la /var/www/html/ilias/data/
 
 #### AI Response Errors
 - Check RAMSES endpoint connectivity
-- Verify API credentials in AIChat plugin
+- Verify API token in plugin configuration
 - Review ILIAS logs: `/var/www/logs/ilias.log`
 - Check plugin debug logs for detailed error information
+- Ensure selected model exists in RAMSES API response
 
 #### Session Expiration Issues
 - Plugin automatically detects ILIAS session expiration
@@ -282,12 +288,13 @@ For support and questions:
 
 ## Customization for External Use
 
-**This plugin is designed for University of Cologne's infrastructure.** To adapt it for your organization:
+**This plugin is designed for University of Cologne's RAMSES infrastructure.** To adapt it for your organization:
 
-1. **AI Service Integration**: Modify `/classes/ai/` to integrate with your AI service endpoint
-2. **Authentication**: Update API authentication methods in the AIChat base plugin
-3. **File Processing**: Adjust file handling according to your server capabilities
+1. **AI Service Integration**: Update RAMSES API URLs in plugin configuration to point to your endpoints
+2. **Authentication**: Configure your API token in the RAMSES configuration section
+3. **File Processing**: Adjust file handling according to your server capabilities (ghostscript, imagick)
 4. **Configuration**: Adapt default settings and limits to your requirements
-5. **Testing**: Thoroughly test all functionality with your specific setup
+5. **Models**: Your AI service must provide an OpenAI-compatible `/v1/models` endpoint returning model arrays
+6. **Testing**: Thoroughly test all functionality with your specific setup
 
-**Note**: This plugin requires proper configuration of the AIChat base plugin and AI service access. Contact your system administrator for setup assistance.
+**Note**: This plugin requires access to a RAMSES-compatible AI service with proper API authentication. Contact your system administrator for setup assistance.

@@ -108,8 +108,35 @@ class AIChatPageComponent {
         this.attachBtn = this.container.querySelector('.ai-chat-attach-btn');
         this.fileInput = this.container.querySelector('.ai-chat-file-input');
         this.attachmentsArea = this.container.querySelector('.ai-chat-attachments');
+        
+        // Create attachments area if it doesn't exist (template rendering issue fallback)
+        // Note: enableChatUploads might not be set yet, so we check the data attribute directly
+        const enableChatUploads = this.container.dataset.enableChatUploads === 'true';
+        if (!this.attachmentsArea && enableChatUploads) {
+            debug('AIChatPageComponent: Creating missing attachments area (fallback)');
+            this.attachmentsArea = document.createElement('div');
+            this.attachmentsArea.className = 'ai-chat-attachments';
+            this.attachmentsArea.style.display = 'none';
+            // Insert before the composer area
+            const composerArea = this.container.querySelector('.ai-chat-composer');
+            if (composerArea) {
+                this.container.insertBefore(this.attachmentsArea, composerArea);
+            }
+        }
+        
         this.attachmentsList = this.attachmentsArea; // Direct reference for thumbnails
         this.clearAttachmentsBtn = this.container.querySelector('.ai-chat-clear-attachments');
+        
+        // Debug DOM element initialization
+        debug('AIChatPageComponent: DOM elements initialized', {
+            container: !!this.container,
+            attachBtn: !!this.attachBtn,
+            fileInput: !!this.fileInput,
+            attachmentsArea: !!this.attachmentsArea,
+            attachmentsList: !!this.attachmentsList,
+            clearAttachmentsBtn: !!this.clearAttachmentsBtn,
+            attachmentsAreaCreated: this.container.querySelector('.ai-chat-attachments') !== null
+        });
         this.charCounter = this.container.querySelector('.ai-chat-char-count');
         this.charLimitElement = this.container.querySelector('.ai-chat-char-limit');
         
@@ -216,8 +243,24 @@ class AIChatPageComponent {
             if (data.success) {
                 // Apply global upload configuration
                 this.globalChatUploadsEnabled = data.upload_enabled;
-                this.allowedFileTypes = data.allowed_mime_types || [];
+                
+                // Convert allowed_mime_types object to array
+                let allowedMimeTypes = data.allowed_mime_types || {};
+                if (typeof allowedMimeTypes === 'object' && !Array.isArray(allowedMimeTypes)) {
+                    // Convert object values to array
+                    this.allowedFileTypes = Object.values(allowedMimeTypes);
+                } else if (Array.isArray(allowedMimeTypes)) {
+                    this.allowedFileTypes = allowedMimeTypes;
+                } else {
+                    this.allowedFileTypes = [];
+                }
+                
                 this.allowedExtensions = data.allowed_extensions || [];
+                
+                debug('AIChatPageComponent: Processed allowed file types:', {
+                    original: data.allowed_mime_types,
+                    processed: this.allowedFileTypes
+                });
                 
                 // Apply global limits that override local PageComponent settings
                 this.applyGlobalLimits(data);
@@ -235,8 +278,6 @@ class AIChatPageComponent {
                 }
                 
                 debug('AIChatPageComponent: Global configuration loaded', {
-                    originalCharLimit: originalCharLimit,
-                    originalMaxMemory: originalMaxMemory,
                     finalCharLimit: this.charLimit,
                     finalMaxMemory: this.maxMemory,
                     globalConfigReceived: {
@@ -905,18 +946,18 @@ class AIChatPageComponent {
                         eventData: event.data,
                         chatId: this.chatId
                     });
-                    eventSource.close();
-                    this.currentEventSource = null;
-                    this.setLoading(false);
+                    
+                    // Clean up streaming state without "stopped by user" message
+                    this.cleanupStreaming(false);
                     this.addMessageToDisplay('system', 'Streaming error: Unable to process AI response. Please try again.');
                 }
             };
             
             eventSource.onerror = (error) => {
                 debugError('AIChatPageComponent: EventSource error:', error);
-                eventSource.close();
-                this.currentEventSource = null;
-                this.setLoading(false);
+                
+                // Clean up streaming state without "stopped by user" message
+                this.cleanupStreaming(false);
                 
                 // Check if this might be a session expiration (common with streaming)
                 if (!this.isSessionValid()) {
@@ -1048,12 +1089,22 @@ class AIChatPageComponent {
      * @public
      */
     stopStreaming() {
+        this.cleanupStreaming(true);
+    }
+    
+    /**
+     * Clean up streaming state and UI elements
+     * 
+     * @private
+     * @param {boolean} userStopped - Whether the user manually stopped streaming
+     */
+    cleanupStreaming(userStopped = false) {
         if (this.currentEventSource) {
             this.currentEventSource.close();
             this.currentEventSource = null;
             this.setLoading(false);
             
-            // Add stopped message indicator
+            // Clean up streaming UI elements
             const streamingMessages = this.messagesArea.querySelectorAll('.ai-chat-message.streaming');
             streamingMessages.forEach(msg => {
                 msg.classList.remove('streaming');
@@ -1063,7 +1114,11 @@ class AIChatPageComponent {
                     if (cursor) {
                         cursor.remove();
                     }
-                    contentEl.innerHTML += '<em class="generation-stopped"> [Generation stopped by user]</em>';
+                    
+                    // Only add "stopped by user" message if user actually stopped it
+                    if (userStopped) {
+                        contentEl.innerHTML += '<em class="generation-stopped"> [Generation stopped by user]</em>';
+                    }
                 }
             });
         }
@@ -2141,10 +2196,19 @@ class AIChatPageComponent {
     
 
     async uploadFile(file) {
+        // Debug file upload attempt
+        debug('AIChatPageComponent: Attempting to upload file:', {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            allowedTypes: this.allowedFileTypes
+        });
+        
         // Check attachment limit first
         const maxAttachments = parseInt(this.container.dataset.maxAttachmentsPerMessage) || 5;
         if (this.attachments.length >= maxAttachments) {
             const errorMessage = this.container.dataset.errorMaxAttachments || `Maximum ${maxAttachments} attachments per message allowed.`;
+            debug('AIChatPageComponent: Attachment limit exceeded');
             this.showAlert(errorMessage);
             return;
         }
@@ -2154,6 +2218,7 @@ class AIChatPageComponent {
         const maxSize = maxSizeMB * 1024 * 1024;
         if (file.size > maxSize) {
             const errorMessage = this.container.dataset.errorFileTooLarge || `File too large. Maximum size is ${maxSizeMB}MB.`;
+            debug('AIChatPageComponent: File size exceeded:', { size: file.size, maxSize: maxSize });
             this.showAlert(errorMessage);
             return;
         }
@@ -2164,9 +2229,16 @@ class AIChatPageComponent {
             'application/pdf', 'text/plain', 'text/csv', 'text/markdown'
         ];
         
+        debug('AIChatPageComponent: File type validation:', {
+            fileType: file.type,
+            allowedTypes: allowedTypes,
+            isAllowed: allowedTypes.includes(file.type)
+        });
+        
         if (!allowedTypes.includes(file.type)) {
             let errorMessage = this.container.dataset.errorFileTypeNotAllowed || `File type not allowed: ${file.type}`;
             errorMessage = errorMessage.replace('%s', file.type);
+            debug('AIChatPageComponent: File type not allowed');
             this.showAlert(errorMessage);
             return;
         }
@@ -2356,12 +2428,22 @@ class AIChatPageComponent {
     
     
     updateAttachmentsDisplay() {
-        if (!this.attachmentsList) return;
+        debug('AIChatPageComponent: updateAttachmentsDisplay called', {
+            attachmentsList: !!this.attachmentsList,
+            attachmentsCount: this.attachments.length,
+            attachments: this.attachments
+        });
+        
+        if (!this.attachmentsList) {
+            debug('AIChatPageComponent: attachmentsList not found, cannot update display');
+            return;
+        }
         
         this.attachmentsList.innerHTML = '';
         
         if (this.attachments.length === 0) {
             this.attachmentsArea.style.display = 'none';
+            debug('AIChatPageComponent: No attachments, hiding area');
             return;
         }
         
@@ -2373,15 +2455,29 @@ class AIChatPageComponent {
             padding: 8px;
         `;
         
+        debug('AIChatPageComponent: Showing attachments area, processing attachments');
+        
         this.attachments.forEach((attachment, index) => {
+            debug('AIChatPageComponent: Processing attachment', {
+                index: index,
+                attachment: attachment,
+                is_image: attachment.is_image,
+                has_data_url: !!attachment.data_url,
+                has_preview_url: !!attachment.preview_url
+            });
+            
             if (attachment.is_image && (attachment.data_url || attachment.preview_url)) {
                 // Image preview (same as in messages)
+                debug('AIChatPageComponent: Creating image preview for attachment', index);
                 this.createUploadImagePreview(attachment, index);
             } else {
                 // Document preview (same style as in messages)
+                debug('AIChatPageComponent: Creating document preview for attachment', index);
                 this.createUploadDocumentPreview(attachment, index);
             }
         });
+        
+        debug('AIChatPageComponent: updateAttachmentsDisplay completed');
     }
     
     createUploadImagePreview(attachment, index) {

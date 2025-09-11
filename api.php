@@ -1258,12 +1258,31 @@ function pageContentContainsChatId(int $page_id, int $parent_id, string $parent_
  */
 function createLLMInstance(string $service)
 {
+    // Check if the requested service is enabled
+    $available_services = \platform\AIChatPageComponentConfig::get('available_services') ?? [];
+    
     switch ($service) {
         case 'openai':
-            return \ai\AIChatPageComponentOpenAI::createFromAIChatConfig();
+            if (($available_services['openai'] ?? '0') !== '1') {
+                throw new \Exception("OpenAI service is not enabled in plugin configuration.");
+            }
+            return \ai\AIChatPageComponentOpenAI::fromConfig();
+            
         case 'ramses':
+            if (($available_services['ramses'] ?? '1') !== '1') {
+                throw new \Exception("RAMSES service is not enabled in plugin configuration.");
+            }
+            return \ai\AIChatPageComponentRAMSES::fromConfig();
+            
         default:
-            return \ai\AIChatPageComponentRAMSES::createFromAIChatConfig();
+            // Use the configured default service
+            $default_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
+            if ($default_service !== $service) {
+                return createLLMInstance($default_service);
+            }
+            
+            // Fallback to RAMSES if nothing else works
+            return \ai\AIChatPageComponentRAMSES::fromConfig();
     }
 }
 

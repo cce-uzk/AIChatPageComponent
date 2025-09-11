@@ -116,12 +116,31 @@ config_default_max_memory#:#Default Memory Messages
 config_default_max_memory_info#:#Default number of previous messages to include in AI context
 config_default_disclaimer#:#Default Disclaimer
 config_default_disclaimer_info#:#Default disclaimer text shown to users
-config_services_title#:#AI Services
-config_services_info#:#Configure which AI services are available for selection
-config_service_ramses#:#RAMSES Service
-config_service_ramses_info#:#Enable RAMSES (University of Cologne Mistral) service
-config_service_openai#:#OpenAI Service  
-config_service_openai_info#:#Enable OpenAI GPT service
+config_services_title#:#AI Service Selection
+config_services_info#:#Choose which AI service to use and enable/disable available services
+config_selected_ai_service#:#Default AI Service
+config_selected_ai_service_info#:#Choose the default AI service for new chat instances
+service_ramses_option#:#RAMSES (University of Cologne)
+service_openai_option#:#OpenAI GPT
+config_service_ramses_enabled#:#Enable RAMSES Service
+config_service_ramses_enabled_info#:#Make RAMSES (University of Cologne Mistral) service available for selection
+config_service_openai_enabled#:#Enable OpenAI Service
+config_service_openai_enabled_info#:#Make OpenAI GPT service available for selection
+// OpenAI Configuration
+config_openai_title#:#OpenAI API Configuration
+config_openai_info#:#Configure OpenAI GPT API connection and models
+config_openai_api_url#:#OpenAI API URL
+config_openai_api_url_info#:#API endpoint for OpenAI chat completions (e.g. https://api.openai.com/v1/chat/completions)
+config_openai_api_token#:#OpenAI API Token
+config_openai_api_token_info#:#API token for OpenAI authentication
+config_openai_selected_model#:#Selected OpenAI Model
+config_openai_selected_model_info#:#Choose the OpenAI GPT model for new chat instances
+config_openai_streaming#:#Enable OpenAI Streaming
+config_openai_streaming_info#:#Enable streaming responses for OpenAI GPT
+// Configuration Tabs
+tab_general_config#:#General Configuration
+tab_ramses_config#:#RAMSES API
+tab_openai_config#:#OpenAI API
 config_files_title#:#File Upload Constraints
 config_files_info#:#Configure limits for file uploads and processing
 config_max_file_size#:#Maximum File Size (MB)
@@ -143,6 +162,29 @@ config_aichat_not_found#:#AIChat plugin not found
 config_save_error#:#Error saving configuration
 config_form_invalid#:#Please check your form inputs
 config_load_error#:#Error loading configuration form
+// RAMSES API Configuration
+config_ramses_title#:#RAMSES API Configuration
+config_ramses_info#:#Configure RAMSES AI API connection and available models
+config_ramses_chat_api_url#:#RAMSES Chat API URL
+config_ramses_chat_api_url_info#:#API endpoint for chat completions (e.g. https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions)
+config_ramses_models_api_url#:#RAMSES Models API URL
+config_ramses_models_api_url_info#:#API endpoint to fetch available models (e.g. https://ramses-oski.itcc.uni-koeln.de/v1/models)
+config_ramses_api_token#:#RAMSES API Token
+config_ramses_api_token_info#:#API token for RAMSES authentication
+config_ramses_selected_model#:#Selected RAMSES Model
+config_ramses_selected_model_info#:#Choose the RAMSES AI model for new chat instances
+config_models_cache_info#:#Available Models
+config_models_cache_info_desc#:#Models are loaded from RAMSES API and cached
+config_refresh_models_button#:#Update Models from API
+refresh_models_no_token#:#No API token configured. Please enter token first and save.
+refresh_models_success#:#Models successfully updated
+refresh_models_count#:#models available
+refresh_models_no_models#:#No models found in API response
+refresh_models_invalid_response#:#Invalid API response received
+refresh_models_api_error#:#Error fetching models from API
+refresh_models_exception#:#Unexpected error while updating models
+config_openai_deprecated#:#OpenAI Service (removed)
+config_openai_deprecated_info#:#OpenAI support has been removed. This plugin is now independent and uses only RAMSES.
 // File upload error messages
 error_max_attachments#:#Maximum %d attachments per message allowed
 error_file_too_large#:#File too large. Maximum size is %dMB

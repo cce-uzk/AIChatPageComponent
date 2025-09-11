@@ -116,12 +116,31 @@ config_default_max_memory#:#Standard Gedächtnis-Nachrichten
 config_default_max_memory_info#:#Standard Anzahl vorheriger Nachrichten im AI-Kontext
 config_default_disclaimer#:#Standard Haftungsausschluss
 config_default_disclaimer_info#:#Standard Haftungsausschluss-Text für Benutzer
-config_services_title#:#AI Services
-config_services_info#:#Verfügbare AI Services konfigurieren
-config_service_ramses#:#RAMSES Service
-config_service_ramses_info#:#RAMSES (Universität zu Köln Mistral) Service aktivieren
-config_service_openai#:#OpenAI Service  
-config_service_openai_info#:#OpenAI GPT Service aktivieren
+config_services_title#:#AI Service Auswahl
+config_services_info#:#Wählen Sie den zu verwendenden AI Service und aktivieren/deaktivieren Sie verfügbare Services
+config_selected_ai_service#:#Standard AI Service
+config_selected_ai_service_info#:#Wählen Sie den Standard AI Service für neue Chat-Instanzen
+service_ramses_option#:#RAMSES (University of Cologne)
+service_openai_option#:#OpenAI GPT
+config_service_ramses_enabled#:#RAMSES Service aktivieren
+config_service_ramses_enabled_info#:#RAMSES (Universität zu Köln Mistral) Service für Auswahl verfügbar machen
+config_service_openai_enabled#:#OpenAI Service aktivieren
+config_service_openai_enabled_info#:#OpenAI GPT Service für Auswahl verfügbar machen
+// OpenAI Configuration
+config_openai_title#:#OpenAI API Konfiguration
+config_openai_info#:#Konfiguration der OpenAI GPT API-Verbindung und Modelle
+config_openai_api_url#:#OpenAI API URL
+config_openai_api_url_info#:#API-Endpunkt für OpenAI Chat-Nachrichten (z.B. https://api.openai.com/v1/chat/completions)
+config_openai_api_token#:#OpenAI API Token
+config_openai_api_token_info#:#API-Token für die Authentifizierung bei OpenAI
+config_openai_selected_model#:#Ausgewähltes OpenAI Modell
+config_openai_selected_model_info#:#Wählen Sie das OpenAI GPT-Modell für neue Chat-Instanzen
+config_openai_streaming#:#OpenAI Streaming aktivieren
+config_openai_streaming_info#:#Streaming-Antworten für OpenAI GPT aktivieren
+// Configuration Tabs
+tab_general_config#:#Allgemeine Konfiguration
+tab_ramses_config#:#RAMSES API
+tab_openai_config#:#OpenAI API
 config_processing_title#:#Verarbeitungs-Limits
 config_processing_info#:#Limits für AI-Verarbeitung und Datenbearbeitung konfigurieren
 config_upload_title#:#Datei-Upload Beschränkungen
@@ -145,6 +164,29 @@ config_aichat_not_found#:#AIChat Plugin nicht gefunden
 config_save_error#:#Fehler beim Speichern der Konfiguration
 config_form_invalid#:#Bitte überprüfen Sie Ihre Formular-Eingaben
 config_load_error#:#Fehler beim Laden des Konfigurationsformulars
+// RAMSES API Configuration
+config_ramses_title#:#RAMSES API Konfiguration
+config_ramses_info#:#Konfiguration der RAMSES AI API-Verbindung und verfügbarer Modelle
+config_ramses_chat_api_url#:#RAMSES Chat API URL
+config_ramses_chat_api_url_info#:#API-Endpunkt für Chat-Nachrichten (z.B. https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions)
+config_ramses_models_api_url#:#RAMSES Models API URL
+config_ramses_models_api_url_info#:#API-Endpunkt zum Abrufen verfügbarer Modelle (z.B. https://ramses-oski.itcc.uni-koeln.de/v1/models)
+config_ramses_api_token#:#RAMSES API Token
+config_ramses_api_token_info#:#API-Token für die Authentifizierung bei RAMSES
+config_ramses_selected_model#:#Ausgewähltes RAMSES Modell
+config_ramses_selected_model_info#:#Wählen Sie das RAMSES AI-Modell für neue Chat-Instanzen
+config_models_cache_info#:#Verfügbare Modelle
+config_models_cache_info_desc#:#Modelle werden von der RAMSES API geladen und zwischengespeichert
+config_refresh_models_button#:#Modelle von API aktualisieren
+refresh_models_no_token#:#Kein API-Token konfiguriert. Bitte zuerst Token eingeben und speichern.
+refresh_models_success#:#Modelle erfolgreich aktualisiert
+refresh_models_count#:#Modelle verfügbar
+refresh_models_no_models#:#Keine Modelle in der API-Antwort gefunden
+refresh_models_invalid_response#:#Ungültige API-Antwort erhalten
+refresh_models_api_error#:#Fehler beim Abrufen der Modelle von der API
+refresh_models_exception#:#Unerwarteter Fehler beim Aktualisieren der Modelle
+config_openai_deprecated#:#OpenAI Service (entfernt)
+config_openai_deprecated_info#:#OpenAI-Unterstützung wurde entfernt. Das Plugin ist jetzt eigenständig und verwendet nur noch RAMSES.
 error_max_attachments#:#Maximal %d Anhänge pro Nachricht erlaubt
 error_file_too_large#:#Datei zu groß. Maximale Größe ist %dMB
 error_file_type_not_allowed#:#Dateityp nicht erlaubt: %s
