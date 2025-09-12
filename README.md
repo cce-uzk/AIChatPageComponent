@@ -98,8 +98,9 @@ cd AIChatPageComponent
 git checkout main
 ```
 
-### 2. No Additional Dependencies
-This plugin is self-contained and requires no additional plugins.
+### 2. Optional Plugin Dependencies
+- **For enhanced RBAC control**: Install the AIChat Repository Plugin before this plugin to enable granular permission management
+- **For basic functionality**: This plugin is self-contained and works without additional plugins (uses fallback permission system)
 
 ### 3. Install Composer Dependencies
 Navigate to the root directory of your ILIAS installation:
