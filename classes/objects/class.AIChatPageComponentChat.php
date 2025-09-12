@@ -160,7 +160,7 @@ class AIChatPageComponentChat
         try {
             // Load messages for this chat and user
             $result = $db->query(
-                "SELECT * FROM pcaic_messages WHERE chat_id = " . $db->quote($this->getId(), 'text') . 
+                "SELECT * FROM pcaic_messages WHERE chat_id = " . $db->quote($this->getId(), 'text') .
                 " AND user_id = " . $db->quote($user_id, 'integer') .
                 " ORDER BY timestamp ASC"
             );
@@ -215,7 +215,7 @@ class AIChatPageComponentChat
     {
         try {
             $result = $db->query(
-                "SELECT property_key, property_value FROM pcaic_chat_properties WHERE chat_id = " . $db->quote($this->getId(), 'text') . 
+                "SELECT property_key, property_value FROM pcaic_chat_properties WHERE chat_id = " . $db->quote($this->getId(), 'text') .
                 " AND user_id = " . $db->quote($user_id, 'integer')
             );
             
@@ -268,7 +268,7 @@ class AIChatPageComponentChat
         try {
             // First, delete existing properties for this chat and user
             $db->manipulate(
-                "DELETE FROM pcaic_chat_properties WHERE chat_id = " . $db->quote($this->getId(), 'text') . 
+                "DELETE FROM pcaic_chat_properties WHERE chat_id = " . $db->quote($this->getId(), 'text') .
                 " AND user_id = " . $db->quote($user_id, 'integer')
             );
             
@@ -487,7 +487,7 @@ class AIChatPageComponentChat
 
         try {
             $result = $db->query(
-                "SELECT * FROM pcaic_sessions WHERE session_name = " . $db->quote($session_name, 'text') . 
+                "SELECT * FROM pcaic_sessions WHERE session_name = " . $db->quote($session_name, 'text') .
                 " AND user_id = " . $db->quote($user_id, 'integer') .
                 " AND is_active = 1 ORDER BY last_activity DESC LIMIT 1"
             );
@@ -525,7 +525,7 @@ class AIChatPageComponentChat
 
         try {
             $result = $db->query(
-                "SELECT * FROM pcaic_sessions WHERE user_id = " . $db->quote($user_id, 'integer') . 
+                "SELECT * FROM pcaic_sessions WHERE user_id = " . $db->quote($user_id, 'integer') .
                 " AND is_active = 1 ORDER BY last_activity DESC"
             );
             

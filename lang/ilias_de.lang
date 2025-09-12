@@ -71,7 +71,7 @@ chat_title_info#:#Titel für diese KI-Chat-Komponente
 system_prompt_label#:#System-Prompt
 system_prompt_info#:#Definieren Sie die Rolle und das Verhalten des KI-Assistenten für diesen Chat
 ai_service_label#:#KI-Dienst
-ai_service_info#:#Wählen Sie den KI-Dienst für diesen Chat aus (basierend auf der AIChat-Plugin-Konfiguration)
+ai_service_info#:#Wählen Sie den KI-Dienst für diesen Chat aus
 max_memory_label#:#Max. Nachrichten im Gedächtnis
 max_memory_info#:#Anzahl der vorherigen Nachrichten, die im Unterhaltungskontext behalten werden
 char_limit_label#:#Zeichenlimit
@@ -105,7 +105,7 @@ file_processing_info#:#<strong>Dateiverarbeitung:</strong><br>• <strong>Bilder
 usage_recommendations#:#<strong>Verwendungsempfehlungen:</strong><br>• Verwenden Sie spezifische System-Prompts für bessere Ergebnisse<br>• Aktivieren Sie Seitenkontext für kontextbezogene Antworten<br>• Begrenzen Sie große PDFs auf wesentliche Seiten<br>• Verwenden Sie persistente Chats für längere Unterhaltungen
 // Configuration GUI - Deutsche Übersetzungen (v1.0.6)
 config_title#:#AIChatPageComponent Konfiguration
-config_info#:#Diese Einstellungen gelten plugin-weit als Standardwerte für neue AI Chat-Instanzen. Die Konfiguration wird unabhängig vom AIChat Plugin in der eigenen pcaic_config Tabelle gespeichert.
+config_info#:#Konfigurieren Sie globale Standardwerte, die für alle von Benutzern erstellten AI Chat-Komponenten plattformweit angewendet werden.
 config_defaults_title#:#Standard-Werte
 config_defaults_info#:#Standard-Werte für neue AI Chat-Instanzen festlegen
 config_default_prompt#:#Standard System-Prompt
@@ -159,8 +159,8 @@ config_enable_streaming#:#Streaming-Antworten aktivieren
 config_enable_streaming_info#:#Wenn aktiviert, werden AI-Antworten in Echtzeit übertragen, während sie generiert werden, für sofortiges Benutzerfeedback
 config_saved_success#:#Konfiguration erfolgreich gespeichert
 config_saved_error#:#Fehler beim Speichern der Konfiguration
-config_aichat_not_available#:#AIChat Plugin-Konfiguration nicht verfügbar
-config_aichat_not_found#:#AIChat Plugin nicht gefunden
+config_ai_service_not_available#:#KI-Dienst-Konfiguration nicht verfügbar
+config_ai_service_not_found#:#KI-Dienst nicht konfiguriert
 config_save_error#:#Fehler beim Speichern der Konfiguration
 config_form_invalid#:#Bitte überprüfen Sie Ihre Formular-Eingaben
 config_load_error#:#Fehler beim Laden des Konfigurationsformulars

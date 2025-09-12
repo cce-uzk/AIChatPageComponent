@@ -55,7 +55,35 @@ A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered ch
 - **PHP Extensions**: `curl`, `gd`, `imagick` (recommended), `ghostscript` (for PDF processing)
 - **ILIAS ResourceStorage**: For secure file handling (built-in ILIAS 9)
 
+### Optional Dependencies
+- **AIChat Repository Plugin**: Provides enhanced RBAC permission control for AI chat component creation. Without this plugin, all content editors can create AI chat components. Recommended for institutions requiring granular access control.
+
 > **✅ Independent Plugin**: This plugin is now **fully independent** and does **not require the AIChat base plugin**. All RAMSES integration is handled directly within this plugin.
+
+## Permissions & Access Control
+
+### Permission Strategy
+This plugin implements a **two-tier permission system** to control who can add AI chat components to pages:
+
+#### **Tier 1: Enhanced RBAC (Recommended)**
+When the **AIChat Repository Plugin** is installed and active:
+- Uses AIChat's `create_xaic` permission for access control
+- Administrators can precisely control which users/roles can create AI chat components
+- Provides granular permission management through ILIAS's standard role system
+
+#### **Tier 2: Content Editor Fallback**
+When AIChat plugin is **not available**:
+- Falls back to basic `write` permission check
+- Any user with content editing rights can add AI chat components
+- Less granular but ensures functionality for content creators
+
+### Technical Background
+PageComponent plugins cannot integrate directly into ILIAS's standard RBAC system due to technical limitations (only Repository Object plugins support full RBAC integration). This plugin works around this limitation by leveraging the AIChat plugin's existing RBAC implementation when available.
+
+### Security Considerations
+- **Recommended Setup**: Install AIChat plugin even if not directly used, to enable fine-grained permission control
+- **Fallback Risk**: Without AIChat plugin, all content editors can create AI chats - evaluate if this aligns with your institution's AI usage policies
+- **Administrator Control**: Global configuration settings always override individual chat configurations regardless of permission level
 
 ## Installation
 

@@ -292,7 +292,7 @@ function handleSendMessage(array $data): array
                 if (!empty($attachment_id)) {
                     try {
                         $db = $DIC->database();
-                        $db->update('pcaic_attachments', 
+                        $db->update('pcaic_attachments',
                             ['message_id' => ['integer', $userMessage->getMessageId()]],
                             ['id' => ['integer', $attachment_id]]
                         );

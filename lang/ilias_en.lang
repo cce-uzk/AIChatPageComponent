@@ -72,7 +72,7 @@ chat_title_info#:#Title for this AI chat component
 system_prompt_label#:#System Prompt
 system_prompt_info#:#Define the AI assistant's role and behavior for this chat
 ai_service_label#:#AI Service
-ai_service_info#:#Select the AI service to use for this chat (based on AIChat plugin configuration)
+ai_service_info#:#Select the AI service to use for this chat
 max_memory_label#:#Max Memory Messages
 max_memory_info#:#Number of previous messages to keep in conversation context
 char_limit_label#:#Character Limit
@@ -106,6 +106,7 @@ file_processing_info#:#<strong>File Processing:</strong><br>• <strong>Images:<
 usage_recommendations#:#<strong>Usage Recommendations:</strong><br>• Use specific system prompts for better results<br>• Enable page context for contextual responses<br>• Limit large PDFs to essential pages<br>• Use persistent chats for longer conversations
 // Configuration GUI
 config_title#:#AI Chat Page Component Configuration
+config_info#:#Configure global default values that will be applied to all new AI chat components created by users across the platform.
 config_defaults_title#:#Default Values
 config_defaults_info#:#Set default values used when creating new AI chat instances
 config_default_prompt#:#Default System Prompt
@@ -157,8 +158,8 @@ config_enable_streaming#:#Enable Streaming Responses
 config_enable_streaming_info#:#When enabled, AI responses are streamed in real-time as they are generated, providing immediate feedback to users
 config_saved_success#:#Configuration saved successfully
 config_saved_error#:#Error saving configuration
-config_aichat_not_available#:#AIChat plugin configuration not available
-config_aichat_not_found#:#AIChat plugin not found
+config_ai_service_not_available#:#AI service configuration not available
+config_ai_service_not_found#:#AI service not configured
 config_save_error#:#Error saving configuration
 config_form_invalid#:#Please check your form inputs
 config_load_error#:#Error loading configuration form
