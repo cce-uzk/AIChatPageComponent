@@ -6,21 +6,19 @@
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 
-// alphanumerical ID of the plugin; never change this
+// alphanumerical ID of the plugin
 $id = "pcaic";
 
-// code version; must be changed for all code changes
+// code version
 $version = "1.0.7";
 
-// ilias min and max version; must always reflect the versions that should
-// run with the plugin
+// ilias min and max version
 $ilias_min_version = "9.0.0";
 $ilias_max_version = "9.999";
 
-// optional, but useful: Add one or more responsible persons and a contact email
+// responsible persons and a contact email
 $responsible = "Nadimo Staszak";
 $responsible_mail = "nadimo.staszak@uni-koeln.de";
 
-// this plugin has an own exporter class
 $supports_export = true;
-?>
+$supports_cli_setup = true;

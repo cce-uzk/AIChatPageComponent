@@ -24,7 +24,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     /** @var string */
     const SLOT_ID = "pgcp";
 
-    private static $instance;
+    private static ?self $instance = null;
 
 	/**
      * Get plugin instance
