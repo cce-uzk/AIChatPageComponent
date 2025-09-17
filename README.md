@@ -39,6 +39,7 @@ A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered ch
 - **Real-time Validation**: Limits with live feedback (character limits, upload limits)
 - **Session Detection**: Automatic ILIAS session validation with user-friendly expiration handling
 - **File Processing Pipeline**: Automatic image optimization, PDF-to-image conversion, multimodal AI integration
+- **Export/Import Support**: Full ILIAS export/import compatibility with chat configurations and background files
 - **Responsive UI**: Modern, accessible interface using ILIAS 9 UI components
 - **Production Ready**: Comprehensive logging, error handling, and security measures
 
@@ -193,6 +194,13 @@ php -m | grep -E "(curl|gd|imagick)"
 - **Text Files**: Content integration into conversation context
 - **File Persistence**: Uploads survive page reloads and session changes
 - **Preview Support**: Image previews and download links for all file types
+
+#### Export/Import
+- **ILIAS Course Export**: AI chat components are automatically included in course exports
+- **Configuration Preservation**: System prompts, settings, and background files are fully preserved
+- **File Integrity**: Background files are exported and re-imported with proper ILIAS ResourceStorage integration
+- **Independent Instances**: Imported chats create new, independent configurations (no shared data with originals)
+- **Cross-Instance Compatibility**: Export from one ILIAS instance, import to another while maintaining full functionality
 
 ## Architecture
 

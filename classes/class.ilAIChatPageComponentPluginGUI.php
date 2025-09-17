@@ -6,18 +6,18 @@ use ILIAS\Plugin\pcaic\Validation\FileUploadValidator;
 
 /**
  * AI Chat Page Component GUI Controller
- * 
+ *
  * Handles all user interface interactions for the AI Chat PageComponent.
  * Manages form creation, validation, configuration storage, and rendering
  * of embedded AI chat instances within ILIAS pages.
- * 
+ *
  * Core responsibilities:
  * - Form-based configuration interface for chat settings
  * - Background file upload and management
  * - Integration with ILIAS page editor
  * - Chat rendering with proper context and permissions
  * - Session management and user interaction handling
- * 
+ *
  * ilAIChatPageComponentPlugin
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
@@ -31,22 +31,22 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 {
     /** @var ilLanguage Language service for localization */
     protected ilLanguage $lng;
-    
+
     /** @var ilCtrl Control service for URL generation and routing */
     protected ilCtrl $ctrl;
-    
+
     /** @var ilGlobalTemplateInterface Global template for page rendering */
     protected ilGlobalTemplateInterface $tpl;
-    
+
     /** @var \Psr\Http\Message\ServerRequestInterface HTTP request object */
     protected $request;
-    
+
     /** @var \ilLogger Component logger for debugging and monitoring */
     protected $logger;
 
     /**
      * Constructor - initializes GUI dependencies and services
-     * 
+     *
      * Sets up all required ILIAS services through dependency injection.
      * Establishes component-specific logging for debugging and monitoring.
      */
@@ -61,17 +61,17 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $this->ctrl = $DIC->ctrl();
         $this->tpl = $DIC['tpl'];
         $this->request = $DIC->http()->request();
-        
+
         // Initialize component-specific logging
         $this->logger = $DIC->logger()->comp('pcaic');
     }
 
     /**
      * Sets the page content GUI reference
-     * 
+     *
      * Called by ILIAS during page component initialization to establish
      * the connection between this GUI and the parent page context.
-     * 
+     *
      * @param ilPageContentGUI $a_val Page content GUI instance
      */
     public function setPCGUI(ilPageContentGUI $a_val): void
@@ -82,30 +82,35 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
     /**
      * Main command dispatcher for all GUI actions
-     * 
+     *
      * Routes incoming requests to appropriate handlers based on the command
      * and next class parameters. Supports both direct commands (create, edit, etc.)
      * and forwarded commands (file upload handlers).
-     * 
+     *
      * Supported commands:
      * - create: Create new chat configuration
-     * - save: Save chat configuration 
+     * - save: Save chat configuration
      * - edit: Edit existing chat
      * - update: Update existing chat
      * - cancel: Cancel current operation
-     * 
+     *
      * @throws ilException On invalid commands
      */
     public function executeCommand() : void
     {
         // Load background file upload handler for multimodal support
         require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatBackgroundFileUploadHandlerGUI.php');
-        
+
         $next_class = $this->ctrl->getNextClass();
 
         switch ($next_class) {
             case 'ilaichatbackgroundfileuploadhandlergui':
                 $upload_handler = new ilAIChatBackgroundFileUploadHandlerGUI();
+                $this->ctrl->forwardCommand($upload_handler);
+                break;
+            case 'ilaichatsimpleuploadhandlergui':
+                require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatSimpleUploadHandlerGUI.php');
+                $upload_handler = new ilAIChatSimpleUploadHandlerGUI();
                 $this->ctrl->forwardCommand($upload_handler);
                 break;
             default:
@@ -123,7 +128,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
     /**
      * Displays the form for inserting a new AI chat component
-     * 
+     *
      * Called when user selects "Insert > Plugin > AI Chat" in page editor.
      * Renders the configuration form with all available options.
      */
@@ -137,10 +142,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
     /**
      * Processes form submission for creating a new AI chat component
-     * 
+     *
      * Validates form data, saves configuration to database, and returns
      * to page editor. Handles both chat settings and background file uploads.
-     * 
+     *
      * On success: Redirects to parent page
      * On failure: Redisplays form with error messages
      */
@@ -149,18 +154,18 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $form = $this->initForm(true);
         $request = $DIC->http()->request();
-        
+
         if ($request->getMethod() == "POST") {
             $form = $form->withRequest($request);
             $data = $form->getData();
-            
+
             if ($form->getError() != null) {
                 $this->logger->debug("Form validation errors in create");
                 $renderer = $DIC->ui()->renderer();
                 $this->tpl->setContent($renderer->render($form));
                 return;
             }
-            
+
             if ($data !== null) {
                 $this->logger->debug("Form data received in create: " . print_r($data, true));
                 if ($this->saveForm($data, true)) {
@@ -174,7 +179,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $this->logger->debug("No form data received in create - form validation failed");
             }
         }
-        
+
         $renderer = $DIC->ui()->renderer();
         $this->tpl->setContent($renderer->render($form));
     }
@@ -193,18 +198,18 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $form = $this->initForm(false);
         $request = $DIC->http()->request();
-        
+
         if ($request->getMethod() == "POST") {
             $form = $form->withRequest($request);
             $data = $form->getData();
-            
+
             if ($form->getError() != null) {
                 $this->logger->debug("Form validation errors in update");
                 $renderer = $DIC->ui()->renderer();
                 $this->tpl->setContent($renderer->render($form));
                 return;
             }
-            
+
             if ($data !== null) {
                 $this->logger->debug("Form data received in update: " . print_r($data, true));
                 if ($this->saveForm($data, false)) {
@@ -218,7 +223,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $this->logger->debug('No form data received in update - form validation failed');
             }
         }
-        
+
         $renderer = $DIC->ui()->renderer();
         $this->tpl->setContent($renderer->render($form));
     }
@@ -231,16 +236,16 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Modern ILIAS 9 UI FileUpload component for background files
         global $DIC;
         $ui_factory = $DIC->ui()->factory();
-        
+
         // Load bootstrap for new models
         require_once(__DIR__ . '/../src/bootstrap.php');
-        
+
         // Check global file handling and specific upload permissions
         $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
         $file_handling_enabled = ($file_restrictions['enabled'] ?? false);
         $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
         $allowed_extensions = FileUploadValidator::getAllowedExtensions('background');
-        
+
         if (!$file_handling_enabled) {
             // File handling completely disabled - show clear message
             $file_upload = $ui_factory->input()->field()->text(
@@ -254,10 +259,19 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $this->plugin->txt('setting_disabled_by_admin_info')
             )->withValue($this->plugin->txt('background_files_disabled'))->withDisabled(true)->withDedicatedName('background_files');
         } else {
-            // Create upload handler
-            require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatBackgroundFileUploadHandlerGUI.php');
-            $upload_handler = new ilAIChatBackgroundFileUploadHandlerGUI();
-            
+            // Use different upload handlers based on CREATE vs EDIT mode
+            if ($a_create) {
+                // CREATE mode: Use simple handler like MainMenu
+                $this->logger->debug("CREATE mode: Using simple upload handler (like MainMenu)");
+                require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatSimpleUploadHandlerGUI.php');
+                $upload_handler = new ilAIChatSimpleUploadHandlerGUI();
+            } else {
+                // EDIT mode: Use IRSS handler for proper PageComponent integration
+                $this->logger->debug("EDIT mode: Using IRSS upload handler");
+                require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatBackgroundFileUploadHandlerGUI.php');
+                $upload_handler = new ilAIChatBackgroundFileUploadHandlerGUI();
+            }
+
             // Build allowed MIME types from configured extensions
             $extension_to_mime = [
                 'pdf' => 'application/pdf',
@@ -270,17 +284,22 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 'gif' => 'image/gif',
                 'webp' => 'image/webp'
             ];
-            
+
             $allowed_mimes = [];
             foreach ($allowed_extensions as $ext) {
                 if (isset($extension_to_mime[$ext])) {
                     $allowed_mimes[] = $extension_to_mime[$ext];
                 }
             }
-            
+
             $extensions_display = implode(', ', array_map('strtoupper', $allowed_extensions));
             $info_text = $this->plugin->txt('background_files_upload_info') . ' Allowed types: ' . $extensions_display;
-            
+
+            // Debug: Log which handler class is being used for URL generation
+            $handler_class = get_class($upload_handler);
+            $this->logger->debug("CURRENT FORM: File upload field using handler: " . $handler_class);
+            $this->logger->debug("CURRENT FORM: Handler upload URL: " . $upload_handler->getUploadURL());
+
             // Create the modern UI FileUpload component with multi-file support
             $file_upload = $ui_factory->input()->field()->file(
                 $upload_handler,
@@ -294,16 +313,16 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         // Get AIChat defaults
         $defaults = $this->getAIChatDefaults();
-        
+
         // Load existing configuration from new ChatConfig model
         $prop = [];
         $chatConfig = null;
-        
+
         if (!$a_create) {
             // Try to load from new ChatConfig first
             $old_properties = $this->getProperties();
             $chat_id = $old_properties['chat_id'] ?? '';
-            
+
             if (!empty($chat_id)) {
                 try {
                     $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
@@ -335,16 +354,16 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             } else {
                 $prop = $old_properties;
             }
-            
+
             $this->logger->debug("All properties in edit mode", ['properties' => $prop]);
         }
-        
+
         // Set existing files for edit mode
         if (!$a_create && isset($prop['background_files'])) {
-            $existing_file_ids = is_string($prop['background_files']) ? 
-                json_decode($prop['background_files'], true) : 
+            $existing_file_ids = is_string($prop['background_files']) ?
+                json_decode($prop['background_files'], true) :
                 $prop['background_files'];
-            
+
             $this->logger->debug("Loading existing files for edit mode", ['file_ids' => $existing_file_ids]);
             if (is_array($existing_file_ids) && !empty($existing_file_ids)) {
                 // File upload field expects array of string IDs - ensure we have that format
@@ -355,7 +374,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         // Chat title
         $chat_title = $ui_factory->input()->field()->text(
-            $this->plugin->txt('chat_title_label'), 
+            $this->plugin->txt('chat_title_label'),
             $this->plugin->txt('chat_title_info')
         )->withDedicatedName('chat_title')->withRequired(true)->withValue($prop['chat_title'] ?? $defaults['title']);
 
@@ -425,7 +444,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Enable streaming responses - check global streaming setting
         $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
         if (!$streaming_globally_enabled) {
-            // Streaming globally disabled 
+            // Streaming globally disabled
             $enable_streaming = $ui_factory->input()->field()->text(
                 $this->plugin->txt('enable_streaming_label'),
                 $this->plugin->txt('setting_disabled_by_admin_info')
@@ -459,13 +478,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             'enable_streaming' => $enable_streaming,
             'disclaimer' => $disclaimer
         ];
-        
+
         // Always include background files field (will show disabled state when necessary)
         $form_fields['background_files'] = $file_upload;
-        
+
         $form = $ui_factory->input()->container()->form()->standard($form_action, $form_fields);
-        
-        
+
+
         return $form;
     }
 
@@ -473,7 +492,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     {
         // Load bootstrap for new models
         require_once(__DIR__ . '/../src/bootstrap.php');
-        
+
         // Generate or get chat ID
         $chat_id = '';
         if ($a_create) {
@@ -482,16 +501,16 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $properties = $this->getProperties();
             $chat_id = $properties['chat_id'] ?? uniqid('chat_', true);
         }
-        
+
         // Handle file uploads - only process if file handling is enabled and background files are allowed
         $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
         $file_handling_enabled = ($file_restrictions['enabled'] ?? false);
         $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
-        
+
         $file_ids = [];
         if ($file_handling_enabled && $background_files_enabled) {
             $background_files = $form_data['background_files'] ?? [];
-            
+
             // Only process if it's an array (file upload field), not a string (disabled text field)
             if (is_array($background_files)) {
                 foreach ($background_files as $file_id) {
@@ -505,17 +524,17 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 }
             }
         }
-        
+
         $this->logger->debug("Background files form data", ['data' => $background_files]);
         $this->logger->debug("Background file IDs processed", ['file_ids' => $file_ids]);
-        
+
         // Get page information for context
         $page_info = $this->getPageInfo();
-        
+
         try {
             // Create or update ChatConfig in new architecture
             $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-            
+
             // Set all configuration data
             $chatConfig->setChatId($chat_id);
             $chatConfig->setPageId((int)($page_info['page_id'] ?? 0));
@@ -545,29 +564,29 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $chatConfig->setEnableStreaming(false); // Force disabled when globally disabled
             }
             $chatConfig->setDisclaimer($form_data['disclaimer'] ?? '');
-            
+
             // Save to database
             $result = $chatConfig->save();
-            
+
             if ($result) {
                 // Also save minimal properties to PageComponent for backward compatibility
                 $properties = $this->getProperties();
                 $properties['chat_id'] = $chat_id;
                 $properties['chat_title'] = $form_data['chat_title'] ?? '';
-                
+
                 if ($a_create) {
                     $success = $this->createElement($properties);
                 } else {
                     $success = $this->updateElement($properties);
                 }
-                
+
                 $this->logger->debug("Saved ChatConfig successfully", ['chat_id' => $chat_id]);
                 return $success;
             } else {
                 $this->logger->warning("Failed to save ChatConfig");
                 return false;
             }
-            
+
         } catch (\Exception $e) {
             $this->logger->warning("Exception saving ChatConfig", ['error' => $e->getMessage()]);
             return false;
@@ -604,18 +623,18 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     private function renderEditPlaceholder(array $properties) : string
     {
         $tpl = new ilTemplate(
-            "tpl.ai_chat_placeholder.html", 
-            true, 
-            true, 
+            "tpl.ai_chat_placeholder.html",
+            true,
+            true,
             $this->plugin->getDirectory()
         );
-        
+
         $tpl->setVariable("CHAT_TITLE", htmlspecialchars($properties['chat_title'] ?? $this->plugin->txt('default_chat_title')));
         $tpl->setVariable("PLACEHOLDER_TEXT", 'AI Chat Component (Click to edit configuration)');
-        
+
         // Add CSS for edit mode
         $this->addChatAssets();
-        
+
         return $tpl->get();
     }
 
@@ -626,24 +645,24 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     {
         // Load bootstrap for new models
         require_once(__DIR__ . '/../src/bootstrap.php');
-        
+
         $tpl = new ilTemplate(
-            "tpl.ai_chat.html", 
-            true, 
-            true, 
+            "tpl.ai_chat.html",
+            true,
+            true,
             $this->plugin->getDirectory()
         );
-        
+
         // Get chat configuration - try loading from new ChatConfig model first
         $chat_id = $properties['chat_id'] ?? uniqid('chat_', true);
         $config_properties = $properties; // fallback
-        
+
         try {
             $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
             if ($chatConfig->exists()) {
                 // Update page context from current PageComponent context when rendering
                 $this->updateChatConfigPageContext($chatConfig);
-                
+
                 // Use configuration from new model
                 $config_properties = [
                     'chat_id' => $chat_id,
@@ -666,23 +685,23 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         } catch (\Exception $e) {
             $this->logger->warning("Error loading ChatConfig for rendering", ['error' => $e->getMessage()]);
         }
-        
+
         $container_id = 'ai-chat-' . md5($chat_id);
         $messages_id = $container_id . '-messages';
-        
+
         // Set basic template variables
         $tpl->setVariable("CONTAINER_ID", $container_id);
         $tpl->setVariable("MESSAGES_ID", $messages_id);
         $tpl->setVariable("CHAT_ID", htmlspecialchars($chat_id));
-        
+
         $tpl->setVariable("CHAT_TITLE", htmlspecialchars($config_properties['chat_title'] ?? $this->plugin->txt('default_chat_title')));
-        
+
         $tpl->setVariable("WELCOME_MESSAGE", $this->plugin->txt('welcome_message'));
         $tpl->setVariable("INPUT_PLACEHOLDER", $this->plugin->txt('input_aria_label'));
         $tpl->setVariable("SEND_BUTTON_TEXT", $this->plugin->txt('send_button_text'));
         $tpl->setVariable("LOADING_TEXT", $this->plugin->txt('loading_text'));
         $tpl->setVariable("CHAR_LIMIT", (int)($config_properties['char_limit'] ?? 2000));
-        
+
         // File upload related strings
         $tpl->setVariable("ATTACHMENTS_LABEL", $this->plugin->txt('attachments_label'));
         $tpl->setVariable("CLEAR_ATTACHMENTS_TITLE", $this->plugin->txt('clear_attachments_title'));
@@ -691,43 +710,43 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("INPUT_ARIA_LABEL", $this->plugin->txt('input_aria_label'));
         $tpl->setVariable("SEND_ARIA_LABEL", $this->plugin->txt('send_aria_label'));
         $tpl->setVariable("FILE_INPUT_ARIA_LABEL", $this->plugin->txt('file_input_aria_label'));
-        
+
         // Clear chat related strings
         $tpl->setVariable("CLEAR_CHAT_TEXT", $this->plugin->txt('clear_chat_text'));
         $tpl->setVariable("CLEAR_CHAT_TITLE", $this->plugin->txt('clear_chat_title'));
         $tpl->setVariable("CLEAR_CHAT_LABEL", $this->plugin->txt('clear_chat_label'));
         // Clear chat confirmation text
         $tpl->setVariable("CLEAR_CHAT_CONFIRM", htmlspecialchars($this->plugin->txt('clear_chat_confirm')));
-        
+
         // Message action titles
         $tpl->setVariable("COPY_MESSAGE_TITLE", htmlspecialchars($this->plugin->txt('copy_message_title')));
         $tpl->setVariable("LIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('like_response_title')));
         $tpl->setVariable("DISLIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('dislike_response_title')));
         $tpl->setVariable("REGENERATE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('regenerate_response_title')));
-        
+
         // Feedback messages
         $tpl->setVariable("MESSAGE_COPIED", htmlspecialchars($this->plugin->txt('message_copied')));
         $tpl->setVariable("MESSAGE_COPY_FAILED", htmlspecialchars($this->plugin->txt('message_copy_failed')));
-        
+
         // Attachment actions
         $tpl->setVariable("REMOVE_ATTACHMENT", htmlspecialchars($this->plugin->txt('remove_attachment')));
         $tpl->setVariable("THINKING_HEADER", htmlspecialchars($this->plugin->txt('thinking_header')));
-        
+
         // Configuration limits
         $max_size_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
         $max_size_mb = $max_size_config ? (int)$max_size_config : 5;
         $tpl->setVariable("MAX_FILE_SIZE_MB", $max_size_mb);
-        
+
         $max_attachments_config = \platform\AIChatPageComponentConfig::get('max_attachments_per_message');
         $max_attachments = $max_attachments_config ? (int)$max_attachments_config : 5;
         $tpl->setVariable("MAX_ATTACHMENTS_PER_MESSAGE", $max_attachments);
-        
+
         // Error messages for file upload validation - format with sprintf
         $error_max_attachments_template = $this->plugin->txt('error_max_attachments');
         $error_file_too_large_template = $this->plugin->txt('error_file_too_large');
         $error_file_type_not_allowed_template = $this->plugin->txt('error_file_type_not_allowed');
         $error_file_upload_failed_template = $this->plugin->txt('error_file_upload_failed');
-        
+
         // Fallback if language key not found (when txt() returns the key itself) or if still using old format
         if ($error_max_attachments_template === 'error_max_attachments' || empty($error_max_attachments_template) || strpos($error_max_attachments_template, '{maxAttachments}') !== false) {
             $error_max_attachments_template = 'Maximum %d attachments per message allowed';
@@ -741,23 +760,23 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         if ($error_file_upload_failed_template === 'error_file_upload_failed' || empty($error_file_upload_failed_template)) {
             $error_file_upload_failed_template = 'File upload failed: %s';
         }
-        
+
         // Format the error messages with actual values
         $error_max_attachments = sprintf($error_max_attachments_template, $max_attachments);
         $max_file_size_mb_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
         $max_file_size_mb = $max_file_size_mb_config ? (int)$max_file_size_mb_config : 5;
         $error_file_too_large = sprintf($error_file_too_large_template, $max_file_size_mb);
-        
+
         // These messages need JavaScript to fill in dynamic values, so pass templates directly
         $error_file_type_not_allowed = $error_file_type_not_allowed_template;
         $error_file_upload_failed = $error_file_upload_failed_template;
-        
-        
+
+
         $tpl->setVariable("ERROR_MAX_ATTACHMENTS", $error_max_attachments);
         $tpl->setVariable("ERROR_FILE_TOO_LARGE", $error_file_too_large);
         $tpl->setVariable("ERROR_FILE_TYPE_NOT_ALLOWED", $error_file_type_not_allowed);
         $tpl->setVariable("ERROR_FILE_UPLOAD_FAILED", $error_file_upload_failed);
-        
+
         // Log config source for debugging
         global $DIC;
         if ($max_size_config !== null) {
@@ -772,13 +791,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 'effective_mb' => $max_size_mb
             ]);
         }
-        
+
         // Error messages
         $tpl->setVariable("GENERATION_STOPPED", htmlspecialchars($this->plugin->txt('generation_stopped')));
         $tpl->setVariable("REGENERATE_FAILED", htmlspecialchars($this->plugin->txt('regenerate_failed')));
         $tpl->setVariable("WELCOME_MESSAGE", htmlspecialchars($this->plugin->txt('welcome_message')));
         $tpl->setVariable("STOP_GENERATION", htmlspecialchars($this->plugin->txt('stop_generation')));
-        
+
         // Set data attributes for JavaScript configuration
         $tpl->setVariable("API_URL", htmlspecialchars($this->getAIChatApiUrl()));
         $tpl->setVariable("SYSTEM_PROMPT", htmlspecialchars($config_properties['system_prompt'] ?? 'You are a helpful AI assistant.'));
@@ -788,64 +807,64 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $is_persistent = ($persistent_value === true || $persistent_value === '1' || $persistent_value === 1);
         $tpl->setVariable("PERSISTENT", $is_persistent ? 'true' : 'false');
         $tpl->setVariable("AI_SERVICE", htmlspecialchars($config_properties['ai_service'] ?? 'default'));
-        
+
         // Chat file uploads setting - respect global restrictions
         $enable_chat_uploads = ($config_properties['enable_chat_uploads'] ?? false);
         $is_chat_uploads_enabled = ($enable_chat_uploads === true || $enable_chat_uploads === '1' || $enable_chat_uploads === 1);
         $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
-        
+
         // Both page component setting AND global setting must be enabled
         $effective_chat_uploads_enabled = $is_chat_uploads_enabled && $chat_uploads_globally_enabled;
         $tpl->setVariable("ENABLE_CHAT_UPLOADS", $effective_chat_uploads_enabled ? 'true' : 'false');
-        
+
         // Streaming setting - respect global restrictions
         $enable_streaming = ($config_properties['enable_streaming'] ?? true);
         $is_streaming_enabled = ($enable_streaming === true || $enable_streaming === '1' || $enable_streaming === 1);
         $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
-        
+
         // Both page component setting AND global setting must be enabled
         $effective_streaming_enabled = $is_streaming_enabled && $streaming_globally_enabled;
         $tpl->setVariable("ENABLE_STREAMING", $effective_streaming_enabled ? 'true' : 'false');
-        
+
         // Add page info for context extraction in backend
         $page_info = $this->getPageInfo();
         $tpl->setVariable("PAGE_ID", (int)($page_info['page_id'] ?? 0));
         $tpl->setVariable("PARENT_ID", (int)($page_info['parent_id'] ?? 0));
         $tpl->setVariable("PARENT_TYPE", htmlspecialchars($page_info['parent_type'] ?? ''));
         $tpl->setVariable("INCLUDE_PAGE_CONTEXT", ($config_properties['include_page_context'] ?? true) ? 'true' : 'false');
-        
+
         // Add background files data
         $background_files = $config_properties['background_files'] ?? '[]';
         if (is_array($background_files)) {
             $background_files = json_encode($background_files);
         }
         $tpl->setVariable("BACKGROUND_FILES", htmlspecialchars($background_files));
-        
+
         // Handle optional disclaimer
         if (!empty($config_properties['disclaimer'])) {
             $tpl->setCurrentBlock("disclaimer");
             $tpl->setVariable("DISCLAIMER", htmlspecialchars($config_properties['disclaimer']));
             $tpl->parseCurrentBlock();
         }
-        
+
         // Handle chat uploads - only render upload elements if enabled
         if ($effective_chat_uploads_enabled) {
             $tpl->setCurrentBlock("chat_attachments_area");
             $tpl->parseCurrentBlock();
-            
+
             $tpl->setCurrentBlock("chat_attach_button");
             $tpl->parseCurrentBlock();
-            
+
             $tpl->setCurrentBlock("chat_file_input");
             $tpl->parseCurrentBlock();
         }
-        
+
         // Clear session management (old clear chat button removed - now in header)
         $tpl->setVariable("SESSION_MANAGEMENT_HTML", "");
-        
+
         // Add CSS and JavaScript assets
         $this->addChatAssets();
-        
+
         return $tpl->get();
     }
 
@@ -857,24 +876,24 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     private function updateChatConfigPageContext(\ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig): void
     {
         $this->logger->debug("Updating ChatConfig page context", ['chat_id' => $chatConfig->getChatId()]);
-        
+
         try {
             // Get current page info from this PageComponent instance
             $currentPageInfo = $this->getPageInfo();
-            
+
             $current_page_id = $chatConfig->getPageId();
             $current_parent_id = $chatConfig->getParentId();
             $current_parent_type = $chatConfig->getParentType();
-            
+
             $new_page_id = $currentPageInfo['page_id'];
             $new_parent_id = $currentPageInfo['parent_id'];
             $new_parent_type = $currentPageInfo['parent_type'];
-            
+
             // Check if page context needs updating
-            if ($current_page_id !== $new_page_id || 
-                $current_parent_id !== $new_parent_id || 
+            if ($current_page_id !== $new_page_id ||
+                $current_parent_id !== $new_parent_id ||
                 $current_parent_type !== $new_parent_type) {
-                
+
                 $this->logger->debug("Updating page context during render", [
                     'old_page_id' => $current_page_id,
                     'old_parent_id' => $current_parent_id,
@@ -883,12 +902,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     'new_parent_id' => $new_parent_id,
                     'new_parent_type' => $new_parent_type
                 ]);
-                
+
                 $chatConfig->setPageId($new_page_id);
                 $chatConfig->setParentId($new_parent_id);
                 $chatConfig->setParentType($new_parent_type);
                 $chatConfig->save();
-                
+
                 $this->logger->debug("Page context updated successfully during chat render");
             } else {
                 $this->logger->debug("Page context already correct during render", [
@@ -897,7 +916,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     'parent_type' => $new_parent_type
                 ]);
             }
-            
+
         } catch (\Exception $e) {
             $this->logger->warning("Error updating page context during render", ['error' => $e->getMessage()]);
         }
@@ -910,10 +929,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     {
         global $DIC;
         $tpl = $DIC['tpl'];
-        
+
         // Add CSS
         $tpl->addCss($this->plugin->getDirectory() . "/css/ai_chat.css");
-        
+
         // Add JavaScript - marked.js for markdown parsing (local version)
         $tpl->addJavaScript($this->plugin->getDirectory() . "/js/vendor/marked.min.js");
         $tpl->addJavaScript($this->plugin->getDirectory() . "/js/ai_chat.js");
@@ -928,7 +947,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         try {
             $plugin_base_url = $this->plugin->getPluginBaseUrl();
             $api_url = $plugin_base_url . '/api.php';
-            
+
             $this->logger->debug('API url: {api_url}', [
                 'api_url' => $api_url
             ]);
@@ -949,15 +968,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $services = [
             'ramses' => $this->plugin->txt('ramses_service')
         ];
-        
+
         /* Commented out other services for now - only RAMSES is active
         try {
             // Include the config class
             require_once($this->plugin->getPluginBaseDir() . '/classes/platform/class.AIChatPageComponentConfig.php');
-            
+
             // Get available services from AIChat config
             $available_services = \platform\AIChatPageComponentConfig::get('available_services');
-            
+
             if (is_array($available_services)) {
                 if (isset($available_services['openai']) && $available_services['openai'] == "1") {
                     $services['openai'] = $this->plugin->txt('openai_service');
@@ -979,7 +998,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $services['ramses'] = $this->plugin->txt('ramses_service');
         }
         */
-        
+
         return $services;
     }
 
@@ -995,25 +1014,25 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             'max_memory_messages' => 10,
             'disclaimer' => ''
         ];
-        
+
         try {
             require_once($this->plugin->getPluginBaseDir() . '/classes/platform/class.AIChatPageComponentConfig.php');
-            
+
             $prompt = \platform\AIChatPageComponentConfig::get('default_prompt');
             if (!empty($prompt)) {
                 $defaults['prompt'] = $prompt;
             }
-            
+
             $char_limit = \platform\AIChatPageComponentConfig::get('characters_limit');
             if (!empty($char_limit)) {
                 $defaults['characters_limit'] = (int)$char_limit;
             }
-            
+
             $max_memory = \platform\AIChatPageComponentConfig::get('max_memory_messages');
             if (!empty($max_memory)) {
                 $defaults['max_memory_messages'] = (int)$max_memory;
             }
-            
+
             $disclaimer = \platform\AIChatPageComponentConfig::get('default_disclaimer');
             if (!empty($disclaimer)) {
                 $defaults['disclaimer'] = $disclaimer;
@@ -1021,7 +1040,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         } catch (Exception $e) {
             $this->logger->warning("Failed to load defaults from AIChat config", ['error' => $e->getMessage()]);
         }
-        
+
         return $defaults;
     }
 
@@ -1056,7 +1075,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     public function getPageContext() : string
     {
         global $DIC;
-        
+
         try {
             $page_id = $this->plugin->getPageId();
             $parent_id = $this->plugin->getParentId();
@@ -1065,14 +1084,14 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             if (!$page_id) {
                 return '';
             }
-            
+
             // Load the COPage object
             require_once("Services/COPage/classes/class.ilPageObject.php");
             require_once("Services/COPage/classes/class.ilPageObjectGUI.php");
-            
+
             // Determine the correct page class based on parent type
             $page_class = $this->getPageClassForParentType($parent_type);
-            
+
             if (!$page_class || !class_exists($page_class)) {
                 $this->logger->warning("Page class not found", [
                     'page_class' => $page_class,
@@ -1080,10 +1099,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 ]);
                 return '';
             }
-            
+
             // Create page object
             $page_obj = new $page_class($parent_id);
-            
+
             if (!$page_obj->exists()) {
                 $this->logger->warning("Page does not exist", [
                     'parent_id' => $parent_id,
@@ -1091,34 +1110,34 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 ]);
                 return '';
             }
-            
+
             // Get the page XML content
             $xml_content = $page_obj->getXMLContent();
-            
+
             if (empty($xml_content)) {
                 $this->logger->warning("No XML content found");
                 return '';
             }
-            
+
             // Extract text content from XML
             $context = $this->extractTextFromPageXML($xml_content);
-            
+
             // Add page title and metadata
             $page_title = $this->getPageTitle($parent_type, $parent_id);
             if (!empty($page_title)) {
                 $context = "Page Title: $page_title\n\n" . $context;
             }
-            
+
             $this->logger->debug("Extracted context", ['length' => strlen($context)]);
-            
+
             return $context;
-            
+
         } catch (Exception $e) {
             $this->logger->warning("Error extracting page context", ['error' => $e->getMessage()]);
             return '';
         }
     }
-    
+
     /**
      * Get appropriate page class for parent type
      */
@@ -1143,14 +1162,14 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 return 'ilPageObject';
         }
     }
-    
+
     /**
      * Get page title based on parent type
      */
     private function getPageTitle(string $parent_type, int $parent_id) : string
     {
         global $DIC;
-        
+
         try {
             switch ($parent_type) {
                 case 'lm':
@@ -1158,17 +1177,17 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     require_once("Modules/LearningModule/classes/class.ilLMPageObject.php");
                     $lm_page = new ilLMPageObject($parent_id);
                     return $lm_page->getTitle();
-                    
+
                 case 'wpg':
                     require_once("Modules/Wiki/classes/class.ilWikiPage.php");
                     $wiki_page = new ilWikiPage($parent_id);
                     return $wiki_page->getTitle();
-                    
+
                 case 'cont':
                     require_once("Services/Object/classes/class.ilObject.php");
                     $obj = ilObject::_lookupTitle($parent_id);
                     return $obj;
-                    
+
                 default:
                     // Try to get title via object lookup
                     $title = ilObject::_lookupTitle($parent_id);
@@ -1179,7 +1198,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             return '';
         }
     }
-    
+
     /**
      * Extract plain text from ILIAS page XML
      */
@@ -1188,22 +1207,22 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         if (empty($xml_content)) {
             return '';
         }
-        
+
         try {
             // Load XML
             $dom = new DOMDocument();
             $dom->loadXML($xml_content);
-            
+
             // Remove PageComponent elements that contain AI chats to avoid recursion
             $xpath = new DOMXPath($dom);
             $page_components = $xpath->query('//PageComponent[@ComponentType="AIChatPageComponent"]');
             foreach ($page_components as $component) {
                 $component->parentNode->removeChild($component);
             }
-            
+
             // Extract text content from various ILIAS page elements
             $text_parts = [];
-            
+
             // Paragraphs
             $paragraphs = $xpath->query('//Paragraph');
             foreach ($paragraphs as $paragraph) {
@@ -1212,7 +1231,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     $text_parts[] = $text;
                 }
             }
-            
+
             // Lists
             $lists = $xpath->query('//List');
             foreach ($lists as $list) {
@@ -1221,7 +1240,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     $text_parts[] = $text;
                 }
             }
-            
+
             // Tables
             $tables = $xpath->query('//Table');
             foreach ($tables as $table) {
@@ -1230,7 +1249,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     $text_parts[] = "Table content: " . $text;
                 }
             }
-            
+
             // Media objects (get alt text/captions)
             $media_objects = $xpath->query('//MediaObject');
             foreach ($media_objects as $media) {
@@ -1242,25 +1261,25 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     }
                 }
             }
-            
+
             // Join all text parts
             $content = implode("\n\n", $text_parts);
-            
+
             // Clean up whitespace
             $content = preg_replace('/\s+/', ' ', $content);
             $content = preg_replace('/\n\s*\n/', "\n\n", $content);
-            
+
             return trim($content);
-            
+
         } catch (Exception $e) {
             $this->logger->warning("Error parsing page XML", ['error' => $e->getMessage()]);
             // Fallback: try to extract basic text content
             return strip_tags($xml_content);
         }
     }
-    
 
-    
+
+
     /**
      * Get debug log file path
      */
@@ -1268,7 +1287,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     {
         return $this->plugin->getPluginBaseDir() . '/debug.log';
     }
-    
+
     /**
      * Convert property value to boolean
      * Handles various string representations of booleans
@@ -1278,12 +1297,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         if (is_bool($value)) {
             return $value;
         }
-        
+
         if (is_string($value)) {
             $value = strtolower(trim($value));
             return in_array($value, ['1', 'true', 'yes', 'on'], true);
         }
-        
+
         return (bool)$value;
     }
 }

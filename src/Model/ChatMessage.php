@@ -215,6 +215,32 @@ class ChatMessage
     public function setTimestamp(\DateTime $timestamp): void { $this->timestamp = $timestamp; }
 
     /**
+     * Add attachment to this message
+     */
+    public function addAttachment(int $attachment_id): bool
+    {
+        if (!$this->messageId) {
+            // Message must be saved first to have an ID
+            return false;
+        }
+
+        // Load the attachment and set the message_id
+        $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
+        if (!$attachment->getId()) {
+            // Attachment doesn't exist
+            return false;
+        }
+
+        try {
+            $attachment->setMessageId($this->messageId);
+            $attachment->save();
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
      * Convert to array for API responses
      */
     public function toArray(): array
