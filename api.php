@@ -204,7 +204,7 @@ function handleLoadChat(array $data): array
         ];
         
     } catch (\Exception $e) {
-        $logger->debug("Load chat error: " . $e->getMessage());
+        $logger->warning("Failed to load chat configuration", ['chat_id' => $chat_id, 'error' => $e->getMessage()]);
         return ['error' => 'Failed to load chat'];
     }
 }
@@ -238,7 +238,7 @@ function handleClearChat(array $data): array
         ];
         
     } catch (\Exception $e) {
-        $logger->debug("Clear chat error: " . $e->getMessage());
+        $logger->warning("Failed to clear chat", ['chat_id' => $chat_id, 'error' => $e->getMessage()]);
         return ['error' => 'Failed to clear chat'];
     }
 }
@@ -296,9 +296,8 @@ function handleSendMessage(array $data): array
                             ['message_id' => ['integer', $userMessage->getMessageId()]],
                             ['id' => ['integer', $attachment_id]]
                         );
-                        $logger->debug("Bound attachment " . $attachment_id . " to message " . $userMessage->getMessageId());
                     } catch (\Exception $e) {
-                        $logger->debug("Failed to bind attachment " . $attachment_id . ": " . $e->getMessage());
+                        $logger->warning("Failed to bind attachment to message", ['attachment_id' => $attachment_id, 'message_id' => $userMessage->getMessageId(), 'error' => $e->getMessage()]);
                     }
                 }
             }
@@ -313,14 +312,12 @@ function handleSendMessage(array $data): array
         // Build CLEAN system prompt (ONLY AI behavior, no content)
         $clean_system_prompt = $chatConfig->getSystemPrompt();
 
-        $logger->debug("Clean system prompt (" . strlen($clean_system_prompt) . " chars): " . substr($clean_system_prompt, 0, 200) . '...');
         
         // Build context resources (ALL context as structured resources)
         $contextResources = [];
         
         // Add page context as resource if enabled
         if ($chatConfig->isIncludePageContext()) {
-            $logger->debug("Page context enabled, getting context for chat: " . $chat_id);
             
             $page_context = getPageContextForChat($chatConfig);
             if (!empty($page_context)) {
@@ -330,7 +327,6 @@ function handleSendMessage(array $data): array
                     'title' => 'Aktuelle Lernseite',
                     'content' => $page_context
                 ];
-                $logger->debug("Page context added as resource (" . strlen($page_context) . " chars)");
             }
         }
         
@@ -393,13 +389,12 @@ function handleSendMessage(array $data): array
                         }
                     }
                 } catch (\Exception $e) {
-                    $logger->debug("Background file error: " . $e->getMessage());
+                    $logger->warning("Background file processing failed", ['file_info' => $file_info, 'error' => $e->getMessage()]);
                     continue;
                 }
             }
         }
 
-        $logger->debug("Context resources built: " . count($contextResources) . " resources");
         
         // Initialize AI service
         $llm = createLLMInstance($chatConfig->getAiService());
@@ -436,7 +431,6 @@ function handleSendMessage(array $data): array
                                         'url' => $imageData
                                     ]
                                 ];
-                                $logger->debug("Added image attachment to AI message");
                             }
                         } elseif ($attachment->isPdf()) {
                             // Handle PDF attachments - convert to image pages
@@ -452,13 +446,12 @@ function handleSendMessage(array $data): array
                                         ];
                                     }
                                 }
-                                $logger->debug("Added PDF with " . count($pdfDataUrls) . ' pages to AI message');
                             } else {
-                                $logger->debug("PDF attachment failed to convert to images");
+                                $logger->warning("PDF attachment conversion failed", ['attachment_id' => $attachment->getAttachmentId()]);
                             }
                         }
                     } catch (\Exception $e) {
-                        $logger->debug("Error processing attachment: " . $e->getMessage());
+                        $logger->warning("Attachment processing error", ['attachment_id' => $attachment->getAttachmentId(), 'error' => $e->getMessage()]);
                     }
                 }
                 
@@ -492,7 +485,7 @@ function handleSendMessage(array $data): array
         ];
         
     } catch (\Exception $e) {
-        $logger->debug("Send message error: " . $e->getMessage());
+        $logger->error("Message sending failed", ['chat_id' => $chat_id, 'error' => $e->getMessage()]);
         return ['error' => 'Failed to send message'];
     }
 }
@@ -641,7 +634,7 @@ function handleSendMessageStream(array $data): void
                         }
                     }
                 } catch (\Exception $e) {
-                    $logger->debug("Background file processing failed: " . $e->getMessage());
+                    $logger->warning("Background file processing failed", ['file_id' => $file_id, 'error' => $e->getMessage()]);
                     continue;
                 }
             }
@@ -693,7 +686,7 @@ function handleSendMessageStream(array $data): void
                             }
                         }
                     } catch (\Exception $e) {
-                        $logger->debug("Attachment processing failed: " . $e->getMessage());
+                        $logger->warning("Attachment processing failed", ['error' => $e->getMessage()]);
                     }
                 }
                 
@@ -757,7 +750,7 @@ function getPageContextForChat(ChatConfig $chatConfig): string
     ];
     $copage_type = $copage_type_map[$parent_type] ?? null;
     if (!$copage_type) {
-        $logger->debug("No COPage type mapping for " . $parent_type);
+        $logger->info("No page context available for parent type", ['parent_type' => $parent_type]);
         return '';
     }
 
@@ -769,13 +762,13 @@ function getPageContextForChat(ChatConfig $chatConfig): string
             if ($page_id > 0) {
                 $page = $page_manager->get('wpg', $page_id);
             } else {
-                $logger->debug("Missing wiki page_id for wpg");
+                $logger->info("Missing wiki page_id for wpg context");
                 return '';
             }
         } else {
             $target_page_id = $page_id ?: $parent_id;
             if ($target_page_id <= 0) {
-                $logger->debug("No page/parent id for type=" . $copage_type);
+                $logger->info("No page/parent id available", ['copage_type' => $copage_type]);
                 return '';
             }
             $page = $page_manager->get($copage_type, $target_page_id);
@@ -786,7 +779,7 @@ function getPageContextForChat(ChatConfig $chatConfig): string
     }
 
     if (!$page) {
-        $logger->debug("Service returned null for type=" . $copage_type . ", id=" . ($copage_type === 'wpg' ? $page_id : ($page_id ?: $parent_id)));
+        $logger->info("Service returned null for page context", ['copage_type' => $copage_type, 'id' => ($copage_type === 'wpg' ? $page_id : ($page_id ?: $parent_id))]);
         return '';
     }
 
@@ -805,16 +798,7 @@ function getPageContextForChat(ChatConfig $chatConfig): string
     
     // Log config source
     if ($max_context_chars_config !== null) {
-        $logger->debug("Using central config for page context limit", [
-            'source' => 'central_config',
-            'config_value' => $max_context_chars_config,
-            'effective_limit' => $max_context_chars
-        ]);
     } else {
-        $logger->debug("Using fallback page context limit", [
-            'source' => 'fallback',
-            'effective_limit' => $max_context_chars
-        ]);
     }
     
     if (strlen($result) > $max_context_chars) {
@@ -881,7 +865,7 @@ function getBackgroundFilesContextForChat(ChatConfig $chatConfig): string
                 $context_parts[] = $file_context;
                 
             } catch (\Exception $e) {
-                $logger->debug("Background file error: " . $e->getMessage());
+                $logger->warning("Background file context error", ['file_id' => $file_info['file_id'], 'error' => $e->getMessage()]);
                 continue;
             }
         }
@@ -889,7 +873,7 @@ function getBackgroundFilesContextForChat(ChatConfig $chatConfig): string
         return implode("\n\n---\n\n", $context_parts);
         
     } catch (\Exception $e) {
-        $logger->debug("Background files context error: " . $e->getMessage());
+        $logger->error("Failed to build background files context", ['error' => $e->getMessage()]);
         return '';
     }
 }
@@ -964,7 +948,7 @@ function getBackgroundImageMessagesForChat(ChatConfig $chatConfig): array
                 }
                 
             } catch (\Exception $e) {
-                $logger->debug("Background image file error: " . $e->getMessage());
+                $logger->warning("Background image processing failed", ['file_id' => $file_info['file_id'], 'error' => $e->getMessage()]);
                 continue;
             }
         }
@@ -989,7 +973,7 @@ function getBackgroundImageMessagesForChat(ChatConfig $chatConfig): array
         return [];
         
     } catch (\Exception $e) {
-        $logger->debug("Background image messages error: " . $e->getMessage());
+        $logger->error("Failed to build background image messages", ['error' => $e->getMessage()]);
         return [];
     }
 }
@@ -1004,14 +988,13 @@ function convertPdfToImagesDirectly($identification, $revision, $irss): ?array
     $logger = $DIC->logger()->root();
 
     try {
-        $logger->debug("Converting PDF to images: " . $revision->getTitle());
         
         // Get PDF content from IRSS
         $stream = $irss->consume()->stream($identification);
         $pdf_content = $stream->getStream()->getContents();
         
         if (empty($pdf_content)) {
-            $logger->debug("PDF content is empty");
+            $logger->info("PDF file is empty", ['title' => $revision->getTitle()]);
             return null;
         }
         
@@ -1033,7 +1016,7 @@ function convertPdfToImagesDirectly($identification, $revision, $irss): ?array
         
         if (empty($png_files)) {
             @unlink($temp_pdf);
-            $logger->debug("No PNG files generated from PDF");
+            $logger->warning("PDF conversion produced no images", ['title' => $revision->getTitle()]);
             return null;
         }
         
@@ -1070,11 +1053,10 @@ function convertPdfToImagesDirectly($identification, $revision, $irss): ?array
         // Cleanup temp PDF
         @unlink($temp_pdf);
 
-        $logger->debug("Successfully converted PDF to " . count($data_urls) . " page images");
         return !empty($data_urls) ? $data_urls : null;
         
     } catch (\Exception $e) {
-        $logger->debug("PDF conversion error: " . $e->getMessage());
+        $logger->error("PDF conversion failed", ['title' => $revision->getTitle(), 'error' => $e->getMessage()]);
         return null;
     }
 }
@@ -1126,7 +1108,7 @@ function extractFileContentFromIRSS($identification)
                 return '[File: ' . $revision->getTitle() . ', Type: ' . $revision->getInformation()->getMimeType() . ']';
         }
     } catch (\Exception $e) {
-        $logger->debug("Extract file content error: " . $e->getMessage());
+        $logger->error("Failed to extract file content", ['error' => $e->getMessage()]);
         return '';
     }
 }
@@ -1164,11 +1146,11 @@ function updatePageContextFromPageComponent(ChatConfig $chatConfig, string $chat
                 $logger->debug("Page context already matches current PageComponent location");
             }
         } else {
-            $logger->debug("Could not find PageComponent containing chat_id: " . $chat_id);
+            $logger->info("PageComponent not found for chat", ['chat_id' => $chat_id]);
         }
         
     } catch (\Exception $e) {
-        $logger->debug("Error updating page context from PageComponent: " . $e->getMessage());
+        $logger->warning("Failed to update page context", ['chat_id' => $chat_id, 'error' => $e->getMessage()]);
     }
 }
 
@@ -1295,7 +1277,6 @@ function handleFileUpload(array $data): array
     global $DIC;
     $logger = $DIC->logger()->root();
 
-    $logger->debug("HandleFileUpload called");
     
     $chat_id = $data['chat_id'] ?? '';
     if (empty($chat_id)) {
@@ -1394,7 +1375,7 @@ function handleFileUpload(array $data): array
         ];
         
     } catch (\Exception $e) {
-        $logger->debug("File upload failed: " . $e->getMessage());
+        $logger->error("File upload failed", ['error' => $e->getMessage()]);
         return ['error' => 'File upload failed'];
     }
 }

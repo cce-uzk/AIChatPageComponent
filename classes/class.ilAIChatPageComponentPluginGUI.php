@@ -26,6 +26,7 @@ use ILIAS\Plugin\pcaic\Validation\FileUploadValidator;
  * @see ilAIChatPageComponentPlugin Main plugin class
  *
  * @ilCtrl_isCalledBy ilAIChatPageComponentPluginGUI: ilPCPluggedGUI
+ * @ilCtrl_isCalledBy ilAIChatPageComponentPluginGUI: ilRepositoryGUI
  */
 class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 {
@@ -76,7 +77,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
      */
     public function setPCGUI(ilPageContentGUI $a_val): void
     {
-        $this->logger->debug("Page content GUI reference established");
         parent::setPCGUI($a_val);
     }
 
@@ -98,20 +98,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
      */
     public function executeCommand() : void
     {
-        // Load background file upload handler for multimodal support
-        require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatBackgroundFileUploadHandlerGUI.php');
-
         $next_class = $this->ctrl->getNextClass();
 
         switch ($next_class) {
-            case 'ilaichatbackgroundfileuploadhandlergui':
-                $upload_handler = new ilAIChatBackgroundFileUploadHandlerGUI();
-                $this->ctrl->forwardCommand($upload_handler);
-                break;
-            case 'ilaichatsimpleuploadhandlergui':
-                require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatSimpleUploadHandlerGUI.php');
-                $upload_handler = new ilAIChatSimpleUploadHandlerGUI();
-                $this->ctrl->forwardCommand($upload_handler);
+            case strtolower(ilAIChatPageComponentFileUploadHandlerGUI::class):
+                require_once(__DIR__ . '/class.ilAIChatPageComponentFileUploadHandlerGUI.php');
+                $gui = new ilAIChatPageComponentFileUploadHandlerGUI();
+                $this->ctrl->forwardCommand($gui);
                 break;
             default:
                 // Execute standard PageComponent commands
@@ -125,6 +118,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 break;
         }
     }
+
 
     /**
      * Displays the form for inserting a new AI chat component
@@ -160,23 +154,19 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $data = $form->getData();
 
             if ($form->getError() != null) {
-                $this->logger->debug("Form validation errors in create");
                 $renderer = $DIC->ui()->renderer();
                 $this->tpl->setContent($renderer->render($form));
                 return;
             }
 
             if ($data !== null) {
-                $this->logger->debug("Form data received in create: " . print_r($data, true));
                 if ($this->saveForm($data, true)) {
                     $this->tpl->setOnScreenMessage("success", $this->lng->txt("saved_successfully"), true);
                     $this->returnToParent();
                     return;
                 } else {
-                    $this->logger->debug("saveForm failed in create");
                 }
             } else {
-                $this->logger->debug("No form data received in create - form validation failed");
             }
         }
 
@@ -189,7 +179,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $form = $this->initForm(false);
         $renderer = $DIC->ui()->renderer();
-
         $this->tpl->setContent($renderer->render($form));
     }
 
@@ -204,23 +193,19 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $data = $form->getData();
 
             if ($form->getError() != null) {
-                $this->logger->debug("Form validation errors in update");
                 $renderer = $DIC->ui()->renderer();
                 $this->tpl->setContent($renderer->render($form));
                 return;
             }
 
             if ($data !== null) {
-                $this->logger->debug("Form data received in update: " . print_r($data, true));
                 if ($this->saveForm($data, false)) {
                     $this->tpl->setOnScreenMessage("success", $this->lng->txt("msg_obj_modified"), true);
                     $this->returnToParent();
                     return;
                 } else {
-                    $this->logger->debug("saveForm failed in update");
                 }
             } else {
-                $this->logger->debug('No form data received in update - form validation failed');
             }
         }
 
@@ -259,56 +244,29 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $this->plugin->txt('setting_disabled_by_admin_info')
             )->withValue($this->plugin->txt('background_files_disabled'))->withDisabled(true)->withDedicatedName('background_files');
         } else {
-            // Use different upload handlers based on CREATE vs EDIT mode
-            if ($a_create) {
-                // CREATE mode: Use simple handler like MainMenu
-                $this->logger->debug("CREATE mode: Using simple upload handler (like MainMenu)");
-                require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatSimpleUploadHandlerGUI.php');
-                $upload_handler = new ilAIChatSimpleUploadHandlerGUI();
-            } else {
-                // EDIT mode: Use IRSS handler for proper PageComponent integration
-                $this->logger->debug("EDIT mode: Using IRSS upload handler");
-                require_once($this->plugin->getPluginBaseDir() . '/classes/class.ilAIChatBackgroundFileUploadHandlerGUI.php');
-                $upload_handler = new ilAIChatBackgroundFileUploadHandlerGUI();
-            }
-
-            // Build allowed MIME types from configured extensions
-            $extension_to_mime = [
-                'pdf' => 'application/pdf',
-                'txt' => 'text/plain',
-                'md' => 'text/markdown',
-                'csv' => 'text/csv',
-                'jpg' => 'image/jpeg',
-                'jpeg' => 'image/jpeg',
-                'png' => 'image/png',
-                'gif' => 'image/gif',
-                'webp' => 'image/webp'
-            ];
-
-            $allowed_mimes = [];
-            foreach ($allowed_extensions as $ext) {
-                if (isset($extension_to_mime[$ext])) {
-                    $allowed_mimes[] = $extension_to_mime[$ext];
-                }
-            }
-
+            // Use the same approach for both CREATE and EDIT
             $extensions_display = implode(', ', array_map('strtoupper', $allowed_extensions));
-            $info_text = $this->plugin->txt('background_files_upload_info') . ' Allowed types: ' . $extensions_display;
+            $info_text = 'Upload background files for AI context. Allowed types: ' . $extensions_display;
 
-            // Debug: Log which handler class is being used for URL generation
-            $handler_class = get_class($upload_handler);
-            $this->logger->debug("CURRENT FORM: File upload field using handler: " . $handler_class);
-            $this->logger->debug("CURRENT FORM: Handler upload URL: " . $upload_handler->getUploadURL());
+            // File uploads now work in both CREATE and EDIT mode with IRSS handler
+            require_once(__DIR__ . '/class.ilAIChatPageComponentFileUploadHandlerGUI.php');
+            $upload_handler = new ilAIChatPageComponentFileUploadHandlerGUI();
 
-            // Create the modern UI FileUpload component with multi-file support
             $file_upload = $ui_factory->input()->field()->file(
                 $upload_handler,
-                $this->plugin->txt('background_files_upload_label'),
-                $info_text
-            )
-            ->withDedicatedName('background_files')
-            ->withAcceptedMimeTypes($allowed_mimes)
-            ->withMaxFiles(10);
+                $this->plugin->txt('background_files_upload_label')
+            )->withByline($info_text)->withDedicatedName('background_files')->withMaxFiles(10);
+
+            // Set existing values for EDIT mode
+            if (!$a_create && isset($prop['background_files'])) {
+                $existing_file_ids = is_string($prop['background_files']) ?
+                    json_decode($prop['background_files'], true) :
+                    $prop['background_files'];
+
+                if (is_array($existing_file_ids) && !empty($existing_file_ids)) {
+                    $file_upload = $file_upload->withValue($existing_file_ids);
+                }
+            }
         }
 
         // Get AIChat defaults
@@ -341,11 +299,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                             'disclaimer' => $chatConfig->getDisclaimer(),
                             'background_files' => json_encode($chatConfig->getBackgroundFiles())
                         ];
-                        $this->logger->debug("Loaded configuration from new ChatConfig model");
                     } else {
                         // Fallback to old properties
                         $prop = $old_properties;
-                        $this->logger->debug("ChatConfig not found, using old properties");
                     }
                 } catch (\Exception $e) {
                     $this->logger->warning("Error loading ChatConfig", ['error' => $e->getMessage()]);
@@ -355,7 +311,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $prop = $old_properties;
             }
 
-            $this->logger->debug("All properties in edit mode", ['properties' => $prop]);
         }
 
         // Set existing files for edit mode
@@ -364,11 +319,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 json_decode($prop['background_files'], true) :
                 $prop['background_files'];
 
-            $this->logger->debug("Loading existing files for edit mode", ['file_ids' => $existing_file_ids]);
             if (is_array($existing_file_ids) && !empty($existing_file_ids)) {
                 // File upload field expects array of string IDs - ensure we have that format
                 $file_upload = $file_upload->withValue($existing_file_ids);
-                $this->logger->debug("Set file upload value", ['file_count' => count($existing_file_ids)]);
             }
         }
 
@@ -511,22 +464,25 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         if ($file_handling_enabled && $background_files_enabled) {
             $background_files = $form_data['background_files'] ?? [];
 
-            // Only process if it's an array (file upload field), not a string (disabled text field)
+            // Handle upload handler results
             if (is_array($background_files)) {
-                foreach ($background_files as $file_id) {
-                    // AbstractCtrlAwareIRSSUploadHandler returns string IDs directly, not ResourceIdentification objects
-                    if (is_string($file_id) && !empty($file_id)) {
-                        $file_ids[] = $file_id;
-                    } elseif ($file_id instanceof \ILIAS\ResourceStorage\Identification\ResourceIdentification) {
-                        // Fallback: if it's still a ResourceIdentification object
-                        $file_ids[] = $file_id->serialize();
+                foreach ($background_files as $file_data) {
+                    if (is_string($file_data)) {
+                        // Direct resource ID from upload handler
+                        $file_ids[] = $file_data;
+                    } elseif (is_array($file_data) && isset($file_data['resource_id'])) {
+                        // Resource ID wrapped in array
+                        $file_ids[] = $file_data['resource_id'];
                     }
+                }
+            } elseif (is_string($background_files)) {
+                // Fallback: JSON-encoded string
+                $decoded = json_decode($background_files, true);
+                if (is_array($decoded)) {
+                    $file_ids = $decoded;
                 }
             }
         }
-
-        $this->logger->debug("Background files form data", ['data' => $background_files]);
-        $this->logger->debug("Background file IDs processed", ['file_ids' => $file_ids]);
 
         // Get page information for context
         $page_info = $this->getPageInfo();
@@ -580,7 +536,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     $success = $this->updateElement($properties);
                 }
 
-                $this->logger->debug("Saved ChatConfig successfully", ['chat_id' => $chat_id]);
                 return $success;
             } else {
                 $this->logger->warning("Failed to save ChatConfig");
@@ -678,9 +633,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     'disclaimer' => $chatConfig->getDisclaimer(),
                     'background_files' => json_encode($chatConfig->getBackgroundFiles())
                 ];
-                $this->logger->debug("Using configuration from new ChatConfig model for rendering");
             } else {
-                $this->logger->debug("ChatConfig not found, using legacy properties for rendering");
             }
         } catch (\Exception $e) {
             $this->logger->warning("Error loading ChatConfig for rendering", ['error' => $e->getMessage()]);
@@ -875,7 +828,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
      */
     private function updateChatConfigPageContext(\ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig): void
     {
-        $this->logger->debug("Updating ChatConfig page context", ['chat_id' => $chatConfig->getChatId()]);
 
         try {
             // Get current page info from this PageComponent instance
@@ -894,27 +846,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $current_parent_id !== $new_parent_id ||
                 $current_parent_type !== $new_parent_type) {
 
-                $this->logger->debug("Updating page context during render", [
-                    'old_page_id' => $current_page_id,
-                    'old_parent_id' => $current_parent_id,
-                    'old_parent_type' => $current_parent_type,
-                    'new_page_id' => $new_page_id,
-                    'new_parent_id' => $new_parent_id,
-                    'new_parent_type' => $new_parent_type
-                ]);
-
                 $chatConfig->setPageId($new_page_id);
                 $chatConfig->setParentId($new_parent_id);
                 $chatConfig->setParentType($new_parent_type);
                 $chatConfig->save();
 
-                $this->logger->debug("Page context updated successfully during chat render");
-            } else {
-                $this->logger->debug("Page context already correct during render", [
-                    'page_id' => $new_page_id,
-                    'parent_id' => $new_parent_id,
-                    'parent_type' => $new_parent_type
-                ]);
             }
 
         } catch (\Exception $e) {
@@ -947,10 +883,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         try {
             $plugin_base_url = $this->plugin->getPluginBaseUrl();
             $api_url = $plugin_base_url . '/api.php';
-
-            $this->logger->debug('API url: {api_url}', [
-                'api_url' => $api_url
-            ]);
 
             return $api_url;
         } catch (Exception $e) {
@@ -1054,12 +986,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $parent_id   = (int) ($this->getPlugin()->getParentId()   ?? 0);
         $parent_type =        ($this->getPlugin()->getParentType() ?? '');
 
-        // Logging
-        $this->logger->debug("Getting page info", [
-            'page_id' => $page_id,
-            'parent_id' => $parent_id,
-            'parent_type' => $parent_type
-        ]);
 
         return [
             'page_id'     => $page_id,
@@ -1128,7 +1054,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $context = "Page Title: $page_title\n\n" . $context;
             }
 
-            $this->logger->debug("Extracted context", ['length' => strlen($context)]);
 
             return $context;
 
@@ -1280,13 +1205,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
 
 
-    /**
-     * Get debug log file path
-     */
-    private function getDebugLogPath(): string
-    {
-        return $this->plugin->getPluginBaseDir() . '/debug.log';
-    }
 
     /**
      * Convert property value to boolean

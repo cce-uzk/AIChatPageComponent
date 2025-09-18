@@ -35,12 +35,6 @@ class AIChatPageComponentMessage
         }
     }
 
-    /**
-     * Helper function to get debug log path
-     */
-    private function getDebugLogPath(): string {
-        return __DIR__ . '/../../debug.log';
-    }
 
     public function getId(): int
     {
@@ -154,11 +148,9 @@ class AIChatPageComponentMessage
         $db = $DIC->database();
         $user_id = $DIC->user() ? $DIC->user()->getId() : 0;
 
-        file_put_contents($this->getDebugLogPath(), date('Y-m-d H:i:s') . ' - Message::save() called. Current ID: ' . $this->getId() . ', Role: ' . $this->getRole() . "\n", FILE_APPEND);
 
         try {
             if ($this->getId() > 0) {
-                file_put_contents($this->getDebugLogPath(), date('Y-m-d H:i:s') . ' - Message::save() UPDATE path for ID: ' . $this->getId() . "\n", FILE_APPEND);
                 $db->manipulate(
                     "UPDATE pcaic_messages SET " .
                     "chat_id = " . $db->quote($this->getChatId(), 'text') . ", " .
@@ -169,9 +161,7 @@ class AIChatPageComponentMessage
                     "WHERE id = " . $db->quote($this->getId(), 'integer')
                 );
             } else {
-                file_put_contents($this->getDebugLogPath(), date('Y-m-d H:i:s') . ' - Message::save() INSERT path - generating new ID' . "\n", FILE_APPEND);
                 $id = $db->nextId('pcaic_messages');
-                file_put_contents($this->getDebugLogPath(), date('Y-m-d H:i:s') . ' - Message::save() Generated ID: ' . $id . "\n", FILE_APPEND);
                 $this->setId($id);
                 
                 $db->manipulate(
@@ -184,10 +174,8 @@ class AIChatPageComponentMessage
                     $db->quote($this->getDate()->format('Y-m-d H:i:s'), 'timestamp') .
                     ")"
                 );
-                file_put_contents($this->getDebugLogPath(), date('Y-m-d H:i:s') . ' - Message::save() INSERT completed for ID: ' . $this->getId() . "\n", FILE_APPEND);
             }
         } catch (\Exception $e) {
-            file_put_contents($this->getDebugLogPath(), date('Y-m-d H:i:s') . ' - Message::save() ERROR: ' . $e->getMessage() . "\n", FILE_APPEND);
             throw new AIChatPageComponentException("Failed to save message: " . $e->getMessage());
         }
     }

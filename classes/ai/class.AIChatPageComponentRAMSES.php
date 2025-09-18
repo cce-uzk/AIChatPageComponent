@@ -128,8 +128,6 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
 
         $apiUrl = \platform\AIChatPageComponentConfig::get('ramses_chat_api_url') ?: 'https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions';
 
-        $this->logger->debug("RAMSES sendMessagesArray called");
-        $this->logger->debug("Processing context resources", ['count' => count($contextResources)]);
         
         // Build messages array with separated context structure
         $messagesArray = [];
@@ -140,7 +138,6 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                 'role' => 'system',
                 'content' => $this->prompt
             ];
-            $this->logger->debug("System message added to payload");
         }
         
         // Context resources message (as assistant introducing available resources)
@@ -220,17 +217,11 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                 'role' => 'user',//'assistant',
                 'content' => $contextContent
             ];
-            
-            $this->logger->debug("Context resources message added", [
-                'resource_count' => count($contextResources),
-                'resource_kinds' => implode(', ', array_unique(array_column($contextResources, 'kind')))
-            ]);
         }
         
         // 3. Add the actual conversation messages
         $messagesArray = array_merge($messagesArray, $messages);
         
-        $this->logger->debug("Final messages array prepared", ['count' => count($messagesArray)]);
         
         $payload = json_encode([
             "messages" => $messagesArray,
@@ -243,54 +234,10 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             throw new AIChatPageComponentException("Failed to encode API payload: " . json_last_error_msg());
         }
         
-        $this->logger->debug("RAMSES API payload prepared", ['payload' => $payload]);
 
         return $this->executeApiRequest($apiUrl, $payload);
     }
 
-    /**
-     * Send messages array directly
-     */
-    /*public function sendMessagesArray(array $messages): string
-    {
-        global $DIC;
-
-        $apiUrl = \platform\AIChatPageComponentConfig::get('ramses_chat_api_url') ?: 'https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions';
-
-        $this->logger->debug("RAMSES sendMessagesArray prompt check", [
-            'prompt_value' => $this->prompt,
-            'prompt_length' => strlen($this->prompt ?? ''),
-            'prompt_empty' => empty($this->prompt)
-        ]);
-
-        // Add system prompt if set
-        $messagesArray = [];
-        if (!empty($this->prompt)) {
-            $messagesArray[] = [
-                'role' => 'system',
-                'content' => $this->prompt
-            ];
-            $this->logger->debug("RAMSES - System message added to payload");
-        } else {
-            $this->logger->debug("RAMSES - System message NOT added (prompt is empty)");
-        }
-        
-        // Add the provided messages
-        $messagesArray = array_merge($messagesArray, $messages);
-        
-        $this->logger->debug("RAMSES - Final messagesArray count", ['count' => count($messagesArray)]);
-        
-        $payload = json_encode([
-            "messages" => $messagesArray,
-            "model" => $this->model,
-            "temperature" => 0.5,
-            "stream" => $this->isStreaming()
-        ]);
-        
-        $this->logger->debug("RAMSES payload", ['payload' => $payload]);
-
-        return $this->executeApiRequest($apiUrl, $payload);
-    }*/
 
     public function sendChat($chat)
     {
@@ -323,7 +270,6 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             // WARNING: This should not be used in production
             curl_setopt($curlSession, CURLOPT_SSL_VERIFYPEER, false);
             curl_setopt($curlSession, CURLOPT_SSL_VERIFYHOST, false);
-            $this->logger->debug("SSL certificate not found, disabling SSL verification");
         }
 
         curl_setopt($curlSession, CURLOPT_URL, $apiUrl);
@@ -387,14 +333,13 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         }
 
         if ($httpcode != 200) {
-            // Enhanced debugging for RAMSES HTTP 460 error - write to debug.log directly
-            $debug_file = __DIR__ . '/../../debug.log';
-            $timestamp = date('Y-m-d H:i:s');
-            file_put_contents($debug_file, "$timestamp - RAMSES API Error - HTTP Code: $httpcode\n", FILE_APPEND);
-            file_put_contents($debug_file, "$timestamp - RAMSES API Response: $response\n", FILE_APPEND);
-            file_put_contents($debug_file, "$timestamp - RAMSES Payload sent: $payload\n", FILE_APPEND);
-            file_put_contents($debug_file, "$timestamp - RAMSES API URL: $apiUrl\n", FILE_APPEND);
-            file_put_contents($debug_file, "$timestamp - RAMSES API Key set: " . (empty($this->apiKey) ? 'NO' : 'YES (length: ' . strlen($this->apiKey) . ')') . "\n", FILE_APPEND);
+            // Log RAMSES API error with structured data
+            $this->logger->error("RAMSES API request failed", [
+                'http_code' => $httpcode,
+                'url' => $apiUrl,
+                'has_api_key' => !empty($this->apiKey),
+                'response' => substr($response, 0, 500)
+            ]);
             
             $this->logger->error("RAMSES API Error", [
                 'http_code' => $httpcode,
