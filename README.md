@@ -1,10 +1,10 @@
-# AIChatPageComponent
+# AI-Chat PageComponent
 
 ### University of Cologne - ILIAS AI Integration
 
-A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered chat interfaces directly into learning pages. Each chat instance can be configured with custom system prompts for educational purposes, such as interactive exercises in AI literacy or subject-specific tutoring.
+A ILIAS 9 PageComponent plugin that enables embedding AI-powered chat interfaces directly into learning pages. Each chat instance can be configured with custom system prompts for educational purposes, such as interactive exercises in AI literacy or subject-specific tutoring.
 
-> **⚠️ Important Note**: This is a **custom/internal plugin** specifically designed for use with the University of Cologne's local RAMSES AI service. Organizations wishing to use this plugin will need to customize it according to their own AI service requirements and infrastructure. The plugin is not plug-and-play for external installations without proper adaptation.
+> **⚠️ Important Note**: This is a **custom/internal plugin** specifically designed for use with OSKI.nrw AI service. Organizations wishing to use this plugin will need to customize it according to their own AI service requirements and infrastructure. The plugin is not plug-and-play for external installations without proper adaptation.
 
 ## Screenshots
 
@@ -52,14 +52,14 @@ A professional ILIAS 9 PageComponent plugin that enables embedding AI-powered ch
 - **Web Server**: Apache 2.4+ or Nginx 1.18+
 
 ### Dependencies
-- **RAMSES AI Service**: Direct integration with RAMSES API endpoint
+- **OSKI.nrw AI Service**: Direct integration with OSKI.nrw API endpoint
 - **PHP Extensions**: `curl`, `gd`, `imagick` (recommended), `ghostscript` (for PDF processing)
 - **ILIAS ResourceStorage**: For secure file handling (built-in ILIAS 9)
 
 ### Optional Dependencies
 - **AIChat Repository Plugin**: Provides enhanced RBAC permission control for AI chat component creation. Without this plugin, all content editors can create AI chat components. Recommended for institutions requiring granular access control.
 
-> **✅ Independent Plugin**: This plugin is now **fully independent** and does **not require the AIChat base plugin**. All RAMSES integration is handled directly within this plugin.
+> **✅ Independent Plugin**: This plugin is now **fully independent** and does **not require the AIChat base plugin**. All OSKI.nrw integration is handled directly within this plugin.
 
 ## Permissions & Access Control
 
@@ -128,8 +128,8 @@ In ILIAS Administration:
 
 ## Configuration
 
-### RAMSES API Setup
-After plugin activation, configure the RAMSES integration:
+### OSKI.nrw API Setup
+After plugin activation, configure the OSKI.nrw integration:
 
 1. Navigate to **Administration > Extending ILIAS > Plugins**
 2. Find **AIChatPageComponent** and click **Configure**
@@ -236,7 +236,7 @@ The plugin uses the following table structure with clean separation of concerns:
 - **Session Management**: Automatic user session creation and management
 
 ### AI Integration & File Processing
-Currently integrated with **RAMSES** (Mistral-based service):
+Currently integrated with (mistral model) on **OSKI.nrw** :
 - **Endpoint**: `https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions`
 - **Multimodal Support**: Text, images, and document analysis
 - **Configurable Parameters**: Model settings and memory management
@@ -288,11 +288,11 @@ ls -la /var/www/html/ilias/data/
 ```
 
 #### AI Response Errors
-- Check RAMSES endpoint connectivity
+- Check OSKI.nrw endpoint connectivity
 - Verify API token in plugin configuration
 - Review ILIAS logs: `/var/www/logs/ilias.log`
 - Check plugin debug logs for detailed error information
-- Ensure selected model exists in RAMSES API response
+- Ensure selected model exists in OSKI.nrw API response
 
 #### Session Expiration Issues
 - Plugin automatically detects ILIAS session expiration
@@ -310,22 +310,21 @@ This project is licensed under the GPL-3.0 License - see the [LICENSE](LICENSE) 
 
 ## Credits
 
-- **Based on**: [AIChatForILIAS](https://github.com/surlabs/AIChatForILIAS) by Jesus Copado (Surlabs)
+- **Inspired by**: [AIChatForILIAS](https://github.com/surlabs/AIChatForILIAS) by Jesus Copado (Surlabs)
 - **Development**: University of Cologne, CompetenceCenter E-Learning
-- **AI Service**: RAMSES by ITCC University of Cologne
+- **AI Service**: [OSKI.nrw](https://oski.nrw/) by Ruhr-University Bochum and University of Cologne
 
 ## Support
 
 For support and questions:
 - Create an issue in this repository
 - Contact: [nadimo.staszak@uni-koeln.de]
-- Documentation: [tbd]
 
 ---
 
 ## Customization for External Use
 
-**This plugin is designed for University of Cologne's RAMSES infrastructure.** To adapt it for your organization:
+**This plugin is designed for OSKI.nrw infrastructure.** To adapt it for your organization:
 
 1. **AI Service Integration**: Update RAMSES API URLs in plugin configuration to point to your endpoints
 2. **Authentication**: Configure your API token in the RAMSES configuration section
@@ -334,4 +333,4 @@ For support and questions:
 5. **Models**: Your AI service must provide an OpenAI-compatible `/v1/models` endpoint returning model arrays
 6. **Testing**: Thoroughly test all functionality with your specific setup
 
-**Note**: This plugin requires access to a RAMSES-compatible AI service with proper API authentication. Contact your system administrator for setup assistance.
+**Note**: This plugin requires access to a OSKI.nrw AI service with proper API authentication. Contact your system administrator for setup assistance.
