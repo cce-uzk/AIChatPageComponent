@@ -1049,12 +1049,29 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             curl_close($ch);
             
             if ($httpCode === 200 && $response) {
-                $models_data = json_decode($response, true);
+                $models_response = json_decode($response, true);
+
+                // Handle both old format (direct array) and new format (object with data array)
+                $models_data = [];
+                if (is_array($models_response)) {
+                    if (isset($models_response['object']) && $models_response['object'] === 'list' && isset($models_response['data'])) {
+                        // New format: {object: "list", data: [...]}
+                        $models_data = $models_response['data'];
+                    } else {
+                        // Old format: direct array
+                        $models_data = $models_response;
+                    }
+                }
+
                 if (is_array($models_data) && !empty($models_data)) {
                     $models = [];
                     foreach ($models_data as $model) {
-                        if (isset($model['name']) && isset($model['display_name'])) {
-                            $models[$model['name']] = $model['display_name'];
+                        // Support both 'name' and 'id' as model identifier
+                        $model_id = $model['id'] ?? $model['name'] ?? null;
+                        $model_name = $model['display_name'] ?? $model['name'] ?? $model['id'] ?? null;
+
+                        if ($model_id && $model_name) {
+                            $models[$model_id] = $model_name;
                         }
                     }
                     
