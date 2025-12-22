@@ -58,6 +58,9 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             case 'refreshRamsesModels':
                 $this->refreshRamsesModels();
                 break;
+            case 'refreshOpenAiModels':
+                $this->refreshOpenAiModels();
+                break;
             default:
                 $this->showConfigurationForm('general');
         }
@@ -241,7 +244,32 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             $inputs
         );
 
-        return $ui_renderer->render($form);
+        // Add refresh models button with info about last update
+        $models_cache_time = \platform\AIChatPageComponentConfig::get('openai_models_cache_time');
+        $cached_models = \platform\AIChatPageComponentConfig::get('openai_cached_models');
+
+        $button_text = $this->plugin->txt('config_refresh_models_button');
+        $info_text = '';
+
+        if ($models_cache_time) {
+            // Convert string timestamp to integer if needed
+            $timestamp = is_string($models_cache_time) ? (int)$models_cache_time : $models_cache_time;
+            $last_update = date('d.m.Y H:i', $timestamp);
+            $model_count = is_array($cached_models) ? count($cached_models) : 0;
+            $info_text = '<p><small>Zuletzt aktualisiert: ' . $last_update . ' (' . $model_count . ' ' . $this->plugin->txt('refresh_models_count') . ')</small></p>';
+        } else {
+            $info_text = '<p><small>' . $this->plugin->txt('refresh_models_not_loaded') . '</small></p>';
+        }
+
+        $refresh_button = $ui_factory->button()->standard(
+            $button_text,
+            $this->ctrl->getLinkTarget($this, 'refreshOpenAiModels')
+        );
+
+        $form_html = $ui_renderer->render($form);
+        $button_html = $ui_renderer->render($refresh_button);
+
+        return $form_html . '<div style="margin-top: 20px;">' . $info_text . $button_html . '</div>';
     }
 
     /**
@@ -435,19 +463,12 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         $ui_factory = $this->dic->ui()->factory();
         $inputs = [];
 
-        // API Base URL for chat completions
-        $chat_api_url = \platform\AIChatPageComponentConfig::get('ramses_chat_api_url');
-        $inputs['ramses_chat_api_url'] = $ui_factory->input()->field()->text(
-            $this->plugin->txt('config_ramses_chat_api_url'),
-            $this->plugin->txt('config_ramses_chat_api_url_info')
-        )->withValue($chat_api_url ?: 'https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions');
-
-        // API URL for models endpoint
-        $models_api_url = \platform\AIChatPageComponentConfig::get('ramses_models_api_url');
-        $inputs['ramses_models_api_url'] = $ui_factory->input()->field()->text(
-            $this->plugin->txt('config_ramses_models_api_url'),
-            $this->plugin->txt('config_ramses_models_api_url_info')
-        )->withValue($models_api_url ?: 'https://ramses-oski.itcc.uni-koeln.de/v1/models');
+        // API Base URL
+        $api_url = \platform\AIChatPageComponentConfig::get('ramses_api_url');
+        $inputs['ramses_api_url'] = $ui_factory->input()->field()->text(
+            $this->plugin->txt('config_ramses_api_url'),
+            $this->plugin->txt('config_ramses_api_url_info')
+        )->withValue($api_url ?: 'https://ramses-oski.itcc.uni-koeln.de');
 
         // API Token for authentication
         $api_token = \platform\AIChatPageComponentConfig::get('ramses_api_token');
@@ -459,14 +480,60 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         // Selected model dropdown (populated from API or cached models)
         $selected_model = \platform\AIChatPageComponentConfig::get('ramses_selected_model');
         $available_models = $this->getAvailableModels();
-        
+
         $inputs['ramses_selected_model'] = $ui_factory->input()->field()->select(
             $this->plugin->txt('config_ramses_selected_model'),
             $available_models,
             $this->plugin->txt('config_ramses_selected_model_info')
         )->withValue($selected_model ?: '');
 
-        // Remove the unused "Available Models" info field
+        // RAMSES RAG Configuration - with optional group for enable/disable
+        $ramses_enable_rag = \platform\AIChatPageComponentConfig::get('ramses_enable_rag') ?: '1';
+        $application_id = \platform\AIChatPageComponentConfig::get('ramses_application_id');
+        $instance_id = \platform\AIChatPageComponentConfig::get('ramses_instance_id');
+
+        // RAG-dependent fields (Application ID and Instance ID)
+        $rag_application_id = $ui_factory->input()->field()->text(
+            $this->plugin->txt('config_ramses_application_id') ?: 'Application ID',
+            $this->plugin->txt('config_ramses_application_id_info') ?: 'Application identifier for RAG file uploads (e.g., ILIAS)'
+        )->withValue($application_id ?: 'ILIAS');
+
+        $rag_instance_id = $ui_factory->input()->field()->text(
+            $this->plugin->txt('config_ramses_instance_id') ?: 'Instance ID',
+            $this->plugin->txt('config_ramses_instance_id_info') ?: 'Instance identifier for RAG file uploads (e.g., ilias9)'
+        )->withValue($instance_id ?: 'ilias9');
+
+        // RAG Allowed File Types
+        $rag_allowed_types = \platform\AIChatPageComponentConfig::get('ramses_rag_allowed_file_types');
+        $default_rag_types = 'txt,md,csv,pdf';
+
+        if (is_array($rag_allowed_types)) {
+            $current_rag_types = implode(',', $rag_allowed_types);
+        } elseif (is_string($rag_allowed_types)) {
+            $current_rag_types = $rag_allowed_types;
+        } else {
+            $current_rag_types = $default_rag_types;
+        }
+
+        $rag_file_types = $ui_factory->input()->field()->text(
+            $this->plugin->txt('config_ramses_rag_allowed_file_types') ?: 'RAG Allowed File Types',
+            $this->plugin->txt('config_ramses_rag_allowed_file_types_info') ?: 'File types accepted for RAG mode uploads (comma-separated, e.g., txt,md,csv,pdf)'
+        )->withValue($current_rag_types);
+
+        // Create optional group for RAMSES RAG - only shows fields when enabled
+        $inputs['ramses_enable_rag'] = $ui_factory->input()->field()->optionalGroup(
+            [
+                'ramses_application_id' => $rag_application_id,
+                'ramses_instance_id' => $rag_instance_id,
+                'ramses_rag_allowed_file_types' => $rag_file_types
+            ],
+            $this->plugin->txt('config_ramses_enable_rag') ?: 'Enable RAG Mode',
+            $this->plugin->txt('config_ramses_enable_rag_info') ?: 'When enabled, files are uploaded to RAMSES RAG collections for efficient retrieval. When disabled, files are embedded as Base64 in each request.'
+        )->withValue($ramses_enable_rag === '1' ? [
+            'ramses_application_id' => $application_id ?: 'ILIAS',
+            'ramses_instance_id' => $instance_id ?: 'ilias9',
+            'ramses_rag_allowed_file_types' => $current_rag_types ?: $default_rag_types
+        ] : null);
 
         return $inputs;
     }
@@ -549,12 +616,12 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         $ui_factory = $this->dic->ui()->factory();
         $inputs = [];
 
-        // API Base URL for chat completions
+        // API Base URL
         $openai_api_url = \platform\AIChatPageComponentConfig::get('openai_api_url');
         $inputs['openai_api_url'] = $ui_factory->input()->field()->text(
             $this->plugin->txt('config_openai_api_url'),
             $this->plugin->txt('config_openai_api_url_info')
-        )->withValue($openai_api_url ?: 'https://api.openai.com/v1/chat/completions');
+        )->withValue($openai_api_url ?: 'https://api.openai.com');
 
         // API Token for authentication
         $openai_api_token = \platform\AIChatPageComponentConfig::get('openai_api_token');
@@ -584,13 +651,31 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
     }
 
     /**
-     * Get available OpenAI models
-     * 
+     * Get available OpenAI models from cache only (no API calls)
+     * Models are only fetched when user clicks the refresh button
+     *
      * @return array Available OpenAI models for dropdown
      */
     private function getOpenAiModels(): array
     {
-        // Static OpenAI model list (could be made dynamic via API in the future)
+        try {
+            // Try to use cached models first
+            $cached_models = \platform\AIChatPageComponentConfig::get('openai_cached_models');
+            if (is_array($cached_models) && !empty($cached_models)) {
+                return $cached_models;
+            }
+        } catch (\Exception $e) {
+            // Log error but don't break form
+            try {
+                $this->dic->logger()->comp('pcaic')->error('Failed to get cached OpenAI models', [
+                    'error' => $e->getMessage()
+                ]);
+            } catch (\Exception $logError) {
+                // Ignore logging errors
+            }
+        }
+
+        // Fallback to static list if no cached models available
         return [
             'gpt-4o' => 'GPT-4o',
             'gpt-4o-mini' => 'GPT-4o mini',
@@ -905,11 +990,8 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 $ramses_data = $data[0] ?? [];
 
                 // Save RAMSES configuration
-                if (isset($ramses_data['ramses_chat_api_url'])) {
-                    \platform\AIChatPageComponentConfig::set('ramses_chat_api_url', $ramses_data['ramses_chat_api_url']);
-                }
-                if (isset($ramses_data['ramses_models_api_url'])) {
-                    \platform\AIChatPageComponentConfig::set('ramses_models_api_url', $ramses_data['ramses_models_api_url']);
+                if (isset($ramses_data['ramses_api_url'])) {
+                    \platform\AIChatPageComponentConfig::set('ramses_api_url', $ramses_data['ramses_api_url']);
                 }
                 if (isset($ramses_data['ramses_api_token'])) {
                     // Handle ILIAS\Data\Password object conversion
@@ -921,6 +1003,38 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 }
                 if (isset($ramses_data['ramses_selected_model'])) {
                     \platform\AIChatPageComponentConfig::set('ramses_selected_model', $ramses_data['ramses_selected_model']);
+                }
+
+                // Handle ramses_enable_rag checkbox with nested fields
+                if (isset($ramses_data['ramses_enable_rag'])) {
+                    $ramses_enable_rag_value = $ramses_data['ramses_enable_rag'];
+
+                    // If ramses_enable_rag is an array (checkbox was checked and has dependent fields)
+                    if (is_array($ramses_enable_rag_value)) {
+                        \platform\AIChatPageComponentConfig::set('ramses_enable_rag', '1');
+
+                        // Save nested RAG configuration fields
+                        if (isset($ramses_enable_rag_value['ramses_application_id'])) {
+                            \platform\AIChatPageComponentConfig::set('ramses_application_id', $ramses_enable_rag_value['ramses_application_id']);
+                        }
+                        if (isset($ramses_enable_rag_value['ramses_instance_id'])) {
+                            \platform\AIChatPageComponentConfig::set('ramses_instance_id', $ramses_enable_rag_value['ramses_instance_id']);
+                        }
+                        if (isset($ramses_enable_rag_value['ramses_rag_allowed_file_types'])) {
+                            $allowed_types_string = trim($ramses_enable_rag_value['ramses_rag_allowed_file_types']);
+
+                            if (!empty($allowed_types_string)) {
+                                $allowed_types_array = array_map('trim', explode(',', $allowed_types_string));
+                                $allowed_types_array = array_filter($allowed_types_array);
+                                \platform\AIChatPageComponentConfig::set('ramses_rag_allowed_file_types', $allowed_types_array);
+                            } else {
+                                \platform\AIChatPageComponentConfig::set('ramses_rag_allowed_file_types', ['txt', 'md', 'csv', 'pdf']);
+                            }
+                        }
+                    } else {
+                        // Checkbox was unchecked (boolean false or null)
+                        \platform\AIChatPageComponentConfig::set('ramses_enable_rag', $ramses_enable_rag_value ? '1' : '0');
+                    }
                 }
 
                 $this->dic->ui()->mainTemplate()->setOnScreenMessage('success', $this->plugin->txt('config_saved_success'));
@@ -997,7 +1111,11 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
     public function refreshRamsesModels(): void
     {
         try {
-            $models_api_url = \platform\AIChatPageComponentConfig::get('ramses_models_api_url') ?: 'https://ramses-oski.itcc.uni-koeln.de/v1/models';
+            // Construct models endpoint URL from base URL
+            $base_url = \platform\AIChatPageComponentConfig::get('ramses_api_url') ?: 'https://ramses-oski.itcc.uni-koeln.de';
+            $base_url = rtrim($base_url, '/');
+            $models_api_url = $base_url . '/v1/models';
+
             $api_token = \platform\AIChatPageComponentConfig::get('ramses_api_token');
             
             // Handle potential Password object conversion
@@ -1121,5 +1239,117 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         }
 
         $this->showConfigurationForm('ramses');
+    }
+
+    /**
+     * Refresh OpenAI models from API
+     */
+    public function refreshOpenAiModels(): void
+    {
+        try {
+            // Construct models endpoint URL from base URL
+            $base_url = \platform\AIChatPageComponentConfig::get('openai_api_url') ?: 'https://api.openai.com';
+            $base_url = rtrim($base_url, '/');
+            $models_api_url = $base_url . '/v1/models';
+
+            $api_token = \platform\AIChatPageComponentConfig::get('openai_api_token');
+
+            // Handle potential Password object conversion
+            if (is_object($api_token) && method_exists($api_token, 'toString')) {
+                $api_token = $api_token->toString();
+            }
+
+            if (empty($api_token)) {
+                $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure',
+                    $this->plugin->txt('refresh_models_no_token'));
+                $this->showConfigurationForm('openai');
+                return;
+            }
+
+            // Fetch models from OpenAI API
+            $ch = curl_init();
+
+            curl_setopt($ch, CURLOPT_URL, $models_api_url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: Bearer ' . $api_token,
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+            // Handle proxy settings
+            if (class_exists('ilProxySettings') && \ilProxySettings::_getInstance()->isActive()) {
+                $proxyHost = \ilProxySettings::_getInstance()->getHost();
+                $proxyPort = \ilProxySettings::_getInstance()->getPort();
+                $proxyURL = $proxyHost . ":" . $proxyPort;
+                curl_setopt($ch, CURLOPT_PROXY, $proxyURL);
+            }
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            if ($httpCode === 200 && $response) {
+                $models_response = json_decode($response, true);
+
+                // OpenAI uses format: {object: "list", data: [{id: "gpt-4", ...}, ...]}
+                if (isset($models_response['data']) && is_array($models_response['data'])) {
+                    $models = [];
+                    foreach ($models_response['data'] as $model) {
+                        $model_id = $model['id'] ?? null;
+                        // Filter to only include GPT chat models
+                        if ($model_id && (strpos($model_id, 'gpt-') === 0 || strpos($model_id, 'chatgpt-') === 0)) {
+                            // Create human-readable name from ID
+                            $model_name = ucwords(str_replace(['-', '_'], ' ', $model_id));
+                            $models[$model_id] = $model_name;
+                        }
+                    }
+
+                    if (!empty($models)) {
+                        // Cache models and timestamp
+                        \platform\AIChatPageComponentConfig::set('openai_cached_models', $models);
+                        \platform\AIChatPageComponentConfig::set('openai_models_cache_time', time());
+
+                        $this->dic->ui()->mainTemplate()->setOnScreenMessage('success',
+                            $this->plugin->txt('refresh_models_success') . ' (' . count($models) . ' ' .
+                            $this->plugin->txt('refresh_models_count') . ')');
+                    } else {
+                        $this->dic->ui()->mainTemplate()->setOnScreenMessage('info',
+                            $this->plugin->txt('refresh_models_no_models'));
+                    }
+                } else {
+                    $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure',
+                        $this->plugin->txt('refresh_models_invalid_response'));
+                }
+            } else {
+                $error_msg = $this->plugin->txt('refresh_models_api_error') . ' (HTTP ' . $httpCode . ')';
+                if ($error) {
+                    $error_msg .= ': ' . $error;
+                }
+
+                // Add debug information for HTTP 401
+                if ($httpCode === 401) {
+                    $error_msg .= ' - Check API token validity';
+                    try {
+                        $this->dic->logger()->comp('pcaic')->error("OpenAI Models API 401 Error", [
+                            'api_url' => $models_api_url,
+                            'token_length' => strlen($api_token),
+                            'token_starts_with' => substr($api_token, 0, 8) . '...'
+                        ]);
+                    } catch (\Exception $logError) {
+                        // Ignore logging errors
+                    }
+                }
+
+                $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $error_msg);
+            }
+
+        } catch (\Exception $e) {
+            $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure',
+                $this->plugin->txt('refresh_models_exception') . ': ' . $e->getMessage());
+        }
+
+        $this->showConfigurationForm('openai');
     }
 }

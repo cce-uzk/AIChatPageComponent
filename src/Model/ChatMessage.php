@@ -3,10 +3,10 @@
 namespace ILIAS\Plugin\pcaic\Model;
 
 /**
- * ChatMessage Model - Messages bound to sessions
- * 
- * Represents individual messages in a chat session
- * Messages are bound to sessions, not directly to chats
+ * Chat message model
+ *
+ * Represents individual messages within a chat session.
+ * Messages belong to sessions and include role, content, and timestamp.
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
@@ -18,6 +18,11 @@ class ChatMessage
     private string $message;
     private ?\DateTime $timestamp = null;
 
+    /**
+     * Constructor
+     *
+     * @param int|null $messageId Optional message ID to load existing message
+     */
     public function __construct(int $messageId = null)
     {
         if ($messageId) {
@@ -29,7 +34,10 @@ class ChatMessage
     }
 
     /**
-     * Get all messages for a session
+     * Get all messages for session
+     *
+     * @param string $sessionId Session ID
+     * @return ChatMessage[] Array of messages in chronological order
      */
     public static function getForSession(string $sessionId): array
     {
@@ -51,7 +59,11 @@ class ChatMessage
     }
 
     /**
-     * Get recent messages for a session (for memory limit)
+     * Get recent messages for session with limit
+     *
+     * @param string $sessionId Session ID
+     * @param int $limit Maximum number of messages to retrieve
+     * @return ChatMessage[] Array of recent messages in chronological order
      */
     public static function getRecentForSession(string $sessionId, int $limit): array
     {
@@ -69,13 +81,15 @@ class ChatMessage
         while ($row = $db->fetchAssoc($result)) {
             $messages[] = new self((int)$row['message_id']);
         }
-        
-        // Reverse to get chronological order
+
         return array_reverse($messages);
     }
 
     /**
-     * Delete all messages for a session
+     * Delete all messages for session
+     *
+     * @param string $sessionId Session ID
+     * @return bool Always returns true
      */
     public static function deleteForSession(string $sessionId): bool
     {
@@ -89,7 +103,9 @@ class ChatMessage
     }
 
     /**
-     * Load message from database
+     * Load message data from database
+     *
+     * @return bool True if message was found and loaded, false otherwise
      */
     private function load(): bool
     {
@@ -113,6 +129,10 @@ class ChatMessage
 
     /**
      * Save message to database
+     *
+     * Performs INSERT for new messages or UPDATE for existing ones.
+     *
+     * @return bool Always returns true
      */
     public function save(): bool
     {
@@ -131,10 +151,8 @@ class ChatMessage
         ];
 
         if ($this->messageId) {
-            // Update (rare case)
             $db->update('pcaic_messages', $values, ['message_id' => ['integer', $this->messageId]]);
         } else {
-            // Insert - ILIAS style with nextId()
             $this->messageId = $db->nextId('pcaic_messages');
             $values['message_id'] = ['integer', $this->messageId];
             $db->insert('pcaic_messages', $values);
@@ -144,7 +162,9 @@ class ChatMessage
     }
 
     /**
-     * Delete message
+     * Delete message from database
+     *
+     * @return bool True if message was deleted, false if message ID is not set
      */
     public function delete(): bool
     {
@@ -162,7 +182,9 @@ class ChatMessage
     }
 
     /**
-     * Check if message exists
+     * Check if message exists in database
+     *
+     * @return bool True if message exists, false otherwise
      */
     public function exists(): bool
     {
@@ -179,7 +201,9 @@ class ChatMessage
     }
 
     /**
-     * Get attachments for this message
+     * Get attachments for message
+     *
+     * @return Attachment[] Array of attachments
      */
     public function getAttachments(): array
     {
@@ -187,23 +211,21 @@ class ChatMessage
             return [];
         }
 
-        // Use existing Attachment class which references message_id
         global $DIC;
         $db = $DIC->database();
 
         $query = "SELECT * FROM pcaic_attachments WHERE message_id = " . $db->quote($this->messageId, 'integer');
         $result = $db->query($query);
-        
+
         $attachments = [];
         while ($row = $db->fetchAssoc($result)) {
             $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int)$row['id']);
             $attachments[] = $attachment;
         }
-        
+
         return $attachments;
     }
 
-    // Getters and Setters
     public function getMessageId(): ?int { return $this->messageId; }
     public function getSessionId(): string { return $this->sessionId; }
     public function setSessionId(string $sessionId): void { $this->sessionId = $sessionId; }
@@ -215,19 +237,21 @@ class ChatMessage
     public function setTimestamp(\DateTime $timestamp): void { $this->timestamp = $timestamp; }
 
     /**
-     * Add attachment to this message
+     * Bind attachment to message
+     *
+     * Message must be saved (have ID) before attachments can be added.
+     *
+     * @param int $attachment_id Attachment ID
+     * @return bool True if successful, false if message not saved or attachment not found
      */
     public function addAttachment(int $attachment_id): bool
     {
         if (!$this->messageId) {
-            // Message must be saved first to have an ID
             return false;
         }
 
-        // Load the attachment and set the message_id
         $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
         if (!$attachment->getId()) {
-            // Attachment doesn't exist
             return false;
         }
 
@@ -241,7 +265,9 @@ class ChatMessage
     }
 
     /**
-     * Convert to array for API responses
+     * Convert message to array representation
+     *
+     * @return array Associative array containing message data and attachments
      */
     public function toArray(): array
     {
@@ -249,8 +275,8 @@ class ChatMessage
             'message_id' => $this->messageId,
             'session_id' => $this->sessionId,
             'role' => $this->role,
-            'content' => $this->message, // Use 'content' for API consistency
-            'message' => $this->message, // Keep 'message' for backward compatibility
+            'content' => $this->message,
+            'message' => $this->message,
             'timestamp' => $this->timestamp?->format('Y-m-d H:i:s'),
             'attachments' => array_map(fn($att) => $att->toArray(), $this->getAttachments())
         ];

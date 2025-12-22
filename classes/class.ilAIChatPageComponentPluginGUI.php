@@ -222,9 +222,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $ui_factory = $DIC->ui()->factory();
 
-        // Load bootstrap for new models
-        require_once(__DIR__ . '/../src/bootstrap.php');
-
         // Check global file handling and specific upload permissions
         $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
         $file_handling_enabled = ($file_restrictions['enabled'] ?? false);
@@ -296,6 +293,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                             'include_page_context' => $chatConfig->isIncludePageContext(),
                             'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
                             'enable_streaming' => $chatConfig->isEnableStreaming(),
+                            'enable_rag' => $chatConfig->isEnableRag(),
                             'disclaimer' => $chatConfig->getDisclaimer(),
                             'background_files' => json_encode($chatConfig->getBackgroundFiles())
                         ];
@@ -410,6 +408,44 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             )->withDedicatedName('enable_streaming')->withValue($this->toBool($prop['enable_streaming'] ?? true));
         }
 
+        // Enable RAG mode - only available if AI service supports RAG AND globally enabled
+        $ai_service = $prop['ai_service'] ?? 'ramses';
+
+        // Create LLM instance to check RAG support
+        require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
+        require_once(__DIR__ . '/ai/class.AIChatPageComponentRAMSES.php');
+
+        $llm = ($ai_service === 'ramses')
+            ? \ai\AIChatPageComponentRAMSES::fromConfig()
+            : \ai\AIChatPageComponentRAMSES::fromConfig(); // Fallback to RAMSES
+
+        $service_supports_rag = $llm->supportsRAG();
+
+        // Get global RAG setting (LLM-specific)
+        $rag_config_key = $ai_service . '_enable_rag'; // e.g., ramses_enable_rag
+        $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
+        $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
+
+        if (!$service_supports_rag) {
+            // AI service doesn't support RAG
+            $enable_rag = $ui_factory->input()->field()->text(
+                $this->plugin->txt('enable_rag_label'),
+                $this->plugin->txt('rag_not_supported_info')
+            )->withValue($this->plugin->txt('rag_not_supported'))->withDisabled(true)->withDedicatedName('enable_rag_disabled');
+        } elseif (!$rag_globally_enabled) {
+            // RAG globally disabled
+            $enable_rag = $ui_factory->input()->field()->text(
+                $this->plugin->txt('enable_rag_label'),
+                $this->plugin->txt('setting_disabled_by_admin_info')
+            )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('enable_rag_disabled');
+        } else {
+            // RAG available - show checkbox
+            $enable_rag = $ui_factory->input()->field()->checkbox(
+                $this->plugin->txt('enable_rag_label'),
+                $this->plugin->txt('enable_rag_info')
+            )->withDedicatedName('enable_rag')->withValue($this->toBool($prop['enable_rag'] ?? false));
+        }
+
         // Disclaimer
         $disclaimer = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('legal_disclaimer_label'),
@@ -429,6 +465,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             'include_page_context' => $include_context,
             'enable_chat_uploads' => $enable_chat_uploads,
             'enable_streaming' => $enable_streaming,
+            'enable_rag' => $enable_rag,
             'disclaimer' => $disclaimer
         ];
 
@@ -443,9 +480,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
     protected function saveForm(array $form_data, bool $a_create) : bool
     {
-        // Load bootstrap for new models
-        require_once(__DIR__ . '/../src/bootstrap.php');
-
         // Generate or get chat ID
         $chat_id = '';
         if ($a_create) {
@@ -502,7 +536,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $chatConfig->setAiService('ramses');
             $chatConfig->setMaxMemory((int) ($form_data['max_memory'] ?? 10));
             $chatConfig->setCharLimit((int) ($form_data['char_limit'] ?? 2000));
-            $chatConfig->setBackgroundFiles($file_ids);
+
+            // Save background files in pcaic_attachments table
+            $this->saveBackgroundFilesToAttachments($chat_id, $file_ids, $chatConfig, $a_create);
+
             $chatConfig->setPersistent((bool) ($form_data['persistent'] ?? true));
             $chatConfig->setIncludePageContext((bool) ($form_data['include_page_context'] ?? true));
             // Only set chat uploads if file handling is enabled AND chat uploads are globally enabled
@@ -519,10 +556,57 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             } else {
                 $chatConfig->setEnableStreaming(false); // Force disabled when globally disabled
             }
+
+            // Only set RAG if service supports it AND globally enabled
+            require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
+            require_once(__DIR__ . '/ai/class.AIChatPageComponentRAMSES.php');
+
+            $ai_service = $chatConfig->getAiService();
+            $llm = ($ai_service === 'ramses')
+                ? \ai\AIChatPageComponentRAMSES::fromConfig()
+                : \ai\AIChatPageComponentRAMSES::fromConfig(); // Fallback to RAMSES
+
+            $service_supports_rag = $llm->supportsRAG();
+
+            // Get global RAG setting (LLM-specific)
+            $rag_config_key = $ai_service . '_enable_rag'; // e.g., ramses_enable_rag
+            $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
+            $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
+
+            // Track RAG state change
+            $rag_was_enabled = $chatConfig->isEnableRag();
+            $rag_now_enabled = false;
+
+            if ($service_supports_rag && $rag_globally_enabled) {
+                $rag_now_enabled = (bool) ($form_data['enable_rag'] ?? false);
+                $chatConfig->setEnableRag($rag_now_enabled);
+            } else {
+                $chatConfig->setEnableRag(false); // Force disabled when not supported or globally disabled
+            }
+
             $chatConfig->setDisclaimer($form_data['disclaimer'] ?? '');
 
             // Save to database
             $result = $chatConfig->save();
+
+            // Sync existing BACKGROUND FILES to RAG if RAG was just enabled
+            if ($result && !$rag_was_enabled && $rag_now_enabled) {
+                $this->logger->info("RAG was activated, syncing background files", ['chat_id' => $chat_id]);
+                try {
+                    $sync_stats = $llm->syncBackgroundFilesToRAG($chatConfig);
+                    $this->logger->info("Background files RAG sync completed", $sync_stats);
+
+                    if ($sync_stats['uploaded'] > 0) {
+                        ilUtil::sendInfo(sprintf(
+                            $this->plugin->txt('rag_sync_success'),
+                            $sync_stats['uploaded']
+                        ), true);
+                    }
+                } catch (\Exception $e) {
+                    $this->logger->error("Background files RAG sync failed", ['error' => $e->getMessage()]);
+                    ilUtil::sendFailure($this->plugin->txt('rag_sync_error'), true);
+                }
+            }
 
             if ($result) {
                 // Also save minimal properties to PageComponent for backward compatibility
@@ -598,9 +682,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
      */
     private function renderChatInterface(array $properties) : string
     {
-        // Load bootstrap for new models
-        require_once(__DIR__ . '/../src/bootstrap.php');
-
         $tpl = new ilTemplate(
             "tpl.ai_chat.html",
             true,
@@ -819,6 +900,298 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $this->addChatAssets();
 
         return $tpl->get();
+    }
+
+    /**
+     * Save background files to pcaic_attachments table
+     * Creates Attachment records with message_id = NULL (indicating background files)
+     * Optionally uploads files to RAG based on background_files_mode configuration
+     * Also handles deletion of removed background files
+     */
+    private function saveBackgroundFilesToAttachments(string $chat_id, array $new_file_ids, \ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig, bool $is_create): void
+    {
+        global $DIC;
+        $db = $DIC->database();
+
+        // Get current user ID
+        $user_id = $DIC->user()->getId();
+
+        // Check if RAG is enabled: LLM must support it AND admin must enable it for this LLM
+        $llm = $this->getLLMInstanceForChat($chatConfig);
+        $ai_service = $chatConfig->getAiService();
+
+        // Get LLM-specific RAG configuration
+        $llm_rag_enabled = '0';
+        if ($ai_service === 'ramses') {
+            $llm_rag_enabled = \platform\AIChatPageComponentConfig::get('ramses_enable_rag') ?: '1';
+        }
+        // Future: Add openai_enable_rag when OpenAI supports RAG
+
+        $enable_rag = $llm->supportsRAG() && ($llm_rag_enabled == '1' || $llm_rag_enabled === 1);
+
+        $this->logger->debug("RAG configuration check", [
+            'llm_supports_rag' => $llm->supportsRAG(),
+            'llm_rag_enabled' => $llm_rag_enabled,
+            'enable_rag' => $enable_rag,
+            'ai_service' => $ai_service
+        ]);
+
+        // Get existing background file attachments for this chat
+        $existing_query = "SELECT id, resource_id FROM pcaic_attachments " .
+                         "WHERE chat_id = " . $db->quote($chat_id, 'text') . " " .
+                         "AND message_id IS NULL";
+        $existing_result = $db->query($existing_query);
+        $existing_files = [];
+        while ($row = $db->fetchAssoc($existing_result)) {
+            $existing_files[$row['resource_id']] = (int)$row['id'];
+        }
+
+        // On edit (not create): Delete background files that were removed
+        if (!$is_create) {
+            $files_to_delete = array_diff(array_keys($existing_files), $new_file_ids);
+            foreach ($files_to_delete as $resource_id) {
+                $attachment_id = $existing_files[$resource_id];
+                try {
+                    $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
+
+                    // Delete from RAG if needed
+                    if ($enable_rag && $attachment->isInRAG()) {
+                        $this->deleteFileFromRAG($attachment, $chat_id, $chatConfig);
+                    }
+
+                    // Delete attachment (also removes from IRSS)
+                    $attachment->delete();
+
+                    $this->logger->info("Deleted background file attachment", [
+                        'chat_id' => $chat_id,
+                        'resource_id' => $resource_id,
+                        'attachment_id' => $attachment_id
+                    ]);
+                } catch (\Exception $e) {
+                    $this->logger->error("Failed to delete background file attachment", [
+                        'resource_id' => $resource_id,
+                        'chat_id' => $chat_id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+
+        // Process new file_ids (add files that don't exist yet)
+        foreach ($new_file_ids as $resource_id) {
+            // Skip if already exists
+            if (isset($existing_files[$resource_id])) {
+                continue;
+            }
+
+            try {
+                // Create new Attachment record
+                $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment();
+                $attachment->setMessageId(null);  // NULL for background files (not bound to message)
+                $attachment->setBackgroundFile(true);  // Mark as background file
+                $attachment->setChatId($chat_id);  // Set chat_id
+                $attachment->setUserId($user_id);
+                $attachment->setResourceId($resource_id);
+                $attachment->setTimestamp(date('Y-m-d H:i:s'));
+
+                $this->logger->debug("Processing new background file", [
+                    'resource_id' => $resource_id,
+                    'chat_id' => $chat_id,
+                    'enable_rag' => $enable_rag
+                ]);
+
+                // Upload to RAG if enabled
+                if ($enable_rag) {
+                    $this->logger->debug("Calling uploadFileToRAG", ['resource_id' => $resource_id]);
+                    $this->uploadFileToRAG($attachment, $chat_id, $chatConfig);
+                    $this->logger->debug("uploadFileToRAG completed", [
+                        'resource_id' => $resource_id,
+                        'has_rag_collection_id' => $attachment->getRAGCollectionId() !== null,
+                        'has_rag_remote_file_id' => $attachment->getRAGRemoteFileId() !== null
+                    ]);
+                }
+
+                // Save attachment (includes RAG fields if set)
+                $attachment->save();
+
+                $this->logger->info("Saved background file attachment", [
+                    'chat_id' => $chat_id,
+                    'resource_id' => $resource_id,
+                    'rag_collection_id' => $attachment->getRAGCollectionId(),
+                    'rag_remote_file_id' => $attachment->getRAGRemoteFileId()
+                ]);
+
+            } catch (\Exception $e) {
+                $this->logger->error("Failed to save background file attachment", [
+                    'resource_id' => $resource_id,
+                    'chat_id' => $chat_id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Delete file from RAG collection (supports multiple AI services)
+     * Removes file from RAG system using the configured AI service
+     */
+    private function deleteFileFromRAG(\ILIAS\Plugin\pcaic\Model\Attachment $attachment, string $chat_id, \ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig): void
+    {
+        try {
+            $this->logger->debug("Starting RAG deletion", [
+                'resource_id' => $attachment->getResourceId(),
+                'chat_id' => $chat_id,
+                'rag_remote_file_id' => $attachment->getRAGRemoteFileId()
+            ]);
+
+            if (!$attachment->getRAGRemoteFileId()) {
+                $this->logger->warning("No RAG remote file ID to delete", ['resource_id' => $attachment->getResourceId()]);
+                return;
+            }
+
+            // Get LLM instance based on ChatConfig AI service
+            $llm = $this->getLLMInstanceForChat($chatConfig);
+
+            // Delete from RAG using the configured LLM service
+            $llm->deleteFileFromRAG($attachment->getRAGRemoteFileId(), $chat_id);
+
+            $this->logger->info("File deleted from RAG successfully", [
+                'resource_id' => $attachment->getResourceId(),
+                'rag_remote_file_id' => $attachment->getRAGRemoteFileId(),
+                'chat_id' => $chat_id,
+                'ai_service' => $chatConfig->getAiService()
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error("Failed to delete file from RAG", [
+                'resource_id' => $attachment->getResourceId(),
+                'chat_id' => $chat_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Don't throw - allow attachment to be deleted even if RAG deletion fails
+        }
+    }
+
+    /**
+     * Upload file to RAG collection (supports multiple AI services)
+     * Updates attachment with rag_collection_id and rag_remote_file_id
+     */
+    private function uploadFileToRAG(\ILIAS\Plugin\pcaic\Model\Attachment $attachment, string $chat_id, \ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig): void
+    {
+        global $DIC;
+
+        try {
+            $this->logger->debug("Starting RAG upload", [
+                'resource_id' => $attachment->getResourceId(),
+                'chat_id' => $chat_id
+            ]);
+
+            // Get file from IRSS
+            $irss = $DIC->resourceStorage();
+            $identification = $irss->manage()->find($attachment->getResourceId());
+            if (!$identification) {
+                $this->logger->warning("File not found in IRSS", ['resource_id' => $attachment->getResourceId()]);
+                return;
+            }
+
+            $this->logger->debug("File found in IRSS");
+
+            // Download file to temp location
+            $stream = $irss->consume()->stream($identification);
+            $content = $stream->getStream()->getContents();
+
+            $revision = $irss->manage()->getCurrentRevision($identification);
+            $original_filename = $revision->getTitle();
+            $suffix = $revision->getInformation()->getSuffix();
+
+            $this->logger->debug("File downloaded from IRSS", [
+                'filename' => $original_filename,
+                'suffix' => $suffix,
+                'size' => strlen($content)
+            ]);
+
+            // Create temp file WITH correct extension AND original filename
+            // RAG systems validate file signature against filename
+            $safe_filename = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $original_filename);
+            $temp_file = sys_get_temp_dir() . '/' . $safe_filename;
+            file_put_contents($temp_file, $content);
+
+            $this->logger->debug("Temp file created", [
+                'temp_path' => $temp_file,
+                'exists' => file_exists($temp_file)
+            ]);
+
+            // Get LLM instance based on ChatConfig AI service
+            $llm = $this->getLLMInstanceForChat($chatConfig);
+            $this->logger->debug("LLM instance created, calling uploadFileToRAG", [
+                'ai_service' => $chatConfig->getAiService()
+            ]);
+
+            $rag_result = $llm->uploadFileToRAG($temp_file, $chat_id);
+
+            $this->logger->debug("RAG upload returned", ['result' => $rag_result]);
+
+            // Update attachment with RAG info
+            $attachment->setRagCollectionId($rag_result['collection_id']);
+            $attachment->setRagRemoteFileId($rag_result['remote_file_id']);
+            $attachment->setRagUploadedAt(date('Y-m-d H:i:s'));
+
+            // Update ChatConfig with collection_id if not set
+            if (!$chatConfig->getRAGCollectionId()) {
+                $chatConfig->setRAGCollectionId($rag_result['collection_id']);
+            }
+
+            // Clean up temp file
+            @unlink($temp_file);
+
+            $this->logger->info("File uploaded to RAG successfully", [
+                'resource_id' => $attachment->getResourceId(),
+                'collection_id' => $rag_result['collection_id'],
+                'remote_file_id' => $rag_result['remote_file_id'],
+                'ai_service' => $chatConfig->getAiService()
+            ]);
+
+        } catch (\Exception $e) {
+            $this->logger->error("Failed to upload file to RAG", [
+                'resource_id' => $attachment->getResourceId(),
+                'chat_id' => $chat_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Log more details about the configuration
+            $this->logger->debug("RAG upload configuration", [
+                'ai_service' => $chatConfig->getAiService(),
+                'file_upload_url' => \platform\AIChatPageComponentConfig::get('ramses_file_upload_url'),
+                'application_id' => \platform\AIChatPageComponentConfig::get('ramses_application_id'),
+                'instance_id' => \platform\AIChatPageComponentConfig::get('ramses_instance_id'),
+                'api_token_set' => !empty(\platform\AIChatPageComponentConfig::get('ramses_api_token'))
+            ]);
+
+            // Don't throw - allow attachment to be saved without RAG
+        }
+    }
+
+    /**
+     * Get LLM instance based on ChatConfig AI service
+     * Factory method to create the correct LLM service instance
+     */
+    private function getLLMInstanceForChat(\ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig)
+    {
+        $ai_service = $chatConfig->getAiService();
+
+        switch ($ai_service) {
+            case 'ramses':
+                return \ai\AIChatPageComponentRAMSES::fromConfig();
+            case 'openai':
+                // Future: OpenAI LLM instance with RAG support
+                return \ai\AIChatPageComponentOpenAI::fromConfig();
+            default:
+                // Fallback to RAMSES
+                return \ai\AIChatPageComponentRAMSES::fromConfig();
+        }
     }
 
     /**

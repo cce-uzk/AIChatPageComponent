@@ -130,8 +130,8 @@ config_service_openai_enabled_info#:#Make OpenAI GPT service available for selec
 // OpenAI Configuration
 config_openai_title#:#OpenAI API Configuration
 config_openai_info#:#Configure OpenAI GPT API connection and models
-config_openai_api_url#:#OpenAI API URL
-config_openai_api_url_info#:#API endpoint for OpenAI chat completions (e.g. https://api.openai.com/v1/chat/completions)
+config_openai_api_url#:#OpenAI API Base URL
+config_openai_api_url_info#:#Base URL for OpenAI API endpoints (e.g. https://api.openai.com). Specific endpoints like /v1/chat/completions or /v1/models are automatically appended.
 config_openai_api_token#:#OpenAI API Token
 config_openai_api_token_info#:#API token for OpenAI authentication
 config_openai_selected_model#:#Selected OpenAI Model
@@ -166,14 +166,23 @@ config_load_error#:#Error loading configuration form
 // RAMSES API Configuration
 config_ramses_title#:#RAMSES API Configuration
 config_ramses_info#:#Configure RAMSES AI API connection and available models
-config_ramses_chat_api_url#:#RAMSES Chat API URL
-config_ramses_chat_api_url_info#:#API endpoint for chat completions (e.g. https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions)
-config_ramses_models_api_url#:#RAMSES Models API URL
-config_ramses_models_api_url_info#:#API endpoint to fetch available models (e.g. https://ramses-oski.itcc.uni-koeln.de/v1/models)
+config_ramses_api_url#:#RAMSES API Base URL
+config_ramses_api_url_info#:#Base URL for RAMSES API endpoints (e.g. https://ramses-oski.itcc.uni-koeln.de). Specific endpoints like /v1/chat/completions or /v1/models are automatically appended.
 config_ramses_api_token#:#RAMSES API Token
 config_ramses_api_token_info#:#API token for RAMSES authentication
 config_ramses_selected_model#:#Selected RAMSES Model
 config_ramses_selected_model_info#:#Choose the RAMSES AI model for new chat instances
+// RAMSES RAG Configuration
+config_ramses_rag_section_title#:#RAG Configuration
+config_ramses_rag_section_info#:#Configure RAMSES RAG (Retrieval-Augmented Generation) for efficient document handling
+config_ramses_application_id#:#Application ID
+config_ramses_application_id_info#:#Application identifier for RAG file uploads (e.g., ILIAS)
+config_ramses_instance_id#:#Instance ID
+config_ramses_instance_id_info#:#Instance identifier for RAG file uploads (e.g., ilias9)
+config_ramses_rag_allowed_file_types#:#RAG Allowed File Types
+config_ramses_rag_allowed_file_types_info#:#File extensions accepted for RAG mode uploads (comma-separated, e.g., txt,md,csv,pdf)
+config_ramses_enable_rag#:#Enable RAG Mode for RAMSES
+config_ramses_enable_rag_info#:#When enabled, files are uploaded to RAMSES RAG collections for efficient retrieval. When disabled, files are embedded as Base64 in each request (multimodal mode).
 config_models_cache_info#:#Available Models
 config_models_cache_info_desc#:#Models are loaded from RAMSES API and cached
 config_refresh_models_button#:#Update Models from API
@@ -184,6 +193,7 @@ refresh_models_no_models#:#No models found in API response
 refresh_models_invalid_response#:#Invalid API response received
 refresh_models_api_error#:#Error fetching models from API
 refresh_models_exception#:#Unexpected error while updating models
+refresh_models_not_loaded#:#Models not yet loaded. Click the button to fetch available models from the API.
 config_openai_deprecated#:#OpenAI Service (removed)
 config_openai_deprecated_info#:#OpenAI support has been removed. This plugin is now independent and uses only RAMSES.
 // File upload error messages
@@ -191,3 +201,15 @@ error_max_attachments#:#Maximum %d attachments per message allowed
 error_file_too_large#:#File too large. Maximum size is %dMB
 error_file_type_not_allowed#:#File type not allowed: %s
 error_file_upload_failed#:#File upload failed: %s
+
+// RAG Mode (Per-Chat Setting)
+enable_rag_label#:#Use RAG Mode
+enable_rag_info#:#When enabled: AI can search in uploaded documents (text files only: TXT, MD, CSV, PDF). When disabled: AI can analyze images (PNG, JPG, GIF, WEBP, PDF).
+rag_not_supported#:#RAG not supported by this AI service
+rag_not_supported_info#:#The selected AI service does not support RAG functionality
+
+// RAG Mode (Global Config for RAMSES)
+config_ramses_enable_rag#:#Enable RAG Mode for RAMSES
+config_ramses_enable_rag_info#:#When enabled, files are uploaded to RAMSES RAG collections for efficient retrieval. When disabled, files are embedded as Base64 in each request (multimodal mode).// RAG Sync Messages
+rag_sync_success#:#%d files successfully uploaded to RAG
+rag_sync_error#:#Error syncing files to RAG

@@ -3,10 +3,10 @@
 namespace ILIAS\Plugin\pcaic\Model;
 
 /**
- * ChatSession Model - User-Chat Relationship
- * 
- * Represents a user's session with a specific chat
- * One user can have multiple sessions with different chats
+ * Chat session model
+ *
+ * Represents a user's chat session. Each user-chat combination has its own session
+ * that stores message history and activity tracking.
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
@@ -20,6 +20,11 @@ class ChatSession
     private ?\DateTime $lastActivity = null;
     private bool $isActive = true;
 
+    /**
+     * Constructor
+     *
+     * @param string|null $sessionId Optional session ID to load existing session
+     */
     public function __construct(string $sessionId = null)
     {
         if ($sessionId) {
@@ -33,7 +38,12 @@ class ChatSession
     }
 
     /**
-     * Create new session for user and chat
+     * Factory method to create new session
+     *
+     * @param int $userId User ID
+     * @param string $chatId Chat ID
+     * @param string $sessionName Optional session name
+     * @return self New ChatSession instance
      */
     public static function createForUserAndChat(int $userId, string $chatId, string $sessionName = ''): self
     {
@@ -45,7 +55,13 @@ class ChatSession
     }
 
     /**
-     * Find existing session for user and chat
+     * Find active session for user and chat
+     *
+     * Returns the most recently active session for the given user-chat combination.
+     *
+     * @param int $userId User ID
+     * @param string $chatId Chat ID
+     * @return self|null ChatSession instance or null if not found
      */
     public static function findForUserAndChat(int $userId, string $chatId): ?self
     {
@@ -67,7 +83,14 @@ class ChatSession
     }
 
     /**
-     * Get or create session for user and chat
+     * Get existing or create new session
+     *
+     * Retrieves active session for user-chat combination, creates new one if none exists.
+     *
+     * @param int $userId User ID
+     * @param string $chatId Chat ID
+     * @param string $sessionName Optional session name for new sessions
+     * @return self ChatSession instance
      */
     public static function getOrCreateForUserAndChat(int $userId, string $chatId, string $sessionName = ''): self
     {
@@ -80,7 +103,9 @@ class ChatSession
     }
 
     /**
-     * Load session from database
+     * Load session data from database
+     *
+     * @return bool True if session was found and loaded, false otherwise
      */
     private function load(): bool
     {
@@ -106,6 +131,11 @@ class ChatSession
 
     /**
      * Save session to database
+     *
+     * Performs INSERT for new sessions or UPDATE for existing ones.
+     * Automatically updates last_activity timestamp.
+     *
+     * @return bool Always returns true
      */
     public function save(): bool
     {
@@ -114,7 +144,6 @@ class ChatSession
 
         $this->lastActivity = new \DateTime();
 
-        // Check if exists
         $query = "SELECT session_id FROM pcaic_sessions WHERE session_id = " . $db->quote($this->sessionId, 'text');
         $result = $db->query($query);
         $exists = $db->fetchAssoc($result);
@@ -128,10 +157,8 @@ class ChatSession
         ];
 
         if ($exists) {
-            // Update
             $db->update('pcaic_sessions', $values, ['session_id' => ['text', $this->sessionId]]);
         } else {
-            // Insert
             $values['session_id'] = ['text', $this->sessionId];
             $values['created_at'] = ['timestamp', $this->createdAt->format('Y-m-d H:i:s')];
             $db->insert('pcaic_sessions', $values);
@@ -141,14 +168,17 @@ class ChatSession
     }
 
     /**
-     * Delete session and all its messages
+     * Delete session from database
+     *
+     * Cascades to associated messages via foreign key constraints.
+     *
+     * @return bool Always returns true
      */
     public function delete(): bool
     {
         global $DIC;
         $db = $DIC->database();
 
-        // Delete will cascade to messages due to foreign keys
         $query = "DELETE FROM pcaic_sessions WHERE session_id = " . $db->quote($this->sessionId, 'text');
         $db->manipulate($query);
 
@@ -157,6 +187,8 @@ class ChatSession
 
     /**
      * Mark session as inactive
+     *
+     * @return bool Always returns true
      */
     public function deactivate(): bool
     {
@@ -165,7 +197,9 @@ class ChatSession
     }
 
     /**
-     * Update last activity
+     * Update last activity timestamp
+     *
+     * @return bool Always returns true
      */
     public function touch(): bool
     {
@@ -174,7 +208,9 @@ class ChatSession
     }
 
     /**
-     * Check if session exists
+     * Check if session exists in database
+     *
+     * @return bool True if session exists, false otherwise
      */
     public function exists(): bool
     {
@@ -188,14 +224,19 @@ class ChatSession
 
     /**
      * Get all messages for this session
+     *
+     * @return ChatMessage[] Array of all messages in chronological order
      */
     public function getMessages(): array
     {
         return ChatMessage::getForSession($this->sessionId);
     }
-    
+
     /**
-     * Get recent messages for this session with limit
+     * Get recent messages with limit
+     *
+     * @param int $limit Maximum number of messages to retrieve
+     * @return ChatMessage[] Array of recent messages in chronological order
      */
     public function getRecentMessages(int $limit = 10): array
     {
@@ -203,7 +244,13 @@ class ChatSession
     }
 
     /**
-     * Add message to this session
+     * Add new message to session
+     *
+     * Automatically updates session activity timestamp.
+     *
+     * @param string $role Message role (user|assistant|system)
+     * @param string $content Message content
+     * @return ChatMessage The created message object
      */
     public function addMessage(string $role, string $content): ChatMessage
     {
@@ -212,22 +259,22 @@ class ChatSession
         $message->setRole($role);
         $message->setMessage($content);
         $message->save();
-        
-        // Update session activity
+
         $this->touch();
-        
+
         return $message;
     }
 
     /**
-     * Get chat configuration for this session
+     * Get chat configuration
+     *
+     * @return ChatConfig|null Chat configuration instance
      */
     public function getChatConfig(): ?ChatConfig
     {
         return new ChatConfig($this->chatId);
     }
 
-    // Getters and Setters
     public function getSessionId(): string { return $this->sessionId; }
     public function getChatId(): string { return $this->chatId; }
     public function setChatId(string $chatId): void { $this->chatId = $chatId; }
@@ -241,7 +288,9 @@ class ChatSession
     public function setActive(bool $isActive): void { $this->isActive = $isActive; }
 
     /**
-     * Convert to array for API responses
+     * Convert session to array representation
+     *
+     * @return array Associative array containing all session properties
      */
     public function toArray(): array
     {

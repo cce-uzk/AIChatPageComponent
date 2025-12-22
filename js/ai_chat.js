@@ -220,6 +220,7 @@ class AIChatPageComponent {
                 },
                 body: JSON.stringify({
                     action: 'get_global_config',
+                    chat_id: this.chatId,
                     config_type: 'all'
                 })
             });

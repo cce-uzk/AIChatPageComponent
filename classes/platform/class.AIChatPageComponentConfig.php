@@ -3,26 +3,23 @@
 namespace platform;
 
 /**
- * AIChatPageComponentConfig - Independent plugin configuration management
- * 
- * This class manages configuration values for the AIChatPageComponent plugin
- * using its own dedicated pcaic_config table. It provides a clean separation
- * from the AIChat plugin while maintaining similar functionality.
- * 
+ * Plugin configuration management
+ *
+ * Manages configuration values using dedicated pcaic_config table.
+ * Provides defaults and database-backed configuration storage.
+ *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.0.6
  */
 class AIChatPageComponentConfig
 {
     /**
-     * Get configuration value from plugin's dedicated config table
-     * 
+     * Get configuration value
+     *
      * @param string $key Configuration key
      * @return mixed Configuration value or null if not found
      */
     public static function get(string $key)
     {
-        // Default values for basic functionality
         $defaults = [
             'default_prompt' => 'You are a helpful AI assistant. Please provide accurate and helpful responses.',
             'prompt' => 'You are a helpful AI assistant. Please provide accurate and helpful responses.',
@@ -34,8 +31,7 @@ class AIChatPageComponentConfig
                 'ramses' => '1',
                 'openai' => '1'
             ],
-            
-            // File upload and processing limits
+
             'max_file_size_mb' => 5,
             'max_attachments_per_message' => 5,
             'max_total_upload_size_mb' => 25,
@@ -44,23 +40,24 @@ class AIChatPageComponentConfig
             'max_page_context_chars' => 50000,
             'image_max_dimension' => 1024,
             'pdf_image_quality' => 85,
-            
-            // Global administrator limits (override local PageComponent settings)
-            'global_max_char_limit' => null, // null = no global limit, number = enforce limit
-            'global_max_memory_limit' => null, // null = no global limit, number = enforce limit
-            
-            // Default allowed file types for AI processing  
-            'default_allowed_file_types' => ['txt', 'md', 'pdf', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif']
+
+            'global_max_char_limit' => null,
+            'global_max_memory_limit' => null,
+
+            'default_allowed_file_types' => ['txt', 'md', 'pdf', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif'],
+
+            'ramses_api_url' => 'https://ramses-oski.itcc.uni-koeln.de',
+            'ramses_rag_allowed_file_types' => ['txt', 'md', 'csv', 'pdf'],
+
+            'openai_api_url' => 'https://api.openai.com'
         ];
-        
+
         try {
-            // Load from plugin's dedicated configuration table
             $stored_value = self::getFromDatabase($key);
             if ($stored_value !== null) {
                 return $stored_value;
             }
-            
-            // Fallback to default value
+
             $default_value = $defaults[$key] ?? null;
             
             try {
@@ -71,13 +68,11 @@ class AIChatPageComponentConfig
                     'source' => 'built_in_default'
                 ]);
             } catch (\Exception $e) {
-                // Ignore logging errors during early bootstrap
             }
-            
+
             return $default_value;
-            
+
         } catch (\Exception $e) {
-            // Return default value on error
             try {
                 global $DIC;
                 $DIC->logger()->comp('pcaic')->error("Failed to get config value", [

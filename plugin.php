@@ -10,7 +10,7 @@
 $id = "pcaic";
 
 // code version
-$version = "1.0.7";
+$version = "1.1.0";
 
 // ilias min and max version
 $ilias_min_version = "9.0.0";

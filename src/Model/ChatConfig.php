@@ -3,10 +3,10 @@
 namespace ILIAS\Plugin\pcaic\Model;
 
 /**
- * ChatConfig Model - PageComponent Configuration
- * 
- * Represents the configuration of a PageComponent (one per PageComponent)
- * Contains: system_prompt, ai_service, background_files, etc.
+ * Chat configuration model
+ *
+ * Represents the configuration settings for a single PageComponent instance.
+ * Each PageComponent has its own configuration stored in the pcaic_chats table.
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
@@ -21,15 +21,21 @@ class ChatConfig
     private string $aiService = 'ramses';
     private int $maxMemory = 10;
     private int $charLimit = 2000;
-    private array $backgroundFiles = [];
     private bool $persistent = true;
     private bool $includePageContext = true;
     private bool $enableChatUploads = false;
     private bool $enableStreaming = true;
+    private bool $enableRag = false;
     private string $disclaimer = '';
+    private ?string $ragCollectionId = null;
     private ?\DateTime $createdAt = null;
     private ?\DateTime $updatedAt = null;
 
+    /**
+     * Constructor
+     *
+     * @param string|null $chatId Optional chat ID to load existing configuration
+     */
     public function __construct(string $chatId = null)
     {
         if ($chatId) {
@@ -39,14 +45,14 @@ class ChatConfig
             $this->chatId = uniqid('chat_', true);
             $this->createdAt = new \DateTime();
             $this->updatedAt = new \DateTime();
-            
-            // Load defaults from global configuration for new instances
             $this->loadGlobalDefaults();
         }
     }
 
     /**
      * Load configuration from database
+     *
+     * @return bool True if configuration was found and loaded, false otherwise
      */
     private function load(): bool
     {
@@ -65,21 +71,14 @@ class ChatConfig
             $this->aiService = $row['ai_service'] ?? 'ramses';
             $this->maxMemory = (int)$row['max_memory'];
             $this->charLimit = (int)$row['char_limit'];
-            
-            // Parse JSON background files
-            $bgFiles = $row['background_files'];
-            if (is_string($bgFiles)) {
-                $this->backgroundFiles = json_decode($bgFiles, true) ?? [];
-            } elseif (is_array($bgFiles)) {
-                $this->backgroundFiles = $bgFiles;
-            }
-            
             $this->persistent = (bool)$row['persistent'];
             $this->includePageContext = (bool)$row['include_page_context'];
             $this->enableChatUploads = (bool)$row['enable_chat_uploads'];
             $this->enableStreaming = (bool)($row['enable_streaming'] ?? true);
+            $this->enableRag = (bool)($row['enable_rag'] ?? false);
             $this->disclaimer = $row['disclaimer'] ?? '';
-            
+            $this->ragCollectionId = $row['rag_collection_id'] ?? null;
+
             $this->createdAt = $row['created_at'] ? new \DateTime($row['created_at']) : null;
             $this->updatedAt = $row['updated_at'] ? new \DateTime($row['updated_at']) : null;
             
@@ -96,8 +95,7 @@ class ChatConfig
     {
         try {
             require_once(__DIR__ . '/../../classes/platform/class.AIChatPageComponentConfig.php');
-            
-            // Load defaults from global configuration
+
             $default_prompt = \platform\AIChatPageComponentConfig::get('default_prompt');
             if (!empty($default_prompt)) {
                 $this->systemPrompt = $default_prompt;
@@ -136,6 +134,10 @@ class ChatConfig
 
     /**
      * Save configuration to database
+     *
+     * Performs INSERT for new configurations or UPDATE for existing ones.
+     *
+     * @return bool Always returns true
      */
     public function save(): bool
     {
@@ -144,7 +146,6 @@ class ChatConfig
 
         $this->updatedAt = new \DateTime();
 
-        // Check if exists
         $query = "SELECT chat_id FROM pcaic_chats WHERE chat_id = " . $db->quote($this->chatId, 'text');
         $result = $db->query($query);
         $exists = $db->fetchAssoc($result);
@@ -158,20 +159,19 @@ class ChatConfig
             'ai_service' => ['text', $this->aiService],
             'max_memory' => ['integer', $this->maxMemory],
             'char_limit' => ['integer', $this->charLimit],
-            'background_files' => ['clob', json_encode($this->backgroundFiles)],
             'persistent' => ['integer', $this->persistent ? 1 : 0],
             'include_page_context' => ['integer', $this->includePageContext ? 1 : 0],
             'enable_chat_uploads' => ['integer', $this->enableChatUploads ? 1 : 0],
             'enable_streaming' => ['integer', $this->enableStreaming ? 1 : 0],
+            'enable_rag' => ['integer', $this->enableRag ? 1 : 0],
             'disclaimer' => ['clob', $this->disclaimer],
+            'rag_collection_id' => ['text', $this->ragCollectionId],
             'updated_at' => ['timestamp', $this->updatedAt->format('Y-m-d H:i:s')]
         ];
 
         if ($exists) {
-            // Update
             $db->update('pcaic_chats', $values, ['chat_id' => ['text', $this->chatId]]);
         } else {
-            // Insert - initialize createdAt if not set
             if (!$this->createdAt) {
                 $this->createdAt = new \DateTime();
             }
@@ -184,14 +184,17 @@ class ChatConfig
     }
 
     /**
-     * Delete configuration
+     * Delete configuration from database
+     *
+     * Cascades to associated sessions and messages via foreign key constraints.
+     *
+     * @return bool Always returns true
      */
     public function delete(): bool
     {
         global $DIC;
         $db = $DIC->database();
 
-        // Delete will cascade to sessions and messages due to foreign keys
         $query = "DELETE FROM pcaic_chats WHERE chat_id = " . $db->quote($this->chatId, 'text');
         $db->manipulate($query);
 
@@ -199,7 +202,9 @@ class ChatConfig
     }
 
     /**
-     * Check if configuration exists
+     * Check if configuration exists in database
+     *
+     * @return bool True if configuration exists, false otherwise
      */
     public function exists(): bool
     {
@@ -213,6 +218,8 @@ class ChatConfig
 
     /**
      * Get all active sessions for this chat
+     *
+     * @return ChatSession[] Array of active ChatSession objects
      */
     public function getSessions(): array
     {
@@ -230,7 +237,6 @@ class ChatConfig
         return $sessions;
     }
 
-    // Getters and Setters
     public function getChatId(): string { return $this->chatId; }
     public function setChatId(string $chatId): void { $this->chatId = $chatId; }
     public function getPageId(): int { return $this->pageId; }
@@ -249,8 +255,6 @@ class ChatConfig
     public function setMaxMemory(int $maxMemory): void { $this->maxMemory = $maxMemory; }
     public function getCharLimit(): int { return $this->charLimit; }
     public function setCharLimit(int $charLimit): void { $this->charLimit = $charLimit; }
-    public function getBackgroundFiles(): array { return $this->backgroundFiles; }
-    public function setBackgroundFiles(array $backgroundFiles): void { $this->backgroundFiles = $backgroundFiles; }
     public function isPersistent(): bool { return $this->persistent; }
     public function setPersistent(bool $persistent): void { $this->persistent = $persistent; }
     public function isIncludePageContext(): bool { return $this->includePageContext; }
@@ -259,13 +263,20 @@ class ChatConfig
     public function setEnableChatUploads(bool $enableChatUploads): void { $this->enableChatUploads = $enableChatUploads; }
     public function isEnableStreaming(): bool { return $this->enableStreaming; }
     public function setEnableStreaming(bool $enableStreaming): void { $this->enableStreaming = $enableStreaming; }
+
+    public function isEnableRag(): bool { return $this->enableRag; }
+    public function setEnableRag(bool $enableRag): void { $this->enableRag = $enableRag; }
     public function getDisclaimer(): string { return $this->disclaimer; }
     public function setDisclaimer(string $disclaimer): void { $this->disclaimer = $disclaimer; }
+    public function getRAGCollectionId(): ?string { return $this->ragCollectionId; }
+    public function setRAGCollectionId(?string $ragCollectionId): void { $this->ragCollectionId = $ragCollectionId; }
     public function getCreatedAt(): ?\DateTime { return $this->createdAt; }
     public function getUpdatedAt(): ?\DateTime { return $this->updatedAt; }
 
     /**
-     * Convert to array for API responses
+     * Convert configuration to array representation
+     *
+     * @return array Associative array containing all configuration properties
      */
     public function toArray(): array
     {
@@ -279,13 +290,39 @@ class ChatConfig
             'ai_service' => $this->aiService,
             'max_memory' => $this->maxMemory,
             'char_limit' => $this->charLimit,
-            'background_files' => $this->backgroundFiles,
             'persistent' => $this->persistent,
             'include_page_context' => $this->includePageContext,
             'enable_chat_uploads' => $this->enableChatUploads,
             'disclaimer' => $this->disclaimer,
+            'rag_collection_id' => $this->ragCollectionId,
             'created_at' => $this->createdAt?->format('Y-m-d H:i:s'),
             'updated_at' => $this->updatedAt?->format('Y-m-d H:i:s')
         ];
+    }
+
+    /**
+     * Get background files for this chat
+     *
+     * Returns resource IDs of all background files (attachments with background_file=1).
+     *
+     * @return string[] Array of resource IDs
+     */
+    public function getBackgroundFiles(): array
+    {
+        global $DIC;
+        $db = $DIC->database();
+
+        $file_ids = [];
+        $query = "SELECT resource_id FROM pcaic_attachments " .
+                 "WHERE chat_id = " . $db->quote($this->chatId, 'text') . " " .
+                 "AND background_file = 1 " .
+                 "ORDER BY timestamp ASC";
+
+        $result = $db->query($query);
+        while ($row = $db->fetchAssoc($result)) {
+            $file_ids[] = $row['resource_id'];
+        }
+
+        return $file_ids;
     }
 }

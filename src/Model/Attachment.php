@@ -36,22 +36,34 @@ class Attachment
 {
     /** @var int|null Database primary key identifier */
     protected ?int $id = null;
-    
-    /** @var int|null Associated message ID for conversation context */
+
+    /** @var int|null Associated message ID for conversation context (NULL = pending upload or background file) */
     protected ?int $message_id = null;
-    
+
     /** @var string|null Chat ID for session association */
     protected ?string $chat_id = null;
-    
+
     /** @var int|null User ID who uploaded the file */
     protected ?int $user_id = null;
-    
-    /** @var string|null ILIAS ResourceStorage resource identifier */
+
+    /** @var string|null ILIAS ResourceStorage resource identifier (NULL if RAG-only) */
     protected ?string $resource_id = null;
-    
+
+    /** @var string|null RAMSES RAG collection identifier */
+    protected ?string $rag_collection_id = null;
+
+    /** @var string|null RAMSES RAG remote file identifier */
+    protected ?string $rag_remote_file_id = null;
+
+    /** @var string|null RAG upload timestamp in Y-m-d H:i:s format */
+    protected ?string $rag_uploaded_at = null;
+
     /** @var string|null Upload timestamp in Y-m-d H:i:s format */
     protected ?string $timestamp = null;
-    
+
+    /** @var bool Flag indicating if this is a background file (true) or chat upload (false) */
+    protected bool $background_file = false;
+
     /** @var \ilDBInterface Database interface for persistence operations */
     protected \ilDBInterface $db;
     
@@ -72,13 +84,11 @@ class Attachment
     public function __construct(?int $id = null)
     {
         global $DIC;
-        
-        // Initialize core services
+
         $this->db = $DIC->database();
         $this->logger = $DIC->logger()->comp('pcaic');
         $this->resource_storage = $DIC->resourceStorage();
-        
-        // Auto-load if ID provided
+
         if ($id) {
             $this->id = $id;
             $this->load();
@@ -103,48 +113,116 @@ class Attachment
         $result = $this->db->query($query);
         
         if ($row = $this->db->fetchAssoc($result)) {
-            $this->message_id = (int)$row['message_id'];
+            $this->message_id = $row['message_id'] ? (int)$row['message_id'] : null;
             $this->chat_id = $row['chat_id'];
-            $this->user_id = (int)$row['user_id'];
+            $this->user_id = $row['user_id'] ? (int)$row['user_id'] : null;
             $this->resource_id = $row['resource_id'];
+            $this->rag_collection_id = $row['rag_collection_id'] ?? null;
+            $this->rag_remote_file_id = $row['rag_remote_file_id'] ?? null;
+            $this->rag_uploaded_at = $row['rag_uploaded_at'] ?? null;
             $this->timestamp = $row['timestamp'];
+            $this->background_file = (bool)($row['background_file'] ?? 0);
         }
     }
-    
+
+    /**
+     * Load attachment by ID (static factory method)
+     *
+     * @param int $id Attachment ID
+     * @return self|null Attachment instance or null if not found
+     */
+    public static function loadById(int $id): ?self
+    {
+        $attachment = new self();
+        $attachment->id = $id;
+        $attachment->load();
+
+        return $attachment->resource_id ? $attachment : null;
+    }
+
+    /**
+     * Save attachment to database
+     *
+     * Performs UPDATE for existing attachments or INSERT for new ones.
+     *
+     * @return void
+     */
     public function save(): void
     {
         if ($this->id) {
-            // Update existing attachment
             $query = "UPDATE pcaic_attachments SET " .
                 "message_id = " . $this->db->quote($this->message_id, 'integer') . ", " .
                 "chat_id = " . $this->db->quote($this->chat_id, 'text') . ", " .
                 "user_id = " . $this->db->quote($this->user_id, 'integer') . ", " .
                 "resource_id = " . $this->db->quote($this->resource_id, 'text') . ", " .
+                "rag_collection_id = " . $this->db->quote($this->rag_collection_id, 'text') . ", " .
+                "rag_remote_file_id = " . $this->db->quote($this->rag_remote_file_id, 'text') . ", " .
+                "rag_uploaded_at = " . $this->db->quote($this->rag_uploaded_at, 'timestamp') . ", " .
+                "background_file = " . $this->db->quote($this->background_file ? 1 : 0, 'integer') . ", " .
                 "timestamp = " . $this->db->quote($this->timestamp, 'timestamp') . " " .
                 "WHERE id = " . $this->db->quote($this->id, 'integer');
         } else {
-            // Insert new attachment
             $this->id = $this->db->nextId('pcaic_attachments');
-            $query = "INSERT INTO pcaic_attachments (id, message_id, chat_id, user_id, resource_id, timestamp) " .
+            $query = "INSERT INTO pcaic_attachments (id, message_id, chat_id, user_id, resource_id, rag_collection_id, rag_remote_file_id, rag_uploaded_at, background_file, timestamp) " .
                 "VALUES (" .
                 $this->db->quote($this->id, 'integer') . ", " .
                 $this->db->quote($this->message_id, 'integer') . ", " .
                 $this->db->quote($this->chat_id, 'text') . ", " .
                 $this->db->quote($this->user_id, 'integer') . ", " .
                 $this->db->quote($this->resource_id, 'text') . ", " .
+                $this->db->quote($this->rag_collection_id, 'text') . ", " .
+                $this->db->quote($this->rag_remote_file_id, 'text') . ", " .
+                $this->db->quote($this->rag_uploaded_at, 'timestamp') . ", " .
+                $this->db->quote($this->background_file ? 1 : 0, 'integer') . ", " .
                 $this->db->quote($this->timestamp, 'timestamp') . ")";
         }
-        
+
         $this->db->manipulate($query);
     }
-    
+
+    /**
+     * Delete attachment from database and storage
+     *
+     * Removes attachment from RAG collection (if present), ILIAS ResourceStorage,
+     * and database. Cascades to remove file references.
+     *
+     * @return void
+     */
     public function delete(): void
     {
         if (!$this->id) {
             return;
         }
-        
-        // Remove from ResourceStorage
+
+        if ($this->rag_remote_file_id && $this->rag_collection_id) {
+            try {
+                global $DIC;
+                $entityId = $this->background_file ? $this->chat_id : $this->getSessionIdFromMessage();
+
+                if ($entityId) {
+                    require_once(__DIR__ . '/../../classes/ai/class.AIChatPageComponentLLM.php');
+                    require_once(__DIR__ . '/../../classes/ai/class.AIChatPageComponentRAMSES.php');
+                    require_once(__DIR__ . '/ChatConfig.php');
+
+                    $chatConfig = new ChatConfig($this->chat_id);
+                    $llm = $this->createLLMInstance($chatConfig->getAiService());
+                    $llm->deleteFileFromRAG($this->rag_remote_file_id, $entityId);
+
+                    $this->logger->info("Deleted file from RAG", [
+                        'attachment_id' => $this->id,
+                        'rag_remote_file_id' => $this->rag_remote_file_id,
+                        'entity_id' => $entityId
+                    ]);
+                }
+            } catch (Exception $e) {
+                $this->logger->warning("Failed to remove file from RAG during attachment deletion", [
+                    'attachment_id' => $this->id,
+                    'rag_remote_file_id' => $this->rag_remote_file_id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
         if ($this->resource_id) {
             try {
                 $resource_id = $this->resource_storage->manage()->find($this->resource_id);
@@ -159,10 +237,43 @@ class Attachment
                 ]);
             }
         }
-        
-        // Remove from database
+
         $query = "DELETE FROM pcaic_attachments WHERE id = " . $this->db->quote($this->id, 'integer');
         $this->db->manipulate($query);
+    }
+
+    /**
+     * Get session ID from associated message
+     *
+     * @return string|null Session ID or null if no message associated
+     */
+    private function getSessionIdFromMessage(): ?string
+    {
+        if (!$this->message_id) {
+            return null;
+        }
+
+        $query = "SELECT session_id FROM pcaic_messages WHERE message_id = " . $this->db->quote($this->message_id, 'integer');
+        $result = $this->db->query($query);
+        if ($row = $this->db->fetchAssoc($result)) {
+            return $row['session_id'];
+        }
+        return null;
+    }
+
+    /**
+     * Helper to create LLM instance
+     */
+    private function createLLMInstance(string $service)
+    {
+        switch ($service) {
+            case 'ramses':
+                return \ai\AIChatPageComponentRAMSES::fromConfig();
+            case 'openai':
+                return \ai\AIChatPageComponentOpenAI::fromConfig();
+            default:
+                return \ai\AIChatPageComponentRAMSES::fromConfig();
+        }
     }
     
     /**
@@ -227,16 +338,12 @@ class Attachment
             $logger->debug("Upload failed: " . $upload_result->getStatus()->getMessage());
             throw new Exception("Upload failed");
         }
-        
+
         $resource_storage = $DIC->resourceStorage();
-        
-        // Create stakeholder using our dedicated class
+
         $stakeholder = new ResourceStakeholder();
-        
-        // Store the uploaded file in ResourceStorage
         $resource_id = $resource_storage->manage()->upload($upload_result, $stakeholder);
-        
-        // Create attachment record
+
         $attachment = new self();
         $attachment->setMessageId($message_id);
         $attachment->setChatId($chat_id);
@@ -316,17 +423,12 @@ class Attachment
             } else {
                 $this->logger->warning("IRSS getSrc returned empty URL");
             }
-            
+
         } catch (Exception $e) {
             $this->logger->warning("IRSS getSrc failed", ['error' => $e->getMessage()]);
         }
-        
-        // Fallback only if IRSS fails
-        $iliasBase = rtrim(preg_replace('~(/Customizing)(?=/|$).*~i', '', ILIAS_HTTP_PATH), '/');
-        $plugin_download_url = $iliasBase . '/Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent/download.php?resource_id=' . urlencode($this->resource_id);
-        
-        $this->logger->debug("Using plugin download URL as fallback", ['url' => $plugin_download_url]);
-        return $plugin_download_url;
+
+        return null;
     }
     
     public function getPreviewUrl(): ?string
@@ -1017,7 +1119,35 @@ class Attachment
     
     public function getTimestamp(): ?string { return $this->timestamp; }
     public function setTimestamp(?string $timestamp): void { $this->timestamp = $timestamp; }
-    
+
+    public function getRAGCollectionId(): ?string { return $this->rag_collection_id; }
+    public function setRAGCollectionId(?string $rag_collection_id): void { $this->rag_collection_id = $rag_collection_id; }
+
+    public function getRAGRemoteFileId(): ?string { return $this->rag_remote_file_id; }
+    public function setRAGRemoteFileId(?string $rag_remote_file_id): void { $this->rag_remote_file_id = $rag_remote_file_id; }
+
+    public function getRAGUploadedAt(): ?string { return $this->rag_uploaded_at; }
+    public function setRAGUploadedAt(?string $rag_uploaded_at): void { $this->rag_uploaded_at = $rag_uploaded_at; }
+
+    public function isBackgroundFile(): bool { return $this->background_file; }
+    public function setBackgroundFile(bool $background_file): void { $this->background_file = $background_file; }
+
+    /**
+     * Check if attachment is stored in RAG
+     */
+    public function isInRAG(): bool
+    {
+        return $this->rag_collection_id !== null;
+    }
+
+    /**
+     * Check if attachment is stored in ILIAS IRSS
+     */
+    public function isInIRSS(): bool
+    {
+        return $this->resource_id !== null;
+    }
+
     /**
      * Converts attachment to array format for API responses
      * 
@@ -1036,48 +1166,43 @@ class Attachment
     public function toArray(): array
     {
         $download_url = $this->getDownloadUrl();
-        $preview_url = $this->getPreviewUrl(); // Now uses ILIAS Flavours with fallback
-        
-        // Determine file type for frontend handling
+        $preview_url = $this->getPreviewUrl();
         $file_type = $this->getFileType();
-        
-        // For images, provide data_url as reliable fallback
+
         $data_url = null;
         if ($file_type === 'image') {
             $data_url = $this->getDataUrl();
         }
-        
-        // Priority order depends on file type
+
         $src_url = null;
         if ($file_type === 'image') {
-            // For images: preview_url (ILIAS Flavour) > data_url (Base64) > download_url (original)
             $src_url = $preview_url ?: ($data_url ?: $download_url);
         } elseif ($file_type === 'pdf') {
-            // For PDFs: no src_url, will show icon and use download_url for opening
             $src_url = null;
         } else {
-            // For other files: use download_url
             $src_url = $download_url;
         }
         
         return [
             'id' => $this->getId(),
             'title' => $this->getTitle(),
-            'filename' => $this->getTitle(), // Alias for compatibility
+            'filename' => $this->getTitle(),
             'size' => $this->getSize(),
             'mime_type' => $this->getMimeType(),
-            'file_type' => $file_type, // 'image', 'pdf', 'document', 'other'
+            'file_type' => $file_type,
             'is_image' => $this->isImage(),
-            'download_url' => $download_url, // Full-size original file
-            'preview_url' => $preview_url, // ILIAS Flavour optimized thumbnail/preview (null for PDFs)
-            'thumbnail_url' => $preview_url, // Alias for chat thumbnails (null for PDFs)
-            'src' => $src_url, // Best available URL for display (null for PDFs = show icon)
-            'data_url' => $data_url // Base64 data URL for ultimate fallback
+            'download_url' => $download_url,
+            'preview_url' => $preview_url,
+            'thumbnail_url' => $preview_url,
+            'src' => $src_url,
+            'data_url' => $data_url
         ];
     }
-    
+
     /**
-     * Get simplified file type for frontend handling
+     * Get simplified file type category
+     *
+     * @return string File type category: 'image', 'pdf', 'document', or 'other'
      */
     private function getFileType(): string
     {

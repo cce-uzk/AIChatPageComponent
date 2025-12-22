@@ -1,17 +1,14 @@
 <?php declare(strict_types=1);
 
 namespace ai;
-
-use objects\AIChatPageComponentChat;
-use ILIAS\Plugin\pcaic\Model\Chat;
 use platform\AIChatPageComponentException;
 
 /**
  * RAMSES AI Service Integration for PageComponent
- * 
+ *
  * Integrates with the RAMSES (Mistral-based) AI service at University of Cologne.
  * Handles multimodal conversations including text, images, and PDF documents.
- * 
+ *
  * Features:
  * - OpenAI-compatible API endpoint integration
  * - Multimodal message formatting (text + images)
@@ -22,97 +19,426 @@ use platform\AIChatPageComponentException;
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  *
  * @see AIChatPageComponentLLM Base class for AI service integrations
- * 
+ *
  * @package ai
  */
 class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
 {
+    /** @var string Standard chat completions endpoint */
+    private const ENDPOINT_CHAT = '/v1/chat/completions';
+
+    /** @var string Models listing endpoint */
+    private const ENDPOINT_MODELS = '/v1/models';
+
+    /** @var string RAG chat completions endpoint */
+    private const ENDPOINT_RAG_CHAT = '/v1/rag/chat/completions';
+
+    /** @var string RAG file upload endpoint */
+    private const ENDPOINT_RAG_UPLOAD = '/v1/rag/upload';
+
+    /** @var string RAG file deletion endpoint */
+    private const ENDPOINT_RAG_DELETE = '/v1/rag/delete';
+
     /** @var string AI model identifier (e.g., 'mistral-small-3-2-24b-instruct-2506') */
     private string $model;
-    
+
     /** @var string API key for RAMSES service authentication */
     private string $apiKey;
-    
-    /** @var bool Whether to use streaming responses (currently not implemented) */
-    private bool $streaming = false;
-    
+
     /**
      * Get available RAMSES models from configuration
-     * 
+     *
      * @return array Available models from cached API response
      */
     public static function getModelTypes(): array
     {
         $cached_models = \platform\AIChatPageComponentConfig::get('cached_models');
-        
+
         if (is_array($cached_models) && !empty($cached_models)) {
             return $cached_models;
         }
-        
-        // No fallback models - models must be fetched from API
+
         return [];
     }
 
     /**
-     * Constructor - initializes RAMSES service with configured model and API settings
-     * 
+     * Constructor
+     *
+     * Initializes RAMSES service with model and API configuration.
+     *
      * @param string|null $model Optional model identifier, uses configured model if not provided
      */
     public function __construct(string $model = null)
     {
         parent::__construct();
-        
-        // Use configured model if none provided
+
         if ($model === null) {
             $model = \platform\AIChatPageComponentConfig::get('ramses_selected_model') ?: 'swiss-ai-apertus-70b-instruct-2509';
         }
-        
+
         $this->model = $model;
-        
-        // Load API token from configuration
         $this->apiKey = \platform\AIChatPageComponentConfig::get('ramses_api_token') ?: '';
     }
 
     /**
-     * Returns the configured API key for RAMSES service
-     * 
-     * @return string API key for authentication
+     * Construct full API endpoint URL from base URL and endpoint path
+     *
+     * @param string $endpoint Endpoint path constant (e.g., self::ENDPOINT_CHAT)
+     * @return string Complete API URL
      */
+    private function getEndpointUrl(string $endpoint): string
+    {
+        $baseUrl = \platform\AIChatPageComponentConfig::get('ramses_api_url') ?: 'https://ramses-oski.itcc.uni-koeln.de';
+
+        // Remove trailing slash from base URL if present
+        $baseUrl = rtrim($baseUrl, '/');
+
+        // Ensure endpoint starts with slash
+        if (!str_starts_with($endpoint, '/')) {
+            $endpoint = '/' . $endpoint;
+        }
+
+        return $baseUrl . $endpoint;
+    }
+
     public function getApiKey(): string
     {
         return $this->apiKey;
     }
 
-    /**
-     * Sets the API key for RAMSES service authentication
-     * 
-     * @param string $apiKey Valid RAMSES API key
-     */
     public function setApiKey(string $apiKey): void
     {
         $this->apiKey = $apiKey;
     }
 
-    /**
-     * Configures streaming mode for responses
-     * 
-     * @param bool $streaming Whether to enable streaming (not yet implemented)
-     * @todo Implement streaming response handling
-     */
     public function setStreaming(bool $streaming): void
     {
         $this->streaming = $streaming;
     }
 
-    /**
-     * Returns current streaming configuration
-     * 
-     * @return bool Whether streaming is enabled
-     */
     public function isStreaming(): bool
     {
         return $this->streaming;
     }
+
+    /**
+     * Check if RAG mode is supported
+     *
+     * @return bool Always true for RAMSES
+     */
+    public function supportsRAG(): bool
+    {
+        return true;
+    }
+
+    /**
+     * RAMSES supports multimodal input (images, PDFs)
+     */
+    public function supportsMultimodal(): bool
+    {
+        return true;
+    }
+
+    /**
+     * RAMSES supports base64 image embedding
+     */
+    public function supportsBase64Images(): bool
+    {
+        return true;
+    }
+
+    /**
+     * RAMSES supports streaming responses
+     */
+    public function supportsStreaming(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Get allowed file types based on RAG mode
+     *
+     * RAMSES RAG limitations:
+     * - RAG mode: Text-based files only (configurable, default: txt, md, csv, pdf)
+     * - Multimodal mode: Images and PDFs converted to images via Ghostscript
+     * - Cannot mix RAG collections with Base64 images in same request
+     *
+     * @param bool $ragEnabled Whether RAG mode is enabled
+     * @return array Array of allowed file extensions
+     */
+    public function getAllowedFileTypes(bool $ragEnabled): array
+    {
+        if ($ragEnabled) {
+            $configured_types = \platform\AIChatPageComponentConfig::get('ramses_rag_allowed_file_types');
+            return is_array($configured_types) && !empty($configured_types)
+                ? $configured_types
+                : ['txt', 'md', 'csv', 'pdf'];
+        } else {
+            return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'md', 'csv'];
+        }
+    }
+
+    /**
+     * Upload file to RAMSES RAG system
+     *
+     * Converts text-based entity IDs to numeric hashes for RAMSES compatibility.
+     *
+     * @param string $filepath Local file path
+     * @param string $entityId Entity identifier (chat_id for background files, chat_id_session_id for uploads)
+     * @return array ['collection_id' => '...', 'remote_file_id' => '...']
+     * @throws AIChatPageComponentException If upload fails
+     */
+    public function uploadFileToRAG(string $filepath, string $entityId): array
+    {
+        $fileUploadUrl = $this->getEndpointUrl(self::ENDPOINT_RAG_UPLOAD);
+
+        $applicationIdText = \platform\AIChatPageComponentConfig::get('ramses_application_id') ?: 'ILIAS';
+        $applicationId = abs(crc32($applicationIdText)) % 2147483647;
+
+        $instanceIdText = \platform\AIChatPageComponentConfig::get('ramses_instance_id') ?: 'ilias9';
+        $instanceId = abs(crc32($instanceIdText)) % 999999;
+
+        $entityIdNumeric = abs(crc32($entityId)) % 2147483647;
+
+        if (!file_exists($filepath)) {
+            throw new AIChatPageComponentException("File not found: $filepath");
+        }
+
+        $filename = basename($filepath);
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $filepath);
+        finfo_close($finfo);
+
+        $curlFile = curl_file_create($filepath, $mimeType, $filename);
+        $postData = [
+            'file' => $curlFile,
+            'applicationid' => $applicationId,
+            'instanceid' => $instanceId,
+            'entityid' => $entityIdNumeric,
+            'purpose' => 'assistants'
+        ];
+
+        // Log request details for debugging
+        error_log("RAMSES RAG Upload Request:");
+        error_log("  File: " . $filepath);
+        error_log("  Filename: " . $filename);
+        error_log("  MIME Type: " . $mimeType);
+        error_log("  File size: " . filesize($filepath) . " bytes");
+        error_log("  File exists: " . (file_exists($filepath) ? 'yes' : 'no'));
+        error_log("  Application ID (numeric): " . $applicationId . " (from: " . $applicationIdText . ")");
+        error_log("  Instance ID (numeric): " . $instanceId . " (from: " . $instanceIdText . ")");
+        error_log("  Entity ID (numeric): " . $entityIdNumeric . " (from: " . $entityId . ")");
+        error_log("  URL: " . $fileUploadUrl);
+
+        $curl = curl_init();
+        curl_setopt($curl, CURLOPT_URL, $fileUploadUrl);
+        curl_setopt($curl, CURLOPT_POST, true);
+        curl_setopt($curl, CURLOPT_POSTFIELDS, $postData);
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($curl, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $this->apiKey
+        ]);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 120);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 30);
+
+        $plugin = \ilAIChatPageComponentPlugin::getInstance();
+        $ca_cert_path = realpath($plugin->getDirectory()) . '/certs/RAMSES.pem';
+        if (file_exists($ca_cert_path)) {
+            curl_setopt($curl, CURLOPT_CAINFO, $ca_cert_path);
+        } else {
+            curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false);
+        }
+
+        $response = curl_exec($curl);
+        $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $error = curl_error($curl);
+        curl_close($curl);
+
+        $this->logger->debug("RAMSES RAG Upload Response: HTTP $httpCode | File: $filename | Size: " . filesize($filepath) . " | Response: " . substr($response, 0, 500));
+
+        if ($httpCode !== 200) {
+            error_log("RAMSES RAG Upload Failed - HTTP $httpCode");
+            error_log("cURL Error: " . $error);
+            error_log("Response: " . substr($response, 0, 1000));
+            error_log("URL: " . $fileUploadUrl);
+            error_log("Entity ID: " . $entityId);
+
+            $this->logger->error("RAMSES RAG file upload failed", [
+                'http_code' => $httpCode,
+                'curl_error' => $error,
+                'response' => substr($response, 0, 500),
+                'url' => $fileUploadUrl,
+                'entity_id' => $entityId
+            ]);
+            throw new AIChatPageComponentException("RAG file upload failed: HTTP $httpCode - $error");
+        }
+
+        $data = json_decode($response, true);
+        if (!isset($data['collection_id']) || !isset($data['id'])) {
+            $this->logger->error("Invalid RAMSES RAG response structure: " . $response . " | Parsed: " . json_encode($data));
+            throw new AIChatPageComponentException("Invalid RAMSES response: missing collection_id or id");
+        }
+
+        $this->logger->info("File uploaded to RAMSES RAG successfully: collection_id=" . $data['collection_id'] .
+                           " | remote_file_id=" . $data['id'] .
+                           " | filename=" . $filename .
+                           " | size=" . filesize($filepath) .
+                           " | Full response: " . json_encode($data));
+
+        return [
+            'collection_id' => $data['collection_id'],
+            'remote_file_id' => $data['id']
+        ];
+    }
+
+    /**
+     * Delete file from RAMSES RAG system
+     *
+     * @param string $remoteFileId RAMSES file ID
+     * @param string $entityId Entity identifier
+     * @return bool True on success
+     * @throws AIChatPageComponentException on deletion failure
+     */
+    public function deleteFileFromRAG(string $remoteFileId, string $entityId): bool
+    {
+        $fileDeleteUrl = $this->getEndpointUrl(self::ENDPOINT_RAG_DELETE);
+        $applicationId = \platform\AIChatPageComponentConfig::get('ramses_application_id') ?: 'ILIAS';
+        $instanceId = \platform\AIChatPageComponentConfig::get('ramses_instance_id') ?: 'ilias9';
+
+        $deleteParams = [
+            'application_id' => $applicationId,
+            'instance_id' => $instanceId,
+            'entity_id' => $entityId,
+            'id' => $remoteFileId
+        ];
+
+        $curl = curl_init();
+        curl_setopt($curl, CURLOPT_URL, $fileDeleteUrl);
+        curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'POST'); // RAMSES uses POST for delete
+        curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($deleteParams));
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($curl, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $this->apiKey
+        ]);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 60);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 30);
+
+        // Handle SSL certificate
+        $plugin = \ilAIChatPageComponentPlugin::getInstance();
+        $ca_cert_path = realpath($plugin->getDirectory()) . '/certs/RAMSES.pem';
+        if (file_exists($ca_cert_path)) {
+            curl_setopt($curl, CURLOPT_CAINFO, $ca_cert_path);
+        } else {
+            curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false);
+        }
+
+        $response = curl_exec($curl);
+        $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
+
+        // Accept 200, 204, and 400 (Moodle compatibility - see chatclient.php:370)
+        $success = in_array($httpCode, [200, 204, 400]);
+
+        if ($success) {
+            $this->logger->info("File deleted from RAMSES RAG", [
+                'remote_file_id' => $remoteFileId,
+                'entity_id' => $entityId,
+                'http_code' => $httpCode
+            ]);
+        } else {
+            $this->logger->warning("RAMSES RAG file deletion failed", [
+                'http_code' => $httpCode,
+                'response' => $response
+            ]);
+        }
+
+        return $success;
+    }
+
+    /**
+     * Send chat with RAG collections
+     *
+     * @param array $messages Messages array
+     * @param array $collectionIds RAG collection IDs
+     * @param array|null $contextResources Optional additional context (hybrid mode)
+     * @return string AI response
+     * @throws AIChatPageComponentException
+     */
+    public function sendRagChat(array $messages, array $collectionIds, ?array $contextResources = null): string
+    {
+        $ragApiUrl = $this->getEndpointUrl(self::ENDPOINT_RAG_CHAT);
+
+        // Build messages array
+        $messagesArray = [];
+
+        // System message
+        if (!empty($this->prompt)) {
+            $messagesArray[] = [
+                'role' => 'system',
+                'content' => $this->prompt
+            ];
+        }
+
+        // Optional context resources
+        // In RAG mode: Only include text files (images/PDFs are in RAG collection)
+        // In hybrid mode: Could include both RAG + Base64, but for now skip Base64 to avoid duplication
+        if (!empty($contextResources)) {
+            $contextContent = [];
+            $hasTextFiles = false;
+
+            foreach ($contextResources as $resource) {
+                if ($resource['kind'] === 'text_file') {
+                    if (!$hasTextFiles) {
+                        $contextContent[] = [
+                            'type' => 'text',
+                            'text' => '[ADDITIONAL TEXT CONTEXT]\n'
+                        ];
+                        $hasTextFiles = true;
+                    }
+                    $contextContent[] = [
+                        'type' => 'text',
+                        'text' => "**{$resource['title']}**\n{$resource['content']}"
+                    ];
+                }
+                // Skip Base64 images/PDFs in RAG mode - they're already in the collection
+            }
+
+            if ($hasTextFiles) {
+                $messagesArray[] = [
+                    'role' => 'user',
+                    'content' => $contextContent
+                ];
+            }
+        }
+
+        // Add conversation messages
+        $messagesArray = array_merge($messagesArray, $messages);
+
+        // Build RAG request payload
+        $payload = [
+            'model' => $this->model,
+            'messages' => $messagesArray,
+            'collection_ids' => $collectionIds,
+            'temperature' => 0.5,
+            'stream' => $this->streaming
+        ];
+
+        // Log complete request for debugging
+        $this->logger->debug("RAMSES RAG Chat Request: Model=" . $this->model .
+                           " | Collections=" . json_encode($collectionIds) .
+                           " | Messages=" . count($messagesArray) .
+                           " | Stream=" . ($this->streaming ? 'yes' : 'no') .
+                           " | Full Payload: " . json_encode($payload, JSON_PRETTY_PRINT));
+
+        return $this->executeApiRequest($ragApiUrl, json_encode($payload));
+    }
+
+    // ============================================
+    // Existing Methods
+    // ============================================
 
     /**
      * Send chat to RAMSES API
@@ -126,12 +452,12 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     {
         global $DIC;
 
-        $apiUrl = \platform\AIChatPageComponentConfig::get('ramses_chat_api_url') ?: 'https://ramses-oski.itcc.uni-koeln.de/v1/chat/completions';
+        $apiUrl = $this->getEndpointUrl(self::ENDPOINT_CHAT);
 
-        
+
         // Build messages array with separated context structure
         $messagesArray = [];
-        
+
         // System message (clean, without background context)
         if (!empty($this->prompt)) {
             $messagesArray[] = [
@@ -139,22 +465,22 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                 'content' => $this->prompt
             ];
         }
-        
+
         // Context resources message (as assistant introducing available resources)
         if (!empty($contextResources)) {
             $contextContent = [];
-            
+
             // Add context introduction
             $contextContent[] = [
                 'type' => 'text',
                 'text' => '[BEGIN KNOWLEDGE BASE CONTEXT]\n'
             ];
-            
+
             // Add structured resources as OpenAI-compatible content
             foreach ($contextResources as $resource) {
                 // Add resource description as text
                 $resourceDesc = "**{$resource['title']}** ({$resource['kind']})";
-                
+
                 // Add metadata if available
                 $metadata = [];
                 if (isset($resource['mime_type'])) {
@@ -169,12 +495,12 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                 if (!empty($metadata)) {
                     $resourceDesc .= " [" . implode(", ", $metadata) . "]";
                 }
-                
+
                 $contextContent[] = [
                     'type' => 'text',
                     'text' => $resourceDesc
                 ];
-                
+
                 // Add content based on kind (OpenAI-compatible)
                 switch ($resource['kind']) {
                     case 'page_context':
@@ -185,7 +511,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                             'text' => "Content:\n" . $resource['content']
                         ];
                         break;
-                        
+
                     case 'image_file':
                     case 'pdf_page':
                         // Add image content
@@ -198,57 +524,54 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                         ];
                         break;
                 }
-                
+
                 // Add separator for readability
                 $contextContent[] = [
                     'type' => 'text',
                     'text' => "---"
                 ];
             }
-            
+
             // Add closing message
             $contextContent[] = [
                 'type' => 'text',
                 'text' => '[END KNOWLEDGE BASE CONTEXT]\nYou may refer to this context when answering future questions.'
             ];
-            
+
             // Assistant role with structured context (currently user role, assistent does not accept files)
             $messagesArray[] = [
                 'role' => 'user',//'assistant',
                 'content' => $contextContent
             ];
         }
-        
+
         // 3. Add the actual conversation messages
         $messagesArray = array_merge($messagesArray, $messages);
-        
-        
-        $payload = json_encode([
+
+
+        $payloadArray = [
             "messages" => $messagesArray,
             "model" => $this->model,
             "temperature" => 0.5,
             "stream" => $this->isStreaming()
-        ]);
-        
+        ];
+
+        $payload = json_encode($payloadArray);
+
         if ($payload === false) {
             throw new AIChatPageComponentException("Failed to encode API payload: " . json_last_error_msg());
         }
-        
+
+        // Log complete request for debugging
+        $this->logger->debug("RAMSES Chat Request (Multimodal): Model=" . $this->model .
+                           " | Messages=" . count($messagesArray) .
+                           " | Has Context=" . (!empty($contextResources) ? 'yes' : 'no') .
+                           " | Stream=" . ($this->isStreaming() ? 'yes' : 'no') .
+                           " | Full Payload: " . json_encode($payloadArray, JSON_PRETTY_PRINT));
 
         return $this->executeApiRequest($apiUrl, $payload);
     }
 
-
-    public function sendChat($chat)
-    {
-        // Accept both old and new chat types
-        if (!($chat instanceof AIChatPageComponentChat || $chat instanceof Chat)) {
-            throw new AIChatPageComponentException('Invalid chat object type');
-        }
-        
-        $messagesArray = $this->chatToMessagesArray($chat);
-        return $this->sendMessagesArray($messagesArray);
-    }
 
     /**
      * Execute API request to RAMSES
@@ -294,19 +617,19 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         if ($this->isStreaming()) {
             curl_setopt($curlSession, CURLOPT_WRITEFUNCTION, function ($curlSession, $chunk) use (&$responseContent) {
                 $responseContent .= $chunk;
-                
+
                 // Parse and reformat the chunk for Server-Sent Events
                 $lines = explode("\n", $chunk);
                 foreach ($lines as $line) {
                     $line = trim($line);
                     if (empty($line)) continue;
-                    
+
                     if (strpos($line, 'data: ') === 0) {
                         $jsonData = substr($line, strlen('data: '));
                         if ($jsonData === '[DONE]') {
                             continue; // Skip [DONE] marker
                         }
-                        
+
                         $json = json_decode($jsonData, true);
                         if ($json && isset($json['choices'][0]['delta']['content'])) {
                             $content = $json['choices'][0]['delta']['content'];
@@ -317,13 +640,15 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                         }
                     }
                 }
-                
+
                 return strlen($chunk);
             });
         }
 
         $response = curl_exec($curlSession);
         $httpcode = curl_getinfo($curlSession, CURLINFO_HTTP_CODE);
+        $totalTime = curl_getinfo($curlSession, CURLINFO_TOTAL_TIME);
+        $connectTime = curl_getinfo($curlSession, CURLINFO_CONNECT_TIME);
         $errNo = curl_errno($curlSession);
         $errMsg = curl_error($curlSession);
         curl_close($curlSession);
@@ -333,25 +658,27 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         }
 
         if ($httpcode != 200) {
-            // Log RAMSES API error with structured data
-            $this->logger->error("RAMSES API request failed", [
+            // In streaming mode, use captured response content
+            $errorBody = $this->isStreaming() ? $responseContent : $response;
+            $responsePreview = is_string($errorBody) && !empty($errorBody) ? substr($errorBody, 0, 500) : '(no body)';
+
+            $this->logger->error("RAMSES API request failed: HTTP " . $httpcode . " | URL: " . $apiUrl . " | Response: " . $responsePreview . " | Time: " . round($totalTime, 2) . "s");
+
+            $this->logger->error("RAMSES API Error Details", [
                 'http_code' => $httpcode,
-                'url' => $apiUrl,
-                'has_api_key' => !empty($this->apiKey),
-                'response' => substr($response, 0, 500)
-            ]);
-            
-            $this->logger->error("RAMSES API Error", [
-                'http_code' => $httpcode,
-                'response' => $response,
+                'total_time' => round($totalTime, 3),
+                'connect_time' => round($connectTime, 3),
+                'response' => $errorBody,
                 'payload' => $payload,
-                'api_url' => $apiUrl
+                'api_url' => $apiUrl,
+                'has_api_key' => !empty($this->apiKey),
+                'streaming' => $this->isStreaming()
             ]);
-            
-            // Try to parse error response for more details
-            $errorData = json_decode($response, true);
+
+            // Try to parse error response for more details (only if response is string)
+            $errorData = is_string($response) ? json_decode($response, true) : null;
             $errorMessage = $errorData['error']['message'] ?? "HTTP Error: " . $httpcode;
-            
+
             if ($httpcode === 401) {
                 throw new AIChatPageComponentException("Invalid API key: " . $errorMessage, 401);
             } else {
@@ -367,7 +694,16 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             if (!isset($decodedResponse['choices'][0]['message']['content'])) {
                 throw new AIChatPageComponentException("Unexpected API response structure from RAMSES" . $response);
             }
-            return $decodedResponse['choices'][0]['message']['content'];
+
+            // Log complete response for debugging
+            $content = $decodedResponse['choices'][0]['message']['content'];
+            $usage = $decodedResponse['usage'] ?? [];
+            $this->logger->debug("RAMSES Chat Response: HTTP " . $httpcode .
+                               " | Content Length=" . strlen($content) .
+                               " | Tokens: " . json_encode($usage) .
+                               " | Full Response: " . json_encode($decodedResponse, JSON_PRETTY_PRINT));
+
+            return $content;
         }
 
         // Process streaming response
@@ -390,12 +726,18 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             }
         }
 
+        // Log complete streaming response
+        $this->logger->debug("RAMSES Chat Response (Streaming): HTTP " . $httpcode .
+                           " | Content Length=" . strlen($completeMessage) .
+                           " | Chunks Processed=" . count($messages) .
+                           " | Complete Message: " . substr($completeMessage, 0, 1000) . (strlen($completeMessage) > 1000 ? '...' : ''));
+
         return $completeMessage;
     }
 
     /**
      * Factory method to create RAMSES instance with plugin configuration
-     * 
+     *
      * @return self Configured RAMSES instance
      * @throws AIChatPageComponentException If configuration loading fails
      */
@@ -405,14 +747,14 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             // Get model and API key from plugin configuration
             $model = \platform\AIChatPageComponentConfig::get('ramses_selected_model') ?: 'swiss-ai-apertus-70b-instruct-2509';
             $apiKey = \platform\AIChatPageComponentConfig::get('ramses_api_token') ?: '';
-            
+
             if (empty($apiKey)) {
                 throw new AIChatPageComponentException("RAMSES API token not configured");
             }
-            
+
             $ramses = new self($model);
             $ramses->setApiKey($apiKey);
-            
+
             return $ramses;
         } catch (\Exception $e) {
             throw new AIChatPageComponentException("Failed to create RAMSES instance from plugin config: " . $e->getMessage());
