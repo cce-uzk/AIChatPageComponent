@@ -121,6 +121,26 @@ class AIChatPageComponentLLMRegistry
     }
 
     /**
+     * Create a bare service instance without configuration
+     *
+     * Used for configuration forms where the service isn't configured yet.
+     *
+     * @param string $serviceId Service identifier
+     * @return AIChatPageComponentLLM|null Service instance or null if not found
+     */
+    public static function createBareServiceInstance(string $serviceId): ?AIChatPageComponentLLM
+    {
+        $serviceClass = self::getServiceClass($serviceId);
+
+        if ($serviceClass === null) {
+            return null;
+        }
+
+        // Always use constructor, never fromConfig()
+        return new $serviceClass();
+    }
+
+    /**
      * Get service capabilities
      *
      * @param string $serviceId Service identifier

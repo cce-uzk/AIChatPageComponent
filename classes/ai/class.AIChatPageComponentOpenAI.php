@@ -221,9 +221,14 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
     // Existing OpenAI Methods
     // ============================================
 
-    public function __construct(string $model)
+    public function __construct(string $model = null)
     {
         parent::__construct();
+
+        if ($model === null) {
+            $model = \platform\AIChatPageComponentConfig::get('openai_selected_model') ?: 'gpt-3.5-turbo';
+        }
+
         $this->model = $model;
     }
 

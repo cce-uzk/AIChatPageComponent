@@ -303,8 +303,8 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
         $selected_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
 
-        // If selected service is not enabled, use first available
-        if (!isset($service_options[$selected_service]) && !empty($service_options) && !isset($service_options['none'])) {
+        // If selected service doesn't exist in available options, use first available
+        if (!isset($service_options[$selected_service])) {
             $selected_service = array_key_first($service_options);
         }
 
@@ -646,8 +646,8 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             );
         }
 
-        // Create service instance
-        $service = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($serviceId);
+        // Create bare service instance (without requiring full configuration)
+        $service = \ai\AIChatPageComponentLLMRegistry::createBareServiceInstance($serviceId);
         if ($service === null) {
             return $renderer->render(
                 $ui_factory->messageBox()->failure("Failed to create service instance for '$serviceId'")
@@ -740,8 +740,8 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 throw new \Exception("Service '$serviceId' not found in registry");
             }
 
-            // Create service instance
-            $service = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($serviceId);
+            // Create bare service instance (without requiring full configuration)
+            $service = \ai\AIChatPageComponentLLMRegistry::createBareServiceInstance($serviceId);
             if ($service === null) {
                 throw new \Exception("Failed to create service instance for '$serviceId'");
             }
