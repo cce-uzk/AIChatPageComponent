@@ -262,18 +262,27 @@ class Attachment
     }
 
     /**
-     * Helper to create LLM instance
+     * Helper to create LLM instance using LLMRegistry
      */
     private function createLLMInstance(string $service)
     {
-        switch ($service) {
-            case 'ramses':
-                return \ai\AIChatPageComponentRAMSES::fromConfig();
-            case 'openai':
-                return \ai\AIChatPageComponentOpenAI::fromConfig();
-            default:
-                return \ai\AIChatPageComponentRAMSES::fromConfig();
+        // Use LLMRegistry to dynamically create service instance
+        $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($service);
+
+        if ($instance === null) {
+            // Fallback to first available service if requested service not found
+            $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+            if (!empty($availableServices)) {
+                $firstService = array_key_first($availableServices);
+                $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService);
+            }
+
+            if ($instance === null) {
+                throw new \Exception("No AI services available in registry");
+            }
         }
+
+        return $instance;
     }
     
     /**

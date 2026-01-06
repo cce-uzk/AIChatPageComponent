@@ -1,13 +1,15 @@
 /**
  * AIChatPageComponent Plugin Database Update Script
- * 
+ *
  * This script is executed when the plugin is activated or updated.
  * It handles database table creation and updates.
  */
 
 <#1>
 <?php
-// Step 1: Create initial tables
+/**
+ * Step 1: Create initial tables
+ */
 global $DIC;
 $db = $DIC->database();
 
@@ -25,7 +27,7 @@ if (!$db->tableExists('pcaic_data')) {
             'notnull' => false
         )
     );
-    
+
     $db->createTable('pcaic_data', $fields);
     $db->addPrimaryKey('pcaic_data', array('id'));
     $db->createSequence('pcaic_data');
@@ -121,7 +123,7 @@ if (!$db->tableExists('pcaic_chats')) {
             'notnull' => true
         )
     );
-    
+
     $db->createTable('pcaic_chats', $fields);
     $db->addPrimaryKey('pcaic_chats', array('chat_id'));
     $db->addIndex('pcaic_chats', array('page_id'), 'i1');
@@ -166,7 +168,7 @@ if (!$db->tableExists('pcaic_sessions')) {
             'notnull' => true
         )
     );
-    
+
     $db->createTable('pcaic_sessions', $fields);
     $db->addPrimaryKey('pcaic_sessions', array('session_id'));
     $db->addIndex('pcaic_sessions', array('user_id', 'chat_id'), 'i1');
@@ -207,7 +209,7 @@ if (!$db->tableExists('pcaic_messages')) {
             'notnull' => false
         )
     );
-    
+
     $db->createTable('pcaic_messages', $fields);
     $db->addPrimaryKey('pcaic_messages', array('message_id'));
     $db->addIndex('pcaic_messages', array('session_id'), 'i1');
@@ -248,7 +250,7 @@ if (!$db->tableExists('pcaic_attachments')) {
             'notnull' => true
         )
     );
-    
+
     $db->createTable('pcaic_attachments', $fields);
     $db->addPrimaryKey('pcaic_attachments', array('id'));
     $db->addIndex('pcaic_attachments', array('message_id'), 'i1');
@@ -260,7 +262,9 @@ if (!$db->tableExists('pcaic_attachments')) {
 
 <#2>
 <?php
-// Step 2: Update existing tables for new architecture
+/**
+ * Step 2: Update existing tables for new architecture
+ */
 global $DIC;
 $db = $DIC->database();
 
@@ -273,7 +277,7 @@ if ($db->tableExists('pcaic_sessions')) {
             'notnull' => false
         ));
     }
-    
+
     if (!$db->tableColumnExists('pcaic_sessions', 'is_active')) {
         $db->addTableColumn('pcaic_sessions', 'is_active', array(
             'type' => 'integer',
@@ -293,7 +297,7 @@ if ($db->tableExists('pcaic_messages')) {
             'length' => 255,
             'notnull' => false
         ));
-        
+
         $db->addTableColumn('pcaic_messages', 'attachments', array(
             'type' => 'text',
             'length' => 4000,
@@ -308,7 +312,7 @@ if ($db->tableExists('pcaic_attachments')) {
         // Rename attachment_id to id
         $db->renameTableColumn('pcaic_attachments', 'attachment_id', 'id');
     }
-    
+
     if (!$db->tableColumnExists('pcaic_attachments', 'chat_id')) {
         $db->addTableColumn('pcaic_attachments', 'chat_id', array(
             'type' => 'text',
@@ -316,7 +320,7 @@ if ($db->tableExists('pcaic_attachments')) {
             'notnull' => false
         ));
     }
-    
+
     if (!$db->tableColumnExists('pcaic_attachments', 'user_id')) {
         $db->addTableColumn('pcaic_attachments', 'user_id', array(
             'type' => 'integer',
@@ -324,17 +328,17 @@ if ($db->tableExists('pcaic_attachments')) {
             'notnull' => false
         ));
     }
-    
+
     if ($db->tableColumnExists('pcaic_attachments', 'file_id') && !$db->tableColumnExists('pcaic_attachments', 'resource_id')) {
         // Rename file_id to resource_id
         $db->renameTableColumn('pcaic_attachments', 'file_id', 'resource_id');
     }
-    
+
     if ($db->tableColumnExists('pcaic_attachments', 'created_at') && !$db->tableColumnExists('pcaic_attachments', 'timestamp')) {
         // Rename created_at to timestamp
         $db->renameTableColumn('pcaic_attachments', 'created_at', 'timestamp');
     }
-    
+
     // Remove old columns that are no longer needed
     if ($db->tableColumnExists('pcaic_attachments', 'file_name')) {
         $db->dropTableColumn('pcaic_attachments', 'file_name');
@@ -350,8 +354,9 @@ if ($db->tableExists('pcaic_attachments')) {
 
 <#3>
 <?php
-// Step 3: Fix message column size issue (v1.0.4)
-// Error: SQLSTATE(22001): Data too long for column message
+/**
+ * Step 3: Fix message column size issue (v1.0.4)
+ */
 global $DIC;
 $db = $DIC->database();
 
@@ -368,14 +373,6 @@ if ($db->tableExists('pcaic_messages')) {
 <?php
 /**
  * Step 4: Create dedicated plugin configuration table (v1.0.6)
- * 
- * This update creates a dedicated configuration table for the AIChatPageComponent plugin,
- * independent of the AIChat plugin configuration. This ensures proper separation of
- * concerns and allows the plugin to function independently.
- * 
- * Table: pcaic_config
- * Purpose: Store plugin-wide configuration settings like default values,
- *          AI service availability, and file upload constraints.
  */
 global $DIC;
 $db = $DIC->database();
@@ -401,10 +398,10 @@ if (!$db->tableExists('pcaic_config')) {
             'notnull' => true
         )
     );
-    
+
     $db->createTable('pcaic_config', $fields);
     $db->addPrimaryKey('pcaic_config', array('config_key'));
-    
+
     // Insert default configuration values
     $default_configs = array(
         // Default chat settings
@@ -424,13 +421,13 @@ if (!$db->tableExists('pcaic_config')) {
             'config_key' => 'max_memory_messages',
             'config_value' => '10'
         ),
-        
+
         // AI service availability (JSON format)
         array(
             'config_key' => 'available_services',
             'config_value' => '{"ramses":"1","openai":"1"}'
         ),
-        
+
         // File upload constraints
         array(
             'config_key' => 'max_file_size_mb',
@@ -444,7 +441,7 @@ if (!$db->tableExists('pcaic_config')) {
             'config_key' => 'max_total_upload_size_mb',
             'config_value' => '25'
         ),
-        
+
         // Processing limits
         array(
             'config_key' => 'pdf_pages_processed',
@@ -455,9 +452,9 @@ if (!$db->tableExists('pcaic_config')) {
             'config_value' => '15'
         )
     );
-    
+
     $current_time = date('Y-m-d H:i:s');
-    
+
     foreach ($default_configs as $config) {
         $db->insert('pcaic_config', array(
             'config_key' => array('text', $config['config_key']),
@@ -473,13 +470,6 @@ if (!$db->tableExists('pcaic_config')) {
 <?php
 /**
  * Step 5: Add streaming configuration support (v1.0.7)
- * 
- * This update adds streaming support for AI responses, allowing both global
- * and per-chat configuration of streaming functionality.
- * 
- * Changes:
- * - Add enable_streaming column to pcaic_chats table
- * - Add global streaming configuration to pcaic_config table
  */
 global $DIC;
 $db = $DIC->database();
@@ -519,40 +509,12 @@ if ($db->tableExists('pcaic_config')) {
 <?php
 /**
  * Step 6: Add RAG (Retrieval-Augmented Generation) support (v1.1.0)
- *
- * This update adds RAMSES RAG integration for efficient document handling.
- * Files can be stored in ILIAS IRSS, RAMSES RAG, or both.
- *
- * Changes:
- * - Extend pcaic_attachments with RAG fields (collection_id, remote_file_id, uploaded_at)
- * - Add rag_collection_id to pcaic_chats for persistent chat collection tracking
- * - Add file_handling_mode to pcaic_chats
- * - Migrate background_files JSON to pcaic_attachments table
- * - Add RAG configuration to pcaic_config
- *
- * Architecture:
- * - pcaic_attachments: Unified file storage (background + chat uploads)
- *   - message_id = NULL → Background File
- *   - message_id != NULL → Chat Upload
- *   - resource_id = ILIAS IRSS storage
- *   - rag_collection_id + rag_remote_file_id = RAMSES RAG storage
- *
- * - pcaic_chats.rag_collection_id: Chat's own background collection (persistent)
- *
- * Storage Modes:
- * 1. IRSS only: resource_id set, rag_collection_id NULL
- * 2. RAG only: resource_id NULL, rag_collection_id + rag_remote_file_id set
- * 3. Both: All fields set (dual storage)
- * 4. Collection reference: rag_collection_id set, rag_remote_file_id NULL
  */
 global $DIC;
 $db = $DIC->database();
-$logger = $DIC->logger()->comp('pcaic');
 
-// 1. Make message_id nullable first (to support background files with message_id = NULL)
+// Make message_id nullable first (to support background files with message_id = NULL)
 if ($db->tableExists('pcaic_attachments')) {
-    $logger->info("RAG Migration Step 6: Making message_id nullable in pcaic_attachments");
-
     // Modify message_id to allow NULL values
     $db->modifyTableColumn('pcaic_attachments', 'message_id', array(
         'type' => 'integer',
@@ -560,20 +522,16 @@ if ($db->tableExists('pcaic_attachments')) {
         'notnull' => false,  // Allow NULL for background files
         'default' => null
     ));
-    $logger->info("Modified message_id to allow NULL values");
 }
 
-// 2. Extend pcaic_attachments with RAG fields
+// Extend pcaic_attachments with RAG fields
 if ($db->tableExists('pcaic_attachments')) {
-    $logger->info("RAG Migration Step 6: Extending pcaic_attachments table");
-
     if (!$db->tableColumnExists('pcaic_attachments', 'rag_collection_id')) {
         $db->addTableColumn('pcaic_attachments', 'rag_collection_id', array(
             'type' => 'text',
             'length' => 255,
             'notnull' => false
         ));
-        $logger->info("Added rag_collection_id column to pcaic_attachments");
     }
 
     if (!$db->tableColumnExists('pcaic_attachments', 'rag_remote_file_id')) {
@@ -582,7 +540,6 @@ if ($db->tableExists('pcaic_attachments')) {
             'length' => 255,
             'notnull' => false
         ));
-        $logger->info("Added rag_remote_file_id column to pcaic_attachments");
     }
 
     if (!$db->tableColumnExists('pcaic_attachments', 'rag_uploaded_at')) {
@@ -590,34 +547,27 @@ if ($db->tableExists('pcaic_attachments')) {
             'type' => 'timestamp',
             'notnull' => false
         ));
-        $logger->info("Added rag_uploaded_at column to pcaic_attachments");
     }
 
     // Add index for RAG queries
     if (!$db->indexExistsByFields('pcaic_attachments', array('rag_collection_id'))) {
         $db->addIndex('pcaic_attachments', array('rag_collection_id'), 'i4');
-        $logger->info("Added index on rag_collection_id");
     }
 }
 
-// 3. Add RAG fields to pcaic_chats
+// Add RAG fields to pcaic_chats
 if ($db->tableExists('pcaic_chats')) {
-    $logger->info("RAG Migration Step 6: Extending pcaic_chats table");
-
     if (!$db->tableColumnExists('pcaic_chats', 'rag_collection_id')) {
         $db->addTableColumn('pcaic_chats', 'rag_collection_id', array(
             'type' => 'text',
             'length' => 255,
             'notnull' => false
         ));
-        $logger->info("Added rag_collection_id column to pcaic_chats");
     }
 }
 
-// 4. Migrate background_files from pcaic_chats to pcaic_attachments
+// Migrate background_files from pcaic_chats to pcaic_attachments
 if ($db->tableExists('pcaic_chats') && $db->tableColumnExists('pcaic_chats', 'background_files')) {
-    $logger->info("RAG Migration Step 6: Migrating background_files to pcaic_attachments");
-
     $query = "SELECT chat_id, background_files FROM pcaic_chats WHERE background_files IS NOT NULL";
     $result = $db->query($query);
 
@@ -634,7 +584,6 @@ if ($db->tableExists('pcaic_chats') && $db->tableColumnExists('pcaic_chats', 'ba
         // Example: ["8d59dc3d-70e4-491e-ba26-b86e813ae6ce","072193e8-ecc8-4f53-bc59-e39855f3c428"]
         $resourceIds = json_decode($backgroundFilesJson, true);
         if (!is_array($resourceIds)) {
-            $logger->warning("Invalid background_files JSON for chat", ['chat_id' => $chatId]);
             continue;
         }
 
@@ -674,14 +623,10 @@ if ($db->tableExists('pcaic_chats') && $db->tableColumnExists('pcaic_chats', 'ba
             $migrated_count++;
         }
     }
-
-    $logger->info("Migrated background files to pcaic_attachments", ['count' => $migrated_count]);
 }
 
-// 5. Add RAG configuration to pcaic_config
+// Add RAG configuration to pcaic_config
 if ($db->tableExists('pcaic_config')) {
-    $logger->info("RAG Migration Step 6: Adding RAG configuration");
-
     // Simplified RAG configuration (removed complex mode settings)
     $rag_configs = array(
         array('config_key' => 'enable_rag', 'config_value' => '1'),  // Enable RAG by default
@@ -707,25 +652,18 @@ if ($db->tableExists('pcaic_config')) {
                 'created_at' => array('timestamp', $current_time),
                 'updated_at' => array('timestamp', $current_time)
             ));
-            $logger->info("Added RAG config", ['key' => $config['config_key']]);
         }
     }
 }
 
-// 6. OPTIONAL: Drop deprecated background_files column (commented out for safety)
-// Uncomment after verifying migration is successful
-/*
+// Drop deprecated background_files column
 if ($db->tableExists('pcaic_chats') && $db->tableColumnExists('pcaic_chats', 'background_files')) {
     $db->dropTableColumn('pcaic_chats', 'background_files');
-    $logger->info("Dropped deprecated background_files column from pcaic_chats");
 }
-*/
 
-// 7. Migrate enable_rag to LLM-specific ramses_enable_rag
+// Migrate enable_rag to LLM-specific ramses_enable_rag
 // RAG control is now per-LLM: ramses_enable_rag for RAMSES, openai_enable_rag for OpenAI, etc.
 if ($db->tableExists('pcaic_config')) {
-    $logger->info("RAG Migration Step 6: Migrating to LLM-specific RAG configuration");
-
     // Check if old enable_rag exists
     $query = "SELECT config_value FROM pcaic_config WHERE config_key = " . $db->quote('enable_rag', 'text');
     $result = $db->query($query);
@@ -745,20 +683,16 @@ if ($db->tableExists('pcaic_config')) {
             'created_at' => array('timestamp', $current_time),
             'updated_at' => array('timestamp', $current_time)
         ));
-        $logger->info("Inserted ramses_enable_rag with value: " . $ramses_rag_value);
     }
 
     // Remove old enable_rag
     if ($old_enable_rag) {
         $db->manipulate("DELETE FROM pcaic_config WHERE config_key = " . $db->quote('enable_rag', 'text'));
-        $logger->info("Removed obsolete enable_rag configuration key");
     }
 }
 
-// 8. Add background_file flag to distinguish background files from chat uploads
+// Add background_file flag to distinguish background files from chat uploads
 if ($db->tableExists('pcaic_attachments')) {
-    $logger->info("RAG Migration Step 6: Adding background_file flag");
-
     if (!$db->tableColumnExists('pcaic_attachments', 'background_file')) {
         $db->addTableColumn('pcaic_attachments', 'background_file', array(
             'type' => 'integer',
@@ -766,54 +700,28 @@ if ($db->tableExists('pcaic_attachments')) {
             'notnull' => true,
             'default' => 0
         ));
-        $logger->info("Added background_file column to pcaic_attachments");
-
         // Mark existing background files (message_id IS NULL AND chat_id IS NOT NULL)
         $db->manipulate("UPDATE pcaic_attachments SET background_file = 1 WHERE message_id IS NULL AND chat_id IS NOT NULL");
-        $logger->info("Marked existing background files with background_file = 1");
     }
 }
-
-$logger->info("RAG Migration Step 6: Completed successfully");
 ?>
+
 <#7>
 <?php
 /**
  * Step 7: Add per-chat RAG enable flag (v1.2.0)
- *
- * This update adds chat-specific RAG activation control.
- * Based on testing, RAMSES RAG and multimodal images cannot be mixed,
- * so each chat must choose: RAG mode OR multimodal mode.
- *
- * Changes:
- * - Add enable_rag column to pcaic_chats (default: 0 = disabled)
- * - RAG can only be enabled if the AI service supports it (e.g., RAMSES)
- * - When RAG is enabled, only text-compatible files are allowed (txt, md, csv, pdf)
- * - When RAG is disabled, multimodal files are allowed (png, jpg, webp, gif, pdf)
- *
- * Architecture Decision:
- * - RAMSES RAG only supports: txt, md, csv, pdf (pure text, no images)
- * - RAMSES Multimodal supports: png, jpg, jpeg, webp, gif, pdf (as images)
- * - Cannot mix RAG collections with base64 images in same request (HTTP 500)
- * - PDFs with embedded images fail in RAG mode (HTTP 500)
  */
 global $DIC;
 $db = $DIC->database();
-$logger = $DIC->logger()->comp('pcaic');
 
 if ($db->tableExists('pcaic_chats')) {
-    $logger->info("Step 7: Adding per-chat RAG enable flag");
-
     if (!$db->tableColumnExists('pcaic_chats', 'enable_rag')) {
         $db->addTableColumn('pcaic_chats', 'enable_rag', array(
             'type' => 'integer',
             'length' => 1,
             'notnull' => true,
-            'default' => 0  // Default: RAG disabled (multimodal mode)
+            'default' => 0
         ));
-        $logger->info("Added enable_rag column to pcaic_chats (default: 0 = disabled)");
     }
 }
-
-$logger->info("Step 7: Completed successfully - Per-chat RAG activation available");
 ?>

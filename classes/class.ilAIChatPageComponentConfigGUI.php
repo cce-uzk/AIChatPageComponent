@@ -31,80 +31,98 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
     }
 
     /**
-     * Execute command from ILIAS control structure
+     * Execute command from ILIAS control structure (DYNAMIC)
+     *
+     * Commands are dynamically routed based on registered LLM services.
+     * Pattern: show{ServiceId}Config, save{ServiceId}Configuration, refresh{ServiceId}Models
      */
     public function performCommand(string $cmd): void
     {
-        switch ($cmd) {
-            case 'configure':
-            case 'showConfigurationForm':
-                $this->showConfigurationForm('general');
-                break;
-            case 'showRamsesConfig':
-                $this->showConfigurationForm('ramses');
-                break;
-            case 'showOpenAiConfig':
-                $this->showConfigurationForm('openai');
-                break;
-            case 'saveConfiguration':
-                $this->saveConfiguration();
-                break;
-            case 'saveRamsesConfiguration':
-                $this->saveRamsesConfiguration();
-                break;
-            case 'saveOpenAiConfiguration':
-                $this->saveOpenAiConfiguration();
-                break;
-            case 'refreshRamsesModels':
-                $this->refreshRamsesModels();
-                break;
-            case 'refreshOpenAiModels':
-                $this->refreshOpenAiModels();
-                break;
-            default:
-                $this->showConfigurationForm('general');
+        // General configuration
+        if ($cmd === 'configure' || $cmd === 'showConfigurationForm') {
+            $this->showConfigurationForm('general');
+            return;
         }
+
+        if ($cmd === 'saveConfiguration') {
+            $this->saveConfiguration();
+            return;
+        }
+
+        // Dynamic service-specific commands
+        $services = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+
+        foreach ($services as $serviceId => $serviceClass) {
+            $serviceIdCap = ucfirst($serviceId); // ramses -> Ramses
+
+            // Show service config tab (e.g., showRamsesConfig)
+            if ($cmd === "show{$serviceIdCap}Config") {
+                $this->showConfigurationForm($serviceId);
+                return;
+            }
+
+            // Save service configuration (e.g., saveRamsesConfiguration)
+            if ($cmd === "save{$serviceIdCap}Configuration") {
+                $this->saveServiceConfiguration($serviceId);
+                return;
+            }
+
+            // Refresh service models (e.g., refreshRamsesModels) - if applicable
+            if ($cmd === "refresh{$serviceIdCap}Models") {
+                $this->refreshServiceModels($serviceId);
+                return;
+            }
+        }
+
+        // Fallback
+        $this->showConfigurationForm('general');
     }
 
     /**
-     * Display the configuration form using modern ILIAS 9 UI components
+     * Display the configuration form using modern ILIAS 9 UI components (DYNAMIC)
+     *
+     * Tabs are automatically generated for all registered LLM services.
      */
     private function showConfigurationForm(string $active_tab = 'general'): void
     {
         try {
-            // Setup tabs
+            // Setup tabs - General tab first
             $tabs = $this->dic->tabs();
-            $tabs->addTab('general', $this->plugin->txt('tab_general_config'), 
+            $tabs->addTab('general', $this->plugin->txt('tab_general_config'),
                          $this->ctrl->getLinkTarget($this, 'showConfigurationForm'));
-            $tabs->addTab('ramses', $this->plugin->txt('tab_ramses_config'), 
-                         $this->ctrl->getLinkTargetByClass(get_class($this), 'showRamsesConfig'));
-            $tabs->addTab('openai', $this->plugin->txt('tab_openai_config'), 
-                         $this->ctrl->getLinkTargetByClass(get_class($this), 'showOpenAiConfig'));
-            
+
+            // Dynamically add service tabs from registry
+            $services = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+            foreach ($services as $serviceId => $serviceClass) {
+                $serviceIdCap = ucfirst($serviceId);
+                $serviceTabLabel = $serviceClass::getServiceName(); // e.g., 'RAMSES', 'OpenAI GPT'
+
+                $tabs->addTab(
+                    $serviceId,
+                    $serviceTabLabel,
+                    $this->ctrl->getLinkTargetByClass(get_class($this), "show{$serviceIdCap}Config")
+                );
+            }
+
             // Set active tab
             $tabs->setTabActive($active_tab);
-            
+
             // Show appropriate form based on active tab
-            switch ($active_tab) {
-                case 'ramses':
-                    $form_html = $this->buildRamsesConfigurationForm();
-                    break;
-                case 'openai':
-                    $form_html = $this->buildOpenAiConfigurationForm();
-                    break;
-                case 'general':
-                default:
-                    $form_html = $this->buildGeneralConfigurationForm();
-                    break;
+            if ($active_tab === 'general') {
+                $form_html = $this->buildGeneralConfigurationForm();
+            } else {
+                // Service-specific configuration
+                $form_html = $this->buildServiceConfigurationForm($active_tab);
             }
-            
+
             $this->dic->ui()->mainTemplate()->setContent($form_html);
         } catch (\Exception $e) {
             $this->dic->logger()->comp('pcaic')->error('Failed to show configuration form', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'active_tab' => $active_tab
             ]);
             $this->dic->ui()->mainTemplate()->setOnScreenMessage(
-                'failure', 
+                'failure',
                 $this->plugin->txt('config_load_error') . ': ' . $e->getMessage()
             );
         }
@@ -166,111 +184,6 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         return $ui_renderer->render($form);
     }
 
-    /**
-     * Build RAMSES configuration form (RAMSES tab)
-     * 
-     * @return string Rendered HTML form
-     * @throws \Exception If form building fails
-     */
-    private function buildRamsesConfigurationForm(): string
-    {
-        $ui_factory = $this->dic->ui()->factory();
-        $ui_renderer = $this->dic->ui()->renderer();
-
-        $inputs = [];
-
-        // RAMSES API Configuration Section
-        $inputs[] = $ui_factory->input()->field()->section(
-            $this->buildRamsesConfigInputs(),
-            $this->plugin->txt('config_ramses_title'),
-            $this->plugin->txt('config_ramses_info')
-        );
-
-        $form = $ui_factory->input()->container()->form()->standard(
-            $this->ctrl->getFormAction($this, 'saveRamsesConfiguration'),
-            $inputs
-        );
-
-        // Add refresh models button with info about last update
-        $models_cache_time = \platform\AIChatPageComponentConfig::get('models_cache_time');
-        $cached_models = \platform\AIChatPageComponentConfig::get('cached_models');
-        
-        $button_text = $this->plugin->txt('config_refresh_models_button');
-        $info_text = '';
-        
-        if ($models_cache_time) {
-            // Convert string timestamp to integer if needed
-            $timestamp = is_string($models_cache_time) ? (int)$models_cache_time : $models_cache_time;
-            $last_update = date('d.m.Y H:i', $timestamp);
-            $model_count = is_array($cached_models) ? count($cached_models) : 0;
-            $info_text = '<p><small>Zuletzt aktualisiert: ' . $last_update . ' (' . $model_count . ' Modelle verfügbar)</small></p>';
-        } else {
-            $info_text = '<p><small>Modelle noch nicht geladen. Klicken Sie auf den Button, um verfügbare Modelle zu laden.</small></p>';
-        }
-        
-        $refresh_button = $ui_factory->button()->standard(
-            $button_text,
-            $this->ctrl->getLinkTarget($this, 'refreshRamsesModels')
-        );
-
-        $form_html = $ui_renderer->render($form);
-        $button_html = $ui_renderer->render($refresh_button);
-        
-        return $form_html . '<div style="margin-top: 20px;">' . $info_text . $button_html . '</div>';
-    }
-
-    /**
-     * Build OpenAI configuration form (OpenAI tab)
-     * 
-     * @return string Rendered HTML form
-     * @throws \Exception If form building fails
-     */
-    private function buildOpenAiConfigurationForm(): string
-    {
-        $ui_factory = $this->dic->ui()->factory();
-        $ui_renderer = $this->dic->ui()->renderer();
-
-        $inputs = [];
-
-        // OpenAI API Configuration Section
-        $inputs[] = $ui_factory->input()->field()->section(
-            $this->buildOpenAiConfigInputs(),
-            $this->plugin->txt('config_openai_title'),
-            $this->plugin->txt('config_openai_info')
-        );
-
-        $form = $ui_factory->input()->container()->form()->standard(
-            $this->ctrl->getFormAction($this, 'saveOpenAiConfiguration'),
-            $inputs
-        );
-
-        // Add refresh models button with info about last update
-        $models_cache_time = \platform\AIChatPageComponentConfig::get('openai_models_cache_time');
-        $cached_models = \platform\AIChatPageComponentConfig::get('openai_cached_models');
-
-        $button_text = $this->plugin->txt('config_refresh_models_button');
-        $info_text = '';
-
-        if ($models_cache_time) {
-            // Convert string timestamp to integer if needed
-            $timestamp = is_string($models_cache_time) ? (int)$models_cache_time : $models_cache_time;
-            $last_update = date('d.m.Y H:i', $timestamp);
-            $model_count = is_array($cached_models) ? count($cached_models) : 0;
-            $info_text = '<p><small>Zuletzt aktualisiert: ' . $last_update . ' (' . $model_count . ' ' . $this->plugin->txt('refresh_models_count') . ')</small></p>';
-        } else {
-            $info_text = '<p><small>' . $this->plugin->txt('refresh_models_not_loaded') . '</small></p>';
-        }
-
-        $refresh_button = $ui_factory->button()->standard(
-            $button_text,
-            $this->ctrl->getLinkTarget($this, 'refreshOpenAiModels')
-        );
-
-        $form_html = $ui_renderer->render($form);
-        $button_html = $ui_renderer->render($refresh_button);
-
-        return $form_html . '<div style="margin-top: 20px;">' . $info_text . $button_html . '</div>';
-    }
 
     /**
      * Build configuration form using modern ILIAS 9 UI components (DEPRECATED)
@@ -279,102 +192,6 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
      * @return string Rendered HTML form
      * @throws \Exception If form building fails
      */
-    private function buildModernConfigurationForm(): string
-    {
-        $ui_factory = $this->dic->ui()->factory();
-        $ui_renderer = $this->dic->ui()->renderer();
-
-        // Build main configuration sections (non-tabbed)
-        $main_inputs = [];
-
-        // Default Values Section - Platform-wide defaults for new chat instances
-        $main_inputs[] = $ui_factory->input()->field()->section(
-            $this->buildDefaultValuesInputs(),
-            $this->plugin->txt('config_defaults_title'),
-            $this->plugin->txt('config_defaults_info')
-        );
-
-        // Verarbeitungs-Limits Section - AI processing constraints
-        $main_inputs[] = $ui_factory->input()->field()->section(
-            $this->buildProcessingLimitsInputs(),
-            $this->plugin->txt('config_processing_title'),
-            $this->plugin->txt('config_processing_info')
-        );
-
-        // AI Service Selection Section - Choose which service to use
-        $main_inputs[] = $ui_factory->input()->field()->section(
-            $this->buildAiServiceSelectionInputs(), 
-            $this->plugin->txt('config_services_title'),
-            $this->plugin->txt('config_services_info')
-        );
-
-        // Datei-Upload Beschränkungen Section - File upload limits per message
-        $main_inputs[] = $ui_factory->input()->field()->section(
-            $this->buildUploadConstraintsInputs(),
-            $this->plugin->txt('config_upload_title'),
-            $this->plugin->txt('config_upload_info')
-        );
-        
-        // File Upload Restrictions Section - Admin controls for file upload permissions
-        $main_inputs[] = $ui_factory->input()->field()->section(
-            $this->buildFileUploadRestrictionsInputs(),
-            $this->plugin->txt('config_file_restrictions_title'),
-            $this->plugin->txt('config_file_restrictions_info')
-        );
-
-        // Create tabs for AI service configurations
-        $ramses_form_inputs = [];
-        $ramses_form_inputs[] = $ui_factory->input()->field()->section(
-            $this->buildRamsesConfigInputs(),
-            $this->plugin->txt('config_ramses_title'),
-            $this->plugin->txt('config_ramses_info')
-        );
-
-        $openai_form_inputs = [];
-        $openai_form_inputs[] = $ui_factory->input()->field()->section(
-            $this->buildOpenAiConfigInputs(),
-            $this->plugin->txt('config_openai_title'),
-            $this->plugin->txt('config_openai_info')
-        );
-
-        // Create separate forms for each tab
-        $ramses_form = $ui_factory->input()->container()->form()->standard(
-            $this->ctrl->getFormAction($this, 'saveConfiguration'),
-            array_merge($main_inputs, $ramses_form_inputs)
-        );
-
-        $openai_form = $ui_factory->input()->container()->form()->standard(
-            $this->ctrl->getFormAction($this, 'saveConfiguration'),
-            array_merge($main_inputs, $openai_form_inputs)
-        );
-
-        // Create tabs
-        $tabs = [];
-        $tabs['ramses'] = $ui_factory->modal()->roundtrip(
-            $this->plugin->txt('tab_ramses_config'),
-            [$ui_factory->legacy($ui_renderer->render($ramses_form))]
-        );
-
-        $tabs['openai'] = $ui_factory->modal()->roundtrip(
-            $this->plugin->txt('tab_openai_config'), 
-            [$ui_factory->legacy($ui_renderer->render($openai_form))]
-        );
-
-        // For now, return the combined form (tabs require more complex handling)
-        // We'll use a simpler approach with sections for better UX
-        $all_inputs = array_merge(
-            $main_inputs,
-            $ramses_form_inputs,
-            $openai_form_inputs
-        );
-
-        $form = $ui_factory->input()->container()->form()->standard(
-            $this->ctrl->getFormAction($this, 'saveConfiguration'),
-            $all_inputs
-        );
-
-        return $ui_renderer->render($form);
-    }
 
     /**
      * Build default values input fields for new chat instances
@@ -458,85 +275,6 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
      * 
      * @return array UI input components for RAMSES API configuration
      */
-    private function buildRamsesConfigInputs(): array
-    {
-        $ui_factory = $this->dic->ui()->factory();
-        $inputs = [];
-
-        // API Base URL
-        $api_url = \platform\AIChatPageComponentConfig::get('ramses_api_url');
-        $inputs['ramses_api_url'] = $ui_factory->input()->field()->text(
-            $this->plugin->txt('config_ramses_api_url'),
-            $this->plugin->txt('config_ramses_api_url_info')
-        )->withValue($api_url ?: 'https://ramses-oski.itcc.uni-koeln.de');
-
-        // API Token for authentication
-        $api_token = \platform\AIChatPageComponentConfig::get('ramses_api_token');
-        $inputs['ramses_api_token'] = $ui_factory->input()->field()->password(
-            $this->plugin->txt('config_ramses_api_token'),
-            $this->plugin->txt('config_ramses_api_token_info')
-        )->withValue($api_token ?: '');
-
-        // Selected model dropdown (populated from API or cached models)
-        $selected_model = \platform\AIChatPageComponentConfig::get('ramses_selected_model');
-        $available_models = $this->getAvailableModels();
-
-        $inputs['ramses_selected_model'] = $ui_factory->input()->field()->select(
-            $this->plugin->txt('config_ramses_selected_model'),
-            $available_models,
-            $this->plugin->txt('config_ramses_selected_model_info')
-        )->withValue($selected_model ?: '');
-
-        // RAMSES RAG Configuration - with optional group for enable/disable
-        $ramses_enable_rag = \platform\AIChatPageComponentConfig::get('ramses_enable_rag') ?: '1';
-        $application_id = \platform\AIChatPageComponentConfig::get('ramses_application_id');
-        $instance_id = \platform\AIChatPageComponentConfig::get('ramses_instance_id');
-
-        // RAG-dependent fields (Application ID and Instance ID)
-        $rag_application_id = $ui_factory->input()->field()->text(
-            $this->plugin->txt('config_ramses_application_id') ?: 'Application ID',
-            $this->plugin->txt('config_ramses_application_id_info') ?: 'Application identifier for RAG file uploads (e.g., ILIAS)'
-        )->withValue($application_id ?: 'ILIAS');
-
-        $rag_instance_id = $ui_factory->input()->field()->text(
-            $this->plugin->txt('config_ramses_instance_id') ?: 'Instance ID',
-            $this->plugin->txt('config_ramses_instance_id_info') ?: 'Instance identifier for RAG file uploads (e.g., ilias9)'
-        )->withValue($instance_id ?: 'ilias9');
-
-        // RAG Allowed File Types
-        $rag_allowed_types = \platform\AIChatPageComponentConfig::get('ramses_rag_allowed_file_types');
-        $default_rag_types = 'txt,md,csv,pdf';
-
-        if (is_array($rag_allowed_types)) {
-            $current_rag_types = implode(',', $rag_allowed_types);
-        } elseif (is_string($rag_allowed_types)) {
-            $current_rag_types = $rag_allowed_types;
-        } else {
-            $current_rag_types = $default_rag_types;
-        }
-
-        $rag_file_types = $ui_factory->input()->field()->text(
-            $this->plugin->txt('config_ramses_rag_allowed_file_types') ?: 'RAG Allowed File Types',
-            $this->plugin->txt('config_ramses_rag_allowed_file_types_info') ?: 'File types accepted for RAG mode uploads (comma-separated, e.g., txt,md,csv,pdf)'
-        )->withValue($current_rag_types);
-
-        // Create optional group for RAMSES RAG - only shows fields when enabled
-        $inputs['ramses_enable_rag'] = $ui_factory->input()->field()->optionalGroup(
-            [
-                'ramses_application_id' => $rag_application_id,
-                'ramses_instance_id' => $rag_instance_id,
-                'ramses_rag_allowed_file_types' => $rag_file_types
-            ],
-            $this->plugin->txt('config_ramses_enable_rag') ?: 'Enable RAG Mode',
-            $this->plugin->txt('config_ramses_enable_rag_info') ?: 'When enabled, files are uploaded to RAMSES RAG collections for efficient retrieval. When disabled, files are embedded as Base64 in each request.'
-        )->withValue($ramses_enable_rag === '1' ? [
-            'ramses_application_id' => $application_id ?: 'ILIAS',
-            'ramses_instance_id' => $instance_id ?: 'ilias9',
-            'ramses_rag_allowed_file_types' => $current_rag_types ?: $default_rag_types
-        ] : null);
-
-        return $inputs;
-    }
 
     /**
      * Get available models from cache only (no API calls)
@@ -544,28 +282,6 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
      * 
      * @return array Available models for dropdown
      */
-    private function getAvailableModels(): array
-    {
-        try {
-            // Only use cached models - no automatic API calls
-            $cached_models = \platform\AIChatPageComponentConfig::get('cached_models');
-            if (is_array($cached_models) && !empty($cached_models)) {
-                return $cached_models;
-            }
-        } catch (\Exception $e) {
-            // Log error but don't break form
-            try {
-                $this->dic->logger()->comp('pcaic')->error('Failed to get cached models', [
-                    'error' => $e->getMessage()
-                ]);
-            } catch (\Exception $logError) {
-                // Ignore logging errors
-            }
-        }
-        
-        // No default models - user must fetch them manually
-        return [];
-    }
 
     /**
      * Build AI service selection input fields
@@ -576,32 +292,34 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
     {
         $ui_factory = $this->dic->ui()->factory();
         $inputs = [];
-        
-        // Main service selection dropdown
+
+        // Build service options dynamically from LLMRegistry (only enabled services)
+        $service_options = \ai\AIChatPageComponentLLMRegistry::getServiceOptions(true);
+
+        // If no services enabled, show placeholder
+        if (empty($service_options)) {
+            $service_options['none'] = 'No AI services enabled - Please enable at least one service';
+        }
+
         $selected_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
-        $service_options = [
-            'ramses' => $this->plugin->txt('service_ramses_option'),
-            'openai' => $this->plugin->txt('service_openai_option')
-        ];
-        
+
+        // If selected service is not enabled, use first available
+        if (!isset($service_options[$selected_service]) && !empty($service_options) && !isset($service_options['none'])) {
+            $selected_service = array_key_first($service_options);
+        }
+
         $inputs['selected_ai_service'] = $ui_factory->input()->field()->select(
             $this->plugin->txt('config_selected_ai_service'),
             $service_options,
             $this->plugin->txt('config_selected_ai_service_info')
         )->withValue($selected_service);
 
-        // Enable/disable services
-        $available_services = \platform\AIChatPageComponentConfig::get('available_services') ?? [];
-        
-        $inputs['service_ramses_enabled'] = $ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('config_service_ramses_enabled'),
-            $this->plugin->txt('config_service_ramses_enabled_info')
-        )->withValue(($available_services['ramses'] ?? '1') === '1');
-
-        $inputs['service_openai_enabled'] = $ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('config_service_openai_enabled'),
-            $this->plugin->txt('config_service_openai_enabled_info')
-        )->withValue(($available_services['openai'] ?? '0') === '1');
+        // Force default AI service for all chats
+        $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
+        $inputs['force_default_ai_service'] = $ui_factory->input()->field()->checkbox(
+            $this->plugin->txt('config_force_default_ai_service'),
+            $this->plugin->txt('config_force_default_ai_service_info')
+        )->withValue($force_default_service === '1');
 
         return $inputs;
     }
@@ -611,44 +329,6 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
      * 
      * @return array UI input components for OpenAI API configuration
      */
-    private function buildOpenAiConfigInputs(): array
-    {
-        $ui_factory = $this->dic->ui()->factory();
-        $inputs = [];
-
-        // API Base URL
-        $openai_api_url = \platform\AIChatPageComponentConfig::get('openai_api_url');
-        $inputs['openai_api_url'] = $ui_factory->input()->field()->text(
-            $this->plugin->txt('config_openai_api_url'),
-            $this->plugin->txt('config_openai_api_url_info')
-        )->withValue($openai_api_url ?: 'https://api.openai.com');
-
-        // API Token for authentication
-        $openai_api_token = \platform\AIChatPageComponentConfig::get('openai_api_token');
-        $inputs['openai_api_token'] = $ui_factory->input()->field()->password(
-            $this->plugin->txt('config_openai_api_token'),
-            $this->plugin->txt('config_openai_api_token_info')
-        )->withValue($openai_api_token ?: '');
-
-        // Selected model dropdown (OpenAI models)
-        $openai_selected_model = \platform\AIChatPageComponentConfig::get('openai_selected_model');
-        $openai_models = $this->getOpenAiModels();
-        
-        $inputs['openai_selected_model'] = $ui_factory->input()->field()->select(
-            $this->plugin->txt('config_openai_selected_model'),
-            $openai_models,
-            $this->plugin->txt('config_openai_selected_model_info')
-        )->withValue($openai_selected_model ?: 'gpt-3.5-turbo');
-
-        // Enable streaming for OpenAI
-        $openai_streaming = \platform\AIChatPageComponentConfig::get('openai_streaming_enabled');
-        $inputs['openai_streaming_enabled'] = $ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('config_openai_streaming'),
-            $this->plugin->txt('config_openai_streaming_info')
-        )->withValue(($openai_streaming ?? '0') === '1');
-
-        return $inputs;
-    }
 
     /**
      * Get available OpenAI models from cache only (no API calls)
@@ -656,34 +336,6 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
      *
      * @return array Available OpenAI models for dropdown
      */
-    private function getOpenAiModels(): array
-    {
-        try {
-            // Try to use cached models first
-            $cached_models = \platform\AIChatPageComponentConfig::get('openai_cached_models');
-            if (is_array($cached_models) && !empty($cached_models)) {
-                return $cached_models;
-            }
-        } catch (\Exception $e) {
-            // Log error but don't break form
-            try {
-                $this->dic->logger()->comp('pcaic')->error('Failed to get cached OpenAI models', [
-                    'error' => $e->getMessage()
-                ]);
-            } catch (\Exception $logError) {
-                // Ignore logging errors
-            }
-        }
-
-        // Fallback to static list if no cached models available
-        return [
-            'gpt-4o' => 'GPT-4o',
-            'gpt-4o-mini' => 'GPT-4o mini',
-            'gpt-4-turbo' => 'GPT-4 Turbo',
-            'gpt-4' => 'GPT-4',
-            'gpt-3.5-turbo' => 'GPT-3.5 Turbo'
-        ];
-    }
 
     /**
      * Build file upload constraint input fields
@@ -720,102 +372,103 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
     }
 
     /**
-     * Build file upload restrictions input fields following ILIAS Test KioskMode pattern
-     * 
-     * Creates optional group with checkboxes for file upload permissions:
-     * - Enable file uploads globally
-     * - Allowed file types whitelist 
-     * - Separate controls for background files vs chat uploads
-     * 
+     * Build file upload restrictions input fields
+     *
+     * Creates hierarchical file handling controls with OptionalGroup:
+     * - Global enable/disable for file handling (OptionalGroup checkbox)
+     * - Allowed file types whitelist (shown only when enabled)
+     * - Separate controls for background files vs chat uploads (shown only when enabled)
+     *
+     * Note: Per-service file handling is configured in RAMSES/OpenAI tabs
+     *
      * @return array UI input components for file upload restrictions
      */
     private function buildFileUploadRestrictionsInputs(): array
     {
         $ui_factory = $this->dic->ui()->factory();
         $refinery = $this->dic->refinery();
-        
-        // Get current file restrictions configuration
+
+        // Get current settings
+        $enable_file_handling = \platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1';
         $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
-        
-        // Create transformation function similar to KioskMode pattern
+
+        // File types whitelist input with centralized defaults
+        $default_file_types = \platform\AIChatPageComponentConfig::get('default_allowed_file_types');
+        $default_types_string = is_array($default_file_types)
+            ? implode(',', $default_file_types)
+            : 'txt,md,pdf,csv,png,jpg,jpeg,webp,gif';
+
+        $current_types = $file_restrictions['allowed_file_types'] ?? $default_file_types;
+        $current_types_string = is_array($current_types) ? implode(',', $current_types) : $default_types_string;
+
+        // Build sub-inputs for the optional group
+        $sub_inputs = [];
+
+        $sub_inputs['allowed_file_types'] = $ui_factory->input()->field()->text(
+            $this->plugin->txt('config_allowed_file_types'),
+            $this->plugin->txt('config_allowed_file_types_info')
+        )->withValue($current_types_string);
+
+        $sub_inputs['allow_background_files'] = $ui_factory->input()->field()->checkbox(
+            $this->plugin->txt('config_allow_background_files'),
+            $this->plugin->txt('config_allow_background_files_info')
+        )->withValue(true);
+
+        $sub_inputs['allow_chat_uploads'] = $ui_factory->input()->field()->checkbox(
+            $this->plugin->txt('config_allow_chat_uploads'),
+            $this->plugin->txt('config_allow_chat_uploads_info')
+        )->withValue(true);
+
+        // Create transformation function for the optional group
         $restrictions_trafo = $refinery->custom()->transformation(
             static function (?array $vs): array {
                 if ($vs === null) {
                     return ['enabled' => false];
                 }
-                
+
                 $restrictions = ['enabled' => true];
-                
+
                 // Process file type whitelist
                 if (isset($vs['allowed_file_types']) && !empty($vs['allowed_file_types'])) {
                     $allowed_types = array_map('trim', explode(',', $vs['allowed_file_types']));
                     $restrictions['allowed_file_types'] = array_filter($allowed_types);
                 }
-                
+
                 // Process background files permission
                 if (isset($vs['allow_background_files'])) {
                     $restrictions['allow_background_files'] = $vs['allow_background_files'];
                 }
-                
+
                 // Process chat uploads permission
                 if (isset($vs['allow_chat_uploads'])) {
                     $restrictions['allow_chat_uploads'] = $vs['allow_chat_uploads'];
                 }
-                
+
                 return $restrictions;
             }
         );
-        
-        // Build sub-inputs for the optional group with default values
-        $sub_inputs = [];
-        
-        // File types whitelist input with centralized defaults
-        $default_file_types = \platform\AIChatPageComponentConfig::get('default_allowed_file_types');
-        $default_types_string = is_array($default_file_types) 
-            ? implode(',', $default_file_types) 
-            : 'txt,md,pdf,csv,png,jpg,jpeg,webp,gif';
-            
-        $sub_inputs['allowed_file_types'] = $ui_factory->input()->field()->text(
-            $this->plugin->txt('config_allowed_file_types'),
-            $this->plugin->txt('config_allowed_file_types_info')
-        )->withValue($default_types_string);
-        
-        // Background files permission enabled by default
-        $sub_inputs['allow_background_files'] = $ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('config_allow_background_files'),
-            $this->plugin->txt('config_allow_background_files_info')
-        )->withValue(true);
-        
-        // Chat uploads permission enabled by default
-        $sub_inputs['allow_chat_uploads'] = $ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('config_allow_chat_uploads'),
-            $this->plugin->txt('config_allow_chat_uploads_info')
-        )->withValue(true);
-        
-        // Create optional group with transformation
+
+        // Create optional group
         $file_restrictions_group = $ui_factory->input()->field()->optionalGroup(
             $sub_inputs,
             $this->plugin->txt('config_enable_file_handling'),
             $this->plugin->txt('config_enable_file_handling_info')
         );
-        
-        // Set value properly for optional group with smart defaults
-        if ($file_restrictions['enabled'] ?? false) {
+
+        // Set value properly for optional group
+        if ($enable_file_handling === '1') {
             $current_values = [
-                'allowed_file_types' => isset($file_restrictions['allowed_file_types']) && !empty($file_restrictions['allowed_file_types'])
-                    ? implode(',', $file_restrictions['allowed_file_types']) 
-                    : $default_types_string,
+                'allowed_file_types' => $current_types_string,
                 'allow_background_files' => $file_restrictions['allow_background_files'] ?? true,
                 'allow_chat_uploads' => $file_restrictions['allow_chat_uploads'] ?? true
             ];
             $file_restrictions_group = $file_restrictions_group->withValue($current_values);
         } else {
-            // When disabled, don't set values - let defaults from sub-inputs show when enabled
             $file_restrictions_group = $file_restrictions_group->withValue(null);
         }
-        
+
         $file_restrictions_group = $file_restrictions_group->withAdditionalTransformation($restrictions_trafo);
-        
+
         return ['file_restrictions' => $file_restrictions_group];
     }
 
@@ -917,19 +570,15 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
                 // RAMSES configuration is handled in separate RAMSES tab
 
-                // Save service selection and availability
+                // Save service selection
                 if (isset($services_data['selected_ai_service'])) {
                     \platform\AIChatPageComponentConfig::set('selected_ai_service', $services_data['selected_ai_service']);
                 }
-                
-                $available_services = [];
-                if (isset($services_data['service_ramses_enabled'])) {
-                    $available_services['ramses'] = $services_data['service_ramses_enabled'] ? '1' : '0';
+
+                // Save force default service setting
+                if (isset($services_data['force_default_ai_service'])) {
+                    \platform\AIChatPageComponentConfig::set('force_default_ai_service', $services_data['force_default_ai_service'] ? '1' : '0');
                 }
-                if (isset($services_data['service_openai_enabled'])) {
-                    $available_services['openai'] = $services_data['service_openai_enabled'] ? '1' : '0';
-                }
-                \platform\AIChatPageComponentConfig::set('available_services', $available_services);
 
                 // OpenAI configuration is handled in separate OpenAI tab
                 
@@ -944,11 +593,23 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                     \platform\AIChatPageComponentConfig::set('max_total_upload_size_mb', (int)$constraints_data['max_total_upload_size_mb']);
                 }
                 
-                // Save file upload restrictions
-                if (isset($restrictions_data['file_restrictions'])) {
-                    \platform\AIChatPageComponentConfig::set('file_upload_restrictions', $restrictions_data['file_restrictions']);
+                // Save file upload restrictions (OptionalGroup structure)
+                // Note: Transformation returns array with 'enabled' key
+                $file_restrictions_value = $restrictions_data['file_restrictions'] ?? ['enabled' => false];
+
+                // Check if enabled based on the 'enabled' key in the array
+                $is_enabled = is_array($file_restrictions_value) && ($file_restrictions_value['enabled'] ?? false);
+
+                if ($is_enabled) {
+                    // Checkbox checked - save enabled state and restrictions
+                    \platform\AIChatPageComponentConfig::set('enable_file_handling', '1');
+                    \platform\AIChatPageComponentConfig::set('file_upload_restrictions', $file_restrictions_value);
+                } else {
+                    // Checkbox unchecked - explicitly save disabled state
+                    \platform\AIChatPageComponentConfig::set('enable_file_handling', '0');
+                    \platform\AIChatPageComponentConfig::set('file_upload_restrictions', ['enabled' => false]);
                 }
-                
+
                 $this->dic->ui()->mainTemplate()->setOnScreenMessage('success', $this->plugin->txt('config_saved_success'));
                 
             } else {
@@ -962,394 +623,219 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         $this->showConfigurationForm('general');
     }
 
+    // ============================================
+    // DYNAMIC Service Configuration Methods
+    // ============================================
+
     /**
-     * Save RAMSES configuration settings
+     * Build configuration form for any registered LLM service (DYNAMIC)
+     *
+     * @param string $serviceId Service identifier (e.g., 'ramses', 'openai')
+     * @return string Rendered HTML form
      */
-    public function saveRamsesConfiguration(): void
+    private function buildServiceConfigurationForm(string $serviceId): string
+    {
+        $ui_factory = $this->dic->ui()->factory();
+        $renderer = $this->dic->ui()->renderer();
+
+        // Get service class from registry
+        $serviceClass = \ai\AIChatPageComponentLLMRegistry::getServiceClass($serviceId);
+        if ($serviceClass === null) {
+            return $renderer->render(
+                $ui_factory->messageBox()->failure("Service '$serviceId' not found in registry")
+            );
+        }
+
+        // Create service instance
+        $service = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($serviceId);
+        if ($service === null) {
+            return $renderer->render(
+                $ui_factory->messageBox()->failure("Failed to create service instance for '$serviceId'")
+            );
+        }
+
+        // Get configuration inputs from service
+        $serviceInputs = $service->getConfigurationFormInputs();
+
+        // Wrap in section
+        $section = $ui_factory->input()->field()->section(
+            $serviceInputs,
+            $serviceClass::getServiceName(),
+            $serviceClass::getServiceDescription()
+        );
+
+        // Build form
+        $serviceIdCap = ucfirst($serviceId);
+        $form_action = $this->ctrl->getFormAction($this, "save{$serviceIdCap}Configuration");
+        $form = $ui_factory->input()->container()->form()->standard($form_action, [$section]);
+
+        $form_html = $renderer->render($form);
+
+        // Add refresh models button if service supports it
+        $button_html = $this->buildRefreshModelsButton($serviceId);
+
+        return $form_html . $button_html;
+    }
+
+    /**
+     * Build refresh models button for services that support it
+     *
+     * @param string $serviceId Service identifier
+     * @return string HTML for button or empty string
+     */
+    private function buildRefreshModelsButton(string $serviceId): string
+    {
+        // Only RAMSES and OpenAI support model refresh currently
+        if (!in_array($serviceId, ['ramses', 'openai'])) {
+            return '';
+        }
+
+        $ui_factory = $this->dic->ui()->factory();
+        $renderer = $this->dic->ui()->renderer();
+
+        // Get cache info based on service
+        $cache_time_key = ($serviceId === 'ramses') ? 'models_cache_time' : 'openai_models_cache_time';
+        $cached_models_key = ($serviceId === 'ramses') ? 'cached_models' : 'openai_cached_models';
+
+        $models_cache_time = \platform\AIChatPageComponentConfig::get($cache_time_key);
+        $cached_models = \platform\AIChatPageComponentConfig::get($cached_models_key);
+
+        $button_text = $this->plugin->txt('config_refresh_models_button');
+        $info_text = '';
+
+        if ($models_cache_time) {
+            $timestamp = is_string($models_cache_time) ? (int)$models_cache_time : $models_cache_time;
+            $last_update = date('d.m.Y H:i', $timestamp);
+            $model_count = is_array($cached_models) ? count($cached_models) : 0;
+            $info_text = '<p><small>Zuletzt aktualisiert: ' . $last_update . ' (' . $model_count . ' ' . $this->plugin->txt('refresh_models_count') . ')</small></p>';
+        } else {
+            $info_text = '<p><small>' . $this->plugin->txt('refresh_models_not_loaded') . '</small></p>';
+        }
+
+        $serviceIdCap = ucfirst($serviceId);
+        $refresh_button = $ui_factory->button()->standard(
+            $button_text,
+            $this->ctrl->getLinkTarget($this, "refresh{$serviceIdCap}Models")
+        );
+
+        $button_html = $renderer->render($refresh_button);
+
+        return '<div style="margin-top: 20px;">' . $info_text . $button_html . '</div>';
+    }
+
+    /**
+     * Save configuration for any registered LLM service (DYNAMIC)
+     *
+     * @param string $serviceId Service identifier (e.g., 'ramses', 'openai')
+     */
+    private function saveServiceConfiguration(string $serviceId): void
     {
         $ui_factory = $this->dic->ui()->factory();
         $request = $this->dic->http()->request();
 
         try {
-            $inputs = [];
-            $inputs[] = $ui_factory->input()->field()->section(
-                $this->buildRamsesConfigInputs(),
-                $this->plugin->txt('config_ramses_title'),
-                $this->plugin->txt('config_ramses_info')
-            );
-
-            $form = $ui_factory->input()->container()->form()->standard(
-                $this->ctrl->getFormAction($this, 'saveRamsesConfiguration'),
-                $inputs
-            );
-
-            $form = $form->withRequest($request);
-            $data = $form->getData();
-
-            if ($data !== null) {
-                $ramses_data = $data[0] ?? [];
-
-                // Save RAMSES configuration
-                if (isset($ramses_data['ramses_api_url'])) {
-                    \platform\AIChatPageComponentConfig::set('ramses_api_url', $ramses_data['ramses_api_url']);
-                }
-                if (isset($ramses_data['ramses_api_token'])) {
-                    // Handle ILIAS\Data\Password object conversion
-                    $token = $ramses_data['ramses_api_token'];
-                    if (is_object($token) && method_exists($token, 'toString')) {
-                        $token = $token->toString();
-                    }
-                    \platform\AIChatPageComponentConfig::set('ramses_api_token', $token);
-                }
-                if (isset($ramses_data['ramses_selected_model'])) {
-                    \platform\AIChatPageComponentConfig::set('ramses_selected_model', $ramses_data['ramses_selected_model']);
-                }
-
-                // Handle ramses_enable_rag checkbox with nested fields
-                if (isset($ramses_data['ramses_enable_rag'])) {
-                    $ramses_enable_rag_value = $ramses_data['ramses_enable_rag'];
-
-                    // If ramses_enable_rag is an array (checkbox was checked and has dependent fields)
-                    if (is_array($ramses_enable_rag_value)) {
-                        \platform\AIChatPageComponentConfig::set('ramses_enable_rag', '1');
-
-                        // Save nested RAG configuration fields
-                        if (isset($ramses_enable_rag_value['ramses_application_id'])) {
-                            \platform\AIChatPageComponentConfig::set('ramses_application_id', $ramses_enable_rag_value['ramses_application_id']);
-                        }
-                        if (isset($ramses_enable_rag_value['ramses_instance_id'])) {
-                            \platform\AIChatPageComponentConfig::set('ramses_instance_id', $ramses_enable_rag_value['ramses_instance_id']);
-                        }
-                        if (isset($ramses_enable_rag_value['ramses_rag_allowed_file_types'])) {
-                            $allowed_types_string = trim($ramses_enable_rag_value['ramses_rag_allowed_file_types']);
-
-                            if (!empty($allowed_types_string)) {
-                                $allowed_types_array = array_map('trim', explode(',', $allowed_types_string));
-                                $allowed_types_array = array_filter($allowed_types_array);
-                                \platform\AIChatPageComponentConfig::set('ramses_rag_allowed_file_types', $allowed_types_array);
-                            } else {
-                                \platform\AIChatPageComponentConfig::set('ramses_rag_allowed_file_types', ['txt', 'md', 'csv', 'pdf']);
-                            }
-                        }
-                    } else {
-                        // Checkbox was unchecked (boolean false or null)
-                        \platform\AIChatPageComponentConfig::set('ramses_enable_rag', $ramses_enable_rag_value ? '1' : '0');
-                    }
-                }
-
-                $this->dic->ui()->mainTemplate()->setOnScreenMessage('success', $this->plugin->txt('config_saved_success'));
-            } else {
-                $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $this->plugin->txt('config_form_invalid'));
+            // Get service class from registry
+            $serviceClass = \ai\AIChatPageComponentLLMRegistry::getServiceClass($serviceId);
+            if ($serviceClass === null) {
+                throw new \Exception("Service '$serviceId' not found in registry");
             }
+
+            // Create service instance
+            $service = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($serviceId);
+            if ($service === null) {
+                throw new \Exception("Failed to create service instance for '$serviceId'");
+            }
+
+            // Get configuration inputs from service
+            $serviceInputs = $service->getConfigurationFormInputs();
+
+            // Wrap in section
+            $section = $ui_factory->input()->field()->section(
+                $serviceInputs,
+                $serviceClass::getServiceName(),
+                $serviceClass::getServiceDescription()
+            );
+
+            // Build form for processing
+            $serviceIdCap = ucfirst($serviceId);
+            $form_action = $this->ctrl->getFormAction($this, "save{$serviceIdCap}Configuration");
+            $form = $ui_factory->input()->container()->form()->standard($form_action, [$section])
+                ->withRequest($request);
+
+            $formData = $form->getData();
+
+            if ($formData !== null && is_array($formData) && count($formData) > 0) {
+                // Extract data from section wrapper
+                $sectionData = reset($formData); // Get first (and only) section
+
+                // Save configuration using service method
+                $service->saveConfiguration($sectionData);
+
+                $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                    'success',
+                    $this->plugin->txt('config_saved_success')
+                );
+            } else {
+                $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                    'failure',
+                    $this->plugin->txt('config_form_invalid')
+                );
+            }
+
         } catch (\Exception $e) {
-            $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $this->plugin->txt('config_save_error') . ': ' . $e->getMessage());
+            $this->dic->logger()->comp('pcaic')->error("Failed to save {$serviceId} configuration", [
+                'error' => $e->getMessage()
+            ]);
+            $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                'failure',
+                $this->plugin->txt('config_save_error') . ': ' . $e->getMessage()
+            );
         }
 
-        $this->showConfigurationForm('ramses');
+        $this->showConfigurationForm($serviceId);
     }
+
+    /**
+     * Refresh models for any registered LLM service (DYNAMIC)
+     *
+     * @param string $serviceId Service identifier (e.g., 'ramses', 'openai')
+     */
+    private function refreshServiceModels(string $serviceId): void
+    {
+        // For now, delegate to service-specific methods if they exist
+        // This allows for custom model refresh logic per service
+        $serviceIdCap = ucfirst($serviceId);
+        $methodName = "refresh{$serviceIdCap}Models";
+
+        if (method_exists($this, $methodName)) {
+            $this->$methodName();
+        } else {
+            $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                'info',
+                "Model refresh not implemented for service: {$serviceId}"
+            );
+            $this->showConfigurationForm($serviceId);
+        }
+    }
+
+    // ============================================
+    // LEGACY Service-Specific Methods (Kept for backward compatibility)
+    // ============================================
+
+    /**
+     * Save RAMSES configuration settings
+     * @deprecated Use saveServiceConfiguration('ramses') instead
+     */
 
     /**
      * Save OpenAI configuration settings
      */
-    public function saveOpenAiConfiguration(): void
-    {
-        $ui_factory = $this->dic->ui()->factory();
-        $request = $this->dic->http()->request();
-
-        try {
-            $inputs = [];
-            $inputs[] = $ui_factory->input()->field()->section(
-                $this->buildOpenAiConfigInputs(),
-                $this->plugin->txt('config_openai_title'),
-                $this->plugin->txt('config_openai_info')
-            );
-
-            $form = $ui_factory->input()->container()->form()->standard(
-                $this->ctrl->getFormAction($this, 'saveOpenAiConfiguration'),
-                $inputs
-            );
-
-            $form = $form->withRequest($request);
-            $data = $form->getData();
-
-            if ($data !== null) {
-                $openai_data = $data[0] ?? [];
-
-                // Save OpenAI configuration
-                if (isset($openai_data['openai_api_url'])) {
-                    \platform\AIChatPageComponentConfig::set('openai_api_url', $openai_data['openai_api_url']);
-                }
-                if (isset($openai_data['openai_api_token'])) {
-                    // Handle ILIAS\Data\Password object conversion
-                    $token = $openai_data['openai_api_token'];
-                    if (is_object($token) && method_exists($token, 'toString')) {
-                        $token = $token->toString();
-                    }
-                    \platform\AIChatPageComponentConfig::set('openai_api_token', $token);
-                }
-                if (isset($openai_data['openai_selected_model'])) {
-                    \platform\AIChatPageComponentConfig::set('openai_selected_model', $openai_data['openai_selected_model']);
-                }
-                if (isset($openai_data['openai_streaming_enabled'])) {
-                    \platform\AIChatPageComponentConfig::set('openai_streaming_enabled', $openai_data['openai_streaming_enabled'] ? '1' : '0');
-                }
-
-                $this->dic->ui()->mainTemplate()->setOnScreenMessage('success', $this->plugin->txt('config_saved_success'));
-            } else {
-                $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $this->plugin->txt('config_form_invalid'));
-            }
-        } catch (\Exception $e) {
-            $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $this->plugin->txt('config_save_error') . ': ' . $e->getMessage());
-        }
-
-        $this->showConfigurationForm('openai');
-    }
 
     /**
      * Refresh RAMSES models from API
      */
-    public function refreshRamsesModels(): void
-    {
-        try {
-            // Construct models endpoint URL from base URL
-            $base_url = \platform\AIChatPageComponentConfig::get('ramses_api_url') ?: 'https://ramses-oski.itcc.uni-koeln.de';
-            $base_url = rtrim($base_url, '/');
-            $models_api_url = $base_url . '/v1/models';
-
-            $api_token = \platform\AIChatPageComponentConfig::get('ramses_api_token');
-            
-            // Handle potential Password object conversion
-            if (is_object($api_token) && method_exists($api_token, 'toString')) {
-                $api_token = $api_token->toString();
-            }
-            
-            if (empty($api_token)) {
-                $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', 
-                    $this->plugin->txt('refresh_models_no_token'));
-                $this->showConfigurationForm('ramses');
-                return;
-            }
-
-            // Try to fetch models from API
-            $ch = curl_init();
-            
-            // Get certificate path from this plugin
-            try {
-                $plugin = \ilAIChatPageComponentPlugin::getInstance();
-                $plugin_path = $plugin->getDirectory();
-                $absolute_plugin_path = realpath($plugin_path);
-                $ca_cert_path = $absolute_plugin_path . '/certs/RAMSES.pem';
-
-                if (file_exists($ca_cert_path)) {
-                    curl_setopt($ch, CURLOPT_CAINFO, $ca_cert_path);
-                } else {
-                    // Fallback: disable SSL verification for development/testing
-                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                }
-            } catch (\Exception $e) {
-                // If AIChat plugin not available, disable SSL verification
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-            }
-            
-            curl_setopt($ch, CURLOPT_URL, $models_api_url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Authorization: Bearer ' . $api_token,
-                'Content-Type: application/json'
-            ]);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $error = curl_error($ch);
-            curl_close($ch);
-            
-            if ($httpCode === 200 && $response) {
-                $models_response = json_decode($response, true);
-
-                // Handle both old format (direct array) and new format (object with data array)
-                $models_data = [];
-                if (is_array($models_response)) {
-                    if (isset($models_response['object']) && $models_response['object'] === 'list' && isset($models_response['data'])) {
-                        // New format: {object: "list", data: [...]}
-                        $models_data = $models_response['data'];
-                    } else {
-                        // Old format: direct array
-                        $models_data = $models_response;
-                    }
-                }
-
-                if (is_array($models_data) && !empty($models_data)) {
-                    $models = [];
-                    foreach ($models_data as $model) {
-                        // Support both 'name' and 'id' as model identifier
-                        $model_id = $model['id'] ?? $model['name'] ?? null;
-                        $model_name = $model['display_name'] ?? $model['name'] ?? $model['id'] ?? null;
-
-                        if ($model_id && $model_name) {
-                            $models[$model_id] = $model_name;
-                        }
-                    }
-                    
-                    if (!empty($models)) {
-                        // Cache models and timestamp
-                        \platform\AIChatPageComponentConfig::set('cached_models', $models);
-                        \platform\AIChatPageComponentConfig::set('models_cache_time', time());
-                        
-                        $this->dic->ui()->mainTemplate()->setOnScreenMessage('success', 
-                            $this->plugin->txt('refresh_models_success') . ' (' . count($models) . ' ' . 
-                            $this->plugin->txt('refresh_models_count') . ')');
-                    } else {
-                        $this->dic->ui()->mainTemplate()->setOnScreenMessage('info', 
-                            $this->plugin->txt('refresh_models_no_models'));
-                    }
-                } else {
-                    $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', 
-                        $this->plugin->txt('refresh_models_invalid_response'));
-                }
-            } else {
-                $error_msg = $this->plugin->txt('refresh_models_api_error') . ' (HTTP ' . $httpCode . ')';
-                if ($error) {
-                    $error_msg .= ': ' . $error;
-                }
-                
-                // Add debug information for HTTP 401
-                if ($httpCode === 401) {
-                    $error_msg .= ' - Check API token validity';
-                    // Log token info for debugging (without exposing the actual token)
-                    try {
-                        $this->dic->logger()->comp('pcaic')->error("RAMSES Models API 401 Error", [
-                            'api_url' => $models_api_url,
-                            'token_length' => strlen($api_token),
-                            'token_starts_with' => substr($api_token, 0, 8) . '...'
-                        ]);
-                    } catch (\Exception $logError) {
-                        // Ignore logging errors
-                    }
-                }
-                
-                $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $error_msg);
-            }
-            
-        } catch (\Exception $e) {
-            $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', 
-                $this->plugin->txt('refresh_models_exception') . ': ' . $e->getMessage());
-        }
-
-        $this->showConfigurationForm('ramses');
-    }
 
     /**
      * Refresh OpenAI models from API
      */
-    public function refreshOpenAiModels(): void
-    {
-        try {
-            // Construct models endpoint URL from base URL
-            $base_url = \platform\AIChatPageComponentConfig::get('openai_api_url') ?: 'https://api.openai.com';
-            $base_url = rtrim($base_url, '/');
-            $models_api_url = $base_url . '/v1/models';
-
-            $api_token = \platform\AIChatPageComponentConfig::get('openai_api_token');
-
-            // Handle potential Password object conversion
-            if (is_object($api_token) && method_exists($api_token, 'toString')) {
-                $api_token = $api_token->toString();
-            }
-
-            if (empty($api_token)) {
-                $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure',
-                    $this->plugin->txt('refresh_models_no_token'));
-                $this->showConfigurationForm('openai');
-                return;
-            }
-
-            // Fetch models from OpenAI API
-            $ch = curl_init();
-
-            curl_setopt($ch, CURLOPT_URL, $models_api_url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Authorization: Bearer ' . $api_token,
-                'Content-Type: application/json'
-            ]);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-
-            // Handle proxy settings
-            if (class_exists('ilProxySettings') && \ilProxySettings::_getInstance()->isActive()) {
-                $proxyHost = \ilProxySettings::_getInstance()->getHost();
-                $proxyPort = \ilProxySettings::_getInstance()->getPort();
-                $proxyURL = $proxyHost . ":" . $proxyPort;
-                curl_setopt($ch, CURLOPT_PROXY, $proxyURL);
-            }
-
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $error = curl_error($ch);
-            curl_close($ch);
-
-            if ($httpCode === 200 && $response) {
-                $models_response = json_decode($response, true);
-
-                // OpenAI uses format: {object: "list", data: [{id: "gpt-4", ...}, ...]}
-                if (isset($models_response['data']) && is_array($models_response['data'])) {
-                    $models = [];
-                    foreach ($models_response['data'] as $model) {
-                        $model_id = $model['id'] ?? null;
-                        // Filter to only include GPT chat models
-                        if ($model_id && (strpos($model_id, 'gpt-') === 0 || strpos($model_id, 'chatgpt-') === 0)) {
-                            // Create human-readable name from ID
-                            $model_name = ucwords(str_replace(['-', '_'], ' ', $model_id));
-                            $models[$model_id] = $model_name;
-                        }
-                    }
-
-                    if (!empty($models)) {
-                        // Cache models and timestamp
-                        \platform\AIChatPageComponentConfig::set('openai_cached_models', $models);
-                        \platform\AIChatPageComponentConfig::set('openai_models_cache_time', time());
-
-                        $this->dic->ui()->mainTemplate()->setOnScreenMessage('success',
-                            $this->plugin->txt('refresh_models_success') . ' (' . count($models) . ' ' .
-                            $this->plugin->txt('refresh_models_count') . ')');
-                    } else {
-                        $this->dic->ui()->mainTemplate()->setOnScreenMessage('info',
-                            $this->plugin->txt('refresh_models_no_models'));
-                    }
-                } else {
-                    $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure',
-                        $this->plugin->txt('refresh_models_invalid_response'));
-                }
-            } else {
-                $error_msg = $this->plugin->txt('refresh_models_api_error') . ' (HTTP ' . $httpCode . ')';
-                if ($error) {
-                    $error_msg .= ': ' . $error;
-                }
-
-                // Add debug information for HTTP 401
-                if ($httpCode === 401) {
-                    $error_msg .= ' - Check API token validity';
-                    try {
-                        $this->dic->logger()->comp('pcaic')->error("OpenAI Models API 401 Error", [
-                            'api_url' => $models_api_url,
-                            'token_length' => strlen($api_token),
-                            'token_starts_with' => substr($api_token, 0, 8) . '...'
-                        ]);
-                    } catch (\Exception $logError) {
-                        // Ignore logging errors
-                    }
-                }
-
-                $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $error_msg);
-            }
-
-        } catch (\Exception $e) {
-            $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure',
-                $this->plugin->txt('refresh_models_exception') . ': ' . $e->getMessage());
-        }
-
-        $this->showConfigurationForm('openai');
-    }
 }

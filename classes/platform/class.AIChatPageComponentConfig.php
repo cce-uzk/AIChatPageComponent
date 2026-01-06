@@ -46,10 +46,22 @@ class AIChatPageComponentConfig
 
             'default_allowed_file_types' => ['txt', 'md', 'pdf', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif'],
 
-            'ramses_api_url' => 'https://ramses-oski.itcc.uni-koeln.de',
-            'ramses_rag_allowed_file_types' => ['txt', 'md', 'csv', 'pdf'],
+            // File handling (hierarchical: global → service)
+            'enable_file_handling' => '1',
 
-            'openai_api_url' => 'https://api.openai.com'
+            'ramses_api_url' => 'https://ramses-oski.itcc.uni-koeln.de',
+            'ramses_service_enabled' => '0',
+            'ramses_rag_allowed_file_types' => ['txt', 'md', 'csv', 'pdf'],
+            'ramses_temperature' => 0.7,
+            'ramses_streaming_enabled' => '1',
+            'ramses_file_handling_enabled' => '1',
+
+            'openai_api_url' => 'https://api.openai.com',
+            'openai_service_enabled' => '0',
+            'openai_temperature' => 0.7,
+            'openai_file_handling_enabled' => '1',
+
+            'force_default_ai_service' => '0'
         ];
 
         try {

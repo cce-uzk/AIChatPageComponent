@@ -222,9 +222,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $ui_factory = $DIC->ui()->factory();
 
-        // Check global file handling and specific upload permissions
-        $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
-        $file_handling_enabled = ($file_restrictions['enabled'] ?? false);
+        // Check global file handling (hierarchical service-specific check happens in API)
+        $file_handling_enabled = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
         $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
         $allowed_extensions = FileUploadValidator::getAllowedExtensions('background');
 
@@ -335,16 +334,58 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('system_prompt_info')
         )->withDedicatedName('system_prompt')->withValue($prop['system_prompt'] ?? $defaults['prompt']);
 
-        // AI Service Selection - DISABLED: Currently only RAMSES is available
-        // Hardcoded to use RAMSES service for all chats
-        /*
-        $service_options = $this->getAvailableAIServices();
+        // AI Service Selection (DYNAMIC - using LLMRegistry)
+        // Get default AI service from config
+        $default_ai_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
+        $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
+
+        // Build available services dynamically from registry (only enabled ones)
+        $service_options = \ai\AIChatPageComponentLLMRegistry::getServiceOptions(true); // true = only enabled
+
+        // Determine AI service value
+        $stored_service = $prop['ai_service'] ?? null;
+        if ($force_default_service === '1') {
+            // Force is enabled: use default service
+            $ai_service_value = $default_ai_service;
+        } elseif ($stored_service && isset($service_options[$stored_service])) {
+            // Stored service is still available: use it
+            $ai_service_value = $stored_service;
+        } elseif (!empty($service_options)) {
+            // Stored service no longer available or not set: use first available service
+            $ai_service_value = array_key_first($service_options);
+
+            // Add warning if stored service was disabled
+            if ($stored_service && !isset($service_options[$stored_service])) {
+                global $DIC;
+                $DIC->ui()->mainTemplate()->setOnScreenMessage(
+                    'info',
+                    sprintf(
+                        'The previously selected AI service "%s" is no longer available. Please select a new service.',
+                        $stored_service
+                    )
+                );
+            }
+        } else {
+            // No services available at all
+            $ai_service_value = null;
+        }
+
+        // Create AI service field (disabled if forced)
         $ai_service = $ui_factory->input()->field()->select(
             $this->plugin->txt('ai_service_label'),
             $service_options,
             $this->plugin->txt('ai_service_info')
-        )->withDedicatedName('ai_service')->withValue($prop['ai_service'] ?? 'ramses');
-        */
+        )->withDedicatedName('ai_service');
+
+        // Only set value if we have one and it's valid
+        if ($ai_service_value && isset($service_options[$ai_service_value])) {
+            $ai_service = $ai_service->withValue($ai_service_value);
+        }
+
+        // Disable field if service is forced
+        if ($force_default_service === '1') {
+            $ai_service = $ai_service->withDisabled(true);
+        }
 
         // Max messages in memory
         $max_memory = $ui_factory->input()->field()->numeric(
@@ -370,10 +411,17 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('include_page_context_info')
         )->withDedicatedName('include_page_context')->withValue($this->toBool($prop['include_page_context'] ?? true));
 
-        // Enable chat file uploads - check both file handling and specific chat upload permissions
+        // Check hierarchical file handling (global → service) BEFORE defining file-related fields
+        $effective_ai_service = $ai_service_value ?? 'ramses';
+        $global_file_handling = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
+        $service_file_handling_key = $effective_ai_service . '_file_handling_enabled';
+        $service_file_handling = (\platform\AIChatPageComponentConfig::get($service_file_handling_key) ?? '1') === '1';
+        $file_handling_enabled_for_service = $global_file_handling && $service_file_handling;
+
+        // Enable chat file uploads - check hierarchical file handling and specific chat upload permissions
         $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
-        if (!$file_handling_enabled) {
-            // File handling completely disabled
+        if (!$file_handling_enabled_for_service) {
+            // File handling disabled (global or service-specific)
             $enable_chat_uploads = $ui_factory->input()->field()->text(
                 $this->plugin->txt('enable_chat_uploads_label'),
                 $this->plugin->txt('setting_disabled_by_admin_info')
@@ -394,39 +442,42 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         // Enable streaming responses - check global streaming setting
         $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
-        if (!$streaming_globally_enabled) {
-            // Streaming globally disabled
-            $enable_streaming = $ui_factory->input()->field()->text(
-                $this->plugin->txt('enable_streaming_label'),
-                $this->plugin->txt('setting_disabled_by_admin_info')
-            )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('enable_streaming_disabled');
-        } else {
-            // Streaming globally enabled - show checkbox
+
+        // Only create streaming field if globally enabled
+        if ($streaming_globally_enabled) {
             $enable_streaming = $ui_factory->input()->field()->checkbox(
                 $this->plugin->txt('enable_streaming_label'),
                 $this->plugin->txt('enable_streaming_info')
             )->withDedicatedName('enable_streaming')->withValue($this->toBool($prop['enable_streaming'] ?? true));
         }
 
-        // Enable RAG mode - only available if AI service supports RAG AND globally enabled
-        $ai_service = $prop['ai_service'] ?? 'ramses';
-
-        // Create LLM instance to check RAG support
+        // Enable RAG mode - only available if file handling enabled AND AI service supports RAG AND RAG globally enabled
         require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
-        require_once(__DIR__ . '/ai/class.AIChatPageComponentRAMSES.php');
+        require_once(__DIR__ . '/ai/class.AIChatPageComponentLLMRegistry.php');
 
-        $llm = ($ai_service === 'ramses')
-            ? \ai\AIChatPageComponentRAMSES::fromConfig()
-            : \ai\AIChatPageComponentRAMSES::fromConfig(); // Fallback to RAMSES
+        // Use LLMRegistry to dynamically create service instance
+        $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($effective_ai_service);
+        if ($llm === null) {
+            // Fallback to first available service
+            $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+            $firstService = !empty($availableServices) ? array_key_first($availableServices) : null;
+            $llm = $firstService ? \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService) : null;
+        }
 
         $service_supports_rag = $llm->supportsRAG();
 
         // Get global RAG setting (LLM-specific)
-        $rag_config_key = $ai_service . '_enable_rag'; // e.g., ramses_enable_rag
+        $rag_config_key = $effective_ai_service . '_enable_rag'; // e.g., ramses_enable_rag
         $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
         $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
 
-        if (!$service_supports_rag) {
+        if (!$file_handling_enabled_for_service) {
+            // File handling disabled - no RAG available
+            $enable_rag = $ui_factory->input()->field()->text(
+                $this->plugin->txt('enable_rag_label'),
+                $this->plugin->txt('setting_disabled_by_admin_info')
+            )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('enable_rag_disabled');
+        } elseif (!$service_supports_rag) {
             // AI service doesn't support RAG
             $enable_rag = $ui_factory->input()->field()->text(
                 $this->plugin->txt('enable_rag_label'),
@@ -454,23 +505,44 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         // Create the complete UI form with all fields
         $form_action = $a_create ? $this->ctrl->getFormAction($this, 'create') : $this->ctrl->getFormAction($this, 'update');
-        // Build form fields array, conditionally including background files
+
+        // Build form fields array, conditionally including fields based on global settings
         $form_fields = [
             'chat_title' => $chat_title,
-            'system_prompt' => $system_prompt,
-            // 'ai_service' => $ai_service, // DISABLED: Hardcoded to RAMSES
-            'max_memory' => $max_memory,
-            'char_limit' => $char_limit,
-            'persistent' => $persistent,
-            'include_page_context' => $include_context,
-            'enable_chat_uploads' => $enable_chat_uploads,
-            'enable_streaming' => $enable_streaming,
-            'enable_rag' => $enable_rag,
-            'disclaimer' => $disclaimer
+            'system_prompt' => $system_prompt
         ];
 
-        // Always include background files field (will show disabled state when necessary)
-        $form_fields['background_files'] = $file_upload;
+        // Only show AI service selector if not forced
+        if ($force_default_service !== '1') {
+            $form_fields['ai_service'] = $ai_service;
+        }
+
+        $form_fields['max_memory'] = $max_memory;
+        $form_fields['char_limit'] = $char_limit;
+        $form_fields['persistent'] = $persistent;
+        $form_fields['include_page_context'] = $include_context;
+
+        // Only show chat uploads field if file handling is enabled (hierarchical)
+        if ($file_handling_enabled_for_service) {
+            $form_fields['enable_chat_uploads'] = $enable_chat_uploads;
+        }
+
+        // Only show streaming field if globally enabled
+        if ($streaming_globally_enabled) {
+            $form_fields['enable_streaming'] = $enable_streaming;
+        }
+
+        // Only show RAG field if file handling enabled AND service supports it AND RAG globally enabled
+        if ($file_handling_enabled_for_service && $service_supports_rag && $rag_globally_enabled) {
+            $form_fields['enable_rag'] = $enable_rag;
+        }
+
+        $form_fields['disclaimer'] = $disclaimer;
+
+        // Only show background files field if file handling is enabled (hierarchical) AND background files are allowed
+        if ($file_handling_enabled_for_service && $background_files_enabled) {
+            $form_fields['background_files'] = $file_upload;
+        }
 
         $form = $ui_factory->input()->container()->form()->standard($form_action, $form_fields);
 
@@ -490,8 +562,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
 
         // Handle file uploads - only process if file handling is enabled and background files are allowed
-        $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
-        $file_handling_enabled = ($file_restrictions['enabled'] ?? false);
+        $file_handling_enabled = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
         $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
 
         $file_ids = [];
@@ -532,8 +603,16 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $chatConfig->setParentType($page_info['parent_type'] ?? '');
             $chatConfig->setTitle($form_data['chat_title'] ?? '');
             $chatConfig->setSystemPrompt($form_data['system_prompt'] ?? '');
-            // AI Service is hardcoded to RAMSES - no longer configurable via form
-            $chatConfig->setAiService('ramses');
+
+            // AI Service: Use default if forced, otherwise use form value
+            $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
+            if ($force_default_service === '1') {
+                $ai_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
+            } else {
+                $ai_service = $form_data['ai_service'] ?? \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
+            }
+            $chatConfig->setAiService($ai_service);
+
             $chatConfig->setMaxMemory((int) ($form_data['max_memory'] ?? 10));
             $chatConfig->setCharLimit((int) ($form_data['char_limit'] ?? 2000));
 
@@ -559,12 +638,17 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
             // Only set RAG if service supports it AND globally enabled
             require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
-            require_once(__DIR__ . '/ai/class.AIChatPageComponentRAMSES.php');
+            require_once(__DIR__ . '/ai/class.AIChatPageComponentLLMRegistry.php');
 
             $ai_service = $chatConfig->getAiService();
-            $llm = ($ai_service === 'ramses')
-                ? \ai\AIChatPageComponentRAMSES::fromConfig()
-                : \ai\AIChatPageComponentRAMSES::fromConfig(); // Fallback to RAMSES
+            // Use LLMRegistry to dynamically create service instance
+            $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
+            if ($llm === null) {
+                // Fallback to first available service
+                $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+                $firstService = !empty($availableServices) ? array_key_first($availableServices) : null;
+                $llm = $firstService ? \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService) : null;
+            }
 
             $service_supports_rag = $llm->supportsRAG();
 
@@ -1182,16 +1266,23 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     {
         $ai_service = $chatConfig->getAiService();
 
-        switch ($ai_service) {
-            case 'ramses':
-                return \ai\AIChatPageComponentRAMSES::fromConfig();
-            case 'openai':
-                // Future: OpenAI LLM instance with RAG support
-                return \ai\AIChatPageComponentOpenAI::fromConfig();
-            default:
-                // Fallback to RAMSES
-                return \ai\AIChatPageComponentRAMSES::fromConfig();
+        // Use LLMRegistry to dynamically create service instance
+        $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
+
+        if ($instance === null) {
+            // Fallback to first available service if requested service not found
+            $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+            if (!empty($availableServices)) {
+                $firstService = array_key_first($availableServices);
+                $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService);
+            }
+
+            if ($instance === null) {
+                throw new \Exception("No AI services available in registry");
+            }
         }
+
+        return $instance;
     }
 
     /**

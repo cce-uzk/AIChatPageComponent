@@ -31,6 +31,7 @@ class ComposerStaticInit52975239271cd8444140239aa621a8e3
         'ILIAS\\Plugin\\pcaic\\Storage\\ResourceStakeholder' => __DIR__ . '/../..' . '/src/Storage/ResourceStakeholder.php',
         'ILIAS\\Plugin\\pcaic\\Validation\\FileUploadValidator' => __DIR__ . '/../..' . '/src/Validation/FileUploadValidator.php',
         'ai\\AIChatPageComponentLLM' => __DIR__ . '/../..' . '/classes/ai/class.AIChatPageComponentLLM.php',
+        'ai\\AIChatPageComponentLLMRegistry' => __DIR__ . '/../..' . '/classes/ai/class.AIChatPageComponentLLMRegistry.php',
         'ai\\AIChatPageComponentOpenAI' => __DIR__ . '/../..' . '/classes/ai/class.AIChatPageComponentOpenAI.php',
         'ai\\AIChatPageComponentRAMSES' => __DIR__ . '/../..' . '/classes/ai/class.AIChatPageComponentRAMSES.php',
         'ilAIChatPageComponentConfigGUI' => __DIR__ . '/../..' . '/classes/class.ilAIChatPageComponentConfigGUI.php',

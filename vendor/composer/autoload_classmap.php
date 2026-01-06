@@ -16,6 +16,7 @@ return array(
     'ILIAS\\Plugin\\pcaic\\Storage\\ResourceStakeholder' => $baseDir . '/src/Storage/ResourceStakeholder.php',
     'ILIAS\\Plugin\\pcaic\\Validation\\FileUploadValidator' => $baseDir . '/src/Validation/FileUploadValidator.php',
     'ai\\AIChatPageComponentLLM' => $baseDir . '/classes/ai/class.AIChatPageComponentLLM.php',
+    'ai\\AIChatPageComponentLLMRegistry' => $baseDir . '/classes/ai/class.AIChatPageComponentLLMRegistry.php',
     'ai\\AIChatPageComponentOpenAI' => $baseDir . '/classes/ai/class.AIChatPageComponentOpenAI.php',
     'ai\\AIChatPageComponentRAMSES' => $baseDir . '/classes/ai/class.AIChatPageComponentRAMSES.php',
     'ilAIChatPageComponentConfigGUI' => $baseDir . '/classes/class.ilAIChatPageComponentConfigGUI.php',

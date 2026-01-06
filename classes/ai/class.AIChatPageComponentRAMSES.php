@@ -45,6 +45,262 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     /** @var string API key for RAMSES service authentication */
     private string $apiKey;
 
+    // ============================================
+    // Service Metadata Implementation
+    // ============================================
+
+    public static function getServiceId(): string
+    {
+        return 'ramses';
+    }
+
+    public static function getServiceName(): string
+    {
+        return 'RAMSES';
+    }
+
+    public static function getServiceDescription(): string
+    {
+        return 'RAMSES AI Service';
+    }
+
+    // ============================================
+    // Configuration Management Implementation
+    // ============================================
+
+    public function getConfigurationFormInputs(): array
+    {
+        global $DIC;
+        $ui_factory = $DIC->ui()->factory();
+        $plugin = \ilAIChatPageComponentPlugin::getInstance();
+
+        $inputs = [];
+
+        // Service enabled checkbox
+        $ramses_enabled = \platform\AIChatPageComponentConfig::get('ramses_service_enabled') ?? '0';
+        $inputs['ramses_service_enabled'] = $ui_factory->input()->field()->checkbox(
+            $plugin->txt('config_service_enabled'),
+            $plugin->txt('config_service_enabled_info')
+        )->withValue($ramses_enabled === '1');
+
+        // API URL - ensure string
+        $api_url = \platform\AIChatPageComponentConfig::get('ramses_api_url');
+        $inputs['ramses_api_url'] = $ui_factory->input()->field()->text(
+            $plugin->txt('config_api_url'),
+            $plugin->txt('config_api_url_info')
+        )->withValue((string)($api_url ?: 'https://ramses-oski.itcc.uni-koeln.de'))->withRequired(true);
+
+        // API Token - ensure string
+        $api_token = \platform\AIChatPageComponentConfig::get('ramses_api_token');
+        $inputs['ramses_api_token'] = $ui_factory->input()->field()->password(
+            $plugin->txt('config_api_token'),
+            $plugin->txt('config_api_token_info')
+        )->withValue((string)($api_token ?: ''))->withRequired(true);
+
+        // Model Selection
+        $selected_model = \platform\AIChatPageComponentConfig::get('ramses_selected_model');
+        $cached_models = \platform\AIChatPageComponentConfig::get('cached_models');
+
+        if (is_array($cached_models) && !empty($cached_models)) {
+            // $cached_models is already in correct format: ['model-id' => 'Display Name']
+            $model_options = $cached_models;
+
+            $select_field = $ui_factory->input()->field()->select(
+                $plugin->txt('config_selected_model'),
+                $model_options,
+                $plugin->txt('config_selected_model_info')
+            )->withRequired(true);
+
+            // Only set value if it exists in options
+            if ($selected_model && isset($model_options[$selected_model])) {
+                $select_field = $select_field->withValue($selected_model);
+            }
+
+            $inputs['ramses_selected_model'] = $select_field;
+        } else {
+            $inputs['ramses_selected_model'] = $ui_factory->input()->field()->text(
+                $plugin->txt('config_selected_model'),
+                $plugin->txt('refresh_models_not_loaded')
+            )->withValue((string)($selected_model ?: ''))->withDisabled(true);
+        }
+
+        // Temperature - use text field with custom validation to support comma/dot
+        $temperature = \platform\AIChatPageComponentConfig::get('ramses_temperature');
+        $temp_value = '0.7'; // default as string
+        if ($temperature !== null && $temperature !== '') {
+            $temp_value = (string)$temperature;
+        }
+
+        // Create constraint that accepts comma or dot as decimal separator
+        $refinery = $DIC->refinery();
+        $temp_constraint = $refinery->custom()->constraint(
+            function ($value) {
+                if (is_string($value)) {
+                    $normalized = str_replace(',', '.', $value);
+                    return is_numeric($normalized);
+                }
+                return is_numeric($value);
+            },
+            'Must be a number (use comma or dot as decimal separator)'
+        );
+
+        // Create transformation to convert to float
+        $temp_trafo = $refinery->custom()->transformation(
+            function ($value) {
+                if (is_string($value)) {
+                    $value = str_replace(',', '.', $value);
+                }
+                return is_numeric($value) ? (float)$value : 0.7;
+            }
+        );
+
+        $inputs['ramses_temperature'] = $ui_factory->input()->field()->text(
+            $plugin->txt('config_temperature'),
+            $plugin->txt('config_temperature_info')
+        )->withValue($temp_value)
+         ->withAdditionalTransformation($temp_constraint)
+         ->withAdditionalTransformation($temp_trafo);
+
+        // Streaming enabled
+        $streaming_enabled = \platform\AIChatPageComponentConfig::get('ramses_streaming_enabled') ?? '1';
+        $inputs['ramses_streaming_enabled'] = $ui_factory->input()->field()->checkbox(
+            $plugin->txt('config_streaming'),
+            $plugin->txt('config_streaming_info')
+        )->withValue($streaming_enabled === '1');
+
+        // File handling enabled
+        $file_handling_enabled = \platform\AIChatPageComponentConfig::get('ramses_file_handling_enabled') ?? '1';
+        $inputs['ramses_file_handling_enabled'] = $ui_factory->input()->field()->checkbox(
+            $plugin->txt('config_file_handling'),
+            $plugin->txt('config_file_handling_info')
+        )->withValue($file_handling_enabled === '1');
+
+        // RAG Mode enabled with OptionalGroup for RAG-specific settings
+        $rag_enabled = \platform\AIChatPageComponentConfig::get('ramses_enable_rag') ?? '1';
+
+        // Build RAG sub-inputs
+        $rag_sub_inputs = [];
+
+        $app_id = \platform\AIChatPageComponentConfig::get('ramses_application_id');
+        $rag_sub_inputs['ramses_application_id'] = $ui_factory->input()->field()->text(
+            $plugin->txt('config_rag_application_id'),
+            $plugin->txt('config_rag_application_id_info')
+        )->withValue((string)($app_id ?: 'ILIAS'));
+
+        $instance_id = \platform\AIChatPageComponentConfig::get('ramses_instance_id');
+        $rag_sub_inputs['ramses_instance_id'] = $ui_factory->input()->field()->text(
+            $plugin->txt('config_rag_instance_id'),
+            $plugin->txt('config_rag_instance_id_info')
+        )->withValue((string)($instance_id ?: 'ilias9'));
+
+        // RAG allowed file types - ensure it's a string
+        $rag_file_types = \platform\AIChatPageComponentConfig::get('ramses_rag_allowed_file_types');
+        if (is_array($rag_file_types)) {
+            $rag_file_types = implode(',', $rag_file_types);
+        }
+        $rag_sub_inputs['ramses_rag_allowed_file_types'] = $ui_factory->input()->field()->text(
+            $plugin->txt('config_rag_allowed_file_types'),
+            $plugin->txt('config_rag_allowed_file_types_info')
+        )->withValue($rag_file_types ?: 'txt,md,csv,pdf');
+
+        // Create OptionalGroup
+        $rag_optional_group = $ui_factory->input()->field()->optionalGroup(
+            $rag_sub_inputs,
+            $plugin->txt('config_enable_rag'),
+            $plugin->txt('config_enable_rag_info')
+        );
+
+        // Set value based on current state
+        if ($rag_enabled === '1') {
+            $rag_optional_group = $rag_optional_group->withValue([
+                'ramses_application_id' => (string)($app_id ?: 'ILIAS'),
+                'ramses_instance_id' => (string)($instance_id ?: 'ilias9'),
+                'ramses_rag_allowed_file_types' => $rag_file_types ?: 'txt,md,csv,pdf'
+            ]);
+        } else {
+            $rag_optional_group = $rag_optional_group->withValue(null);
+        }
+
+        $inputs['ramses_rag_config'] = $rag_optional_group;
+
+        return $inputs;
+    }
+
+    public function saveConfiguration(array $formData): void
+    {
+        foreach ($formData as $key => $value) {
+            // Handle RAG OptionalGroup
+            if ($key === 'ramses_rag_config') {
+                if (is_array($value) && !empty($value)) {
+                    // RAG enabled - save enabled state and sub-fields
+                    \platform\AIChatPageComponentConfig::set('ramses_enable_rag', '1');
+                    foreach ($value as $sub_key => $sub_value) {
+                        \platform\AIChatPageComponentConfig::set($sub_key, $sub_value);
+                    }
+                } else {
+                    // RAG disabled
+                    \platform\AIChatPageComponentConfig::set('ramses_enable_rag', '0');
+                }
+                continue;
+            }
+
+            // Handle ILIAS Password object
+            if ($value instanceof \ILIAS\Data\Password) {
+                $value = $value->toString();
+            }
+
+            // Handle checkbox boolean conversion
+            if (is_bool($value)) {
+                $value = $value ? '1' : '0';
+            }
+
+            // Handle numeric temperature with decimal separator normalization
+            if ($key === 'ramses_temperature' && is_numeric($value)) {
+                $value = (float)$value;
+            }
+
+            \platform\AIChatPageComponentConfig::set($key, $value);
+        }
+    }
+
+    public static function getDefaultConfiguration(): array
+    {
+        return [
+            'ramses_service_enabled' => '0',
+            'ramses_api_url' => 'https://ramses-oski.itcc.uni-koeln.de',
+            'ramses_api_token' => '',
+            'ramses_selected_model' => '',
+            'ramses_temperature' => 0.7,
+            'ramses_streaming_enabled' => '1',
+            'ramses_file_handling_enabled' => '1',
+            'ramses_enable_rag' => '1',
+            'ramses_application_id' => 'ILIAS',
+            'ramses_instance_id' => 'ilias9',
+            'ramses_rag_allowed_file_types' => 'txt,md,csv,pdf',
+            'cached_models' => []
+        ];
+    }
+
+    // ============================================
+    // Service Capabilities Implementation
+    // ============================================
+
+    public function getCapabilities(): array
+    {
+        return [
+            'streaming' => true,
+            'rag' => true,
+            'multimodal' => true,
+            'file_types' => ['txt', 'md', 'csv', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
+            'rag_file_types' => ['txt', 'md', 'csv', 'pdf'],
+            'max_tokens' => null, // No hard limit documented
+        ];
+    }
+
+    // ============================================
+    // Existing RAMSES Methods
+    // ============================================
+
     /**
      * Get available RAMSES models from configuration
      *
@@ -59,6 +315,23 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         }
 
         return [];
+    }
+
+    /**
+     * Get model-specific API parameters for RAMSES
+     *
+     * RAMSES (Mistral) supports temperature parameter.
+     * Uses configured value from plugin settings.
+     *
+     * @return array Associative array of API parameters
+     */
+    protected function getModelParameters(): array
+    {
+        $temperature = \platform\AIChatPageComponentConfig::get('ramses_temperature') ?: 0.7;
+
+        return [
+            'temperature' => (float)$temperature
+        ];
     }
 
     /**
@@ -422,15 +695,19 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             'model' => $this->model,
             'messages' => $messagesArray,
             'collection_ids' => $collectionIds,
-            'temperature' => 0.5,
             'stream' => $this->streaming
         ];
+
+        // Add model-specific parameters (e.g., temperature)
+        $modelParams = $this->getModelParameters();
+        $payload = array_merge($payload, $modelParams);
 
         // Log complete request for debugging
         $this->logger->debug("RAMSES RAG Chat Request: Model=" . $this->model .
                            " | Collections=" . json_encode($collectionIds) .
                            " | Messages=" . count($messagesArray) .
                            " | Stream=" . ($this->streaming ? 'yes' : 'no') .
+                           " | Parameters=" . json_encode($modelParams) .
                            " | Full Payload: " . json_encode($payload, JSON_PRETTY_PRINT));
 
         return $this->executeApiRequest($ragApiUrl, json_encode($payload));
@@ -548,13 +825,16 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         // 3. Add the actual conversation messages
         $messagesArray = array_merge($messagesArray, $messages);
 
-
+        // Build payload with model-specific parameters
         $payloadArray = [
             "messages" => $messagesArray,
             "model" => $this->model,
-            "temperature" => 0.5,
             "stream" => $this->isStreaming()
         ];
+
+        // Add model-specific parameters (e.g., temperature)
+        $modelParams = $this->getModelParameters();
+        $payloadArray = array_merge($payloadArray, $modelParams);
 
         $payload = json_encode($payloadArray);
 
@@ -567,6 +847,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                            " | Messages=" . count($messagesArray) .
                            " | Has Context=" . (!empty($contextResources) ? 'yes' : 'no') .
                            " | Stream=" . ($this->isStreaming() ? 'yes' : 'no') .
+                           " | Parameters=" . json_encode($modelParams) .
                            " | Full Payload: " . json_encode($payloadArray, JSON_PRETTY_PRINT));
 
         return $this->executeApiRequest($apiUrl, $payload);
@@ -744,9 +1025,10 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     public static function fromConfig(): self
     {
         try {
-            // Get model and API key from plugin configuration
+            // Get model, API key and streaming setting from plugin configuration
             $model = \platform\AIChatPageComponentConfig::get('ramses_selected_model') ?: 'swiss-ai-apertus-70b-instruct-2509';
             $apiKey = \platform\AIChatPageComponentConfig::get('ramses_api_token') ?: '';
+            $streaming = (\platform\AIChatPageComponentConfig::get('ramses_streaming_enabled') ?? '1') === '1';
 
             if (empty($apiKey)) {
                 throw new AIChatPageComponentException("RAMSES API token not configured");
@@ -754,6 +1036,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
 
             $ramses = new self($model);
             $ramses->setApiKey($apiKey);
+            $ramses->setStreaming($streaming);
 
             return $ramses;
         } catch (\Exception $e) {

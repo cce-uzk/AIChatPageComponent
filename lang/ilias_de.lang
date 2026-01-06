@@ -1,9 +1,3 @@
-//
-// Copyright (c) 2025 Ingo Kleiber <ingo.kleiber@uni-koeln.de>
-// GPLv3, see LICENSE
-//
-// @author Ingo Kleiber <ingo.kleiber@uni-koeln.de>
-//
 <!-- language file start -->
 cmd_insert#:#KI-Chat einfügen
 content_plugin_version#:#Inhalt zuletzt bearbeitet mit Version
@@ -103,7 +97,6 @@ selected_files_label#:#Ausgewählte Dateien
 chat_limitations_info#:#<strong>Chat-Limitierungen & Empfehlungen:</strong><br>• <strong>Dateigröße:</strong> Maximal 5MB pro Datei<br>• <strong>Anhänge:</strong> Maximal 5 Dateien pro Nachricht<br>• <strong>PDF-Seiten:</strong> 20 Seiten werden pro PDF verarbeitet<br>• <strong>Nachrichtenlänge:</strong> Konfigurierbar (Standard: 2000 Zeichen)<br>• <strong>Chat-Gedächtnis:</strong> Konfigurierbar (Standard: 10 Nachrichten)<br>• <strong>Empfehlung:</strong> Für beste Ergebnisse verwenden Sie hochauflösende Bilder und klar strukturierte PDFs
 file_processing_info#:#<strong>Dateiverarbeitung:</strong><br>• <strong>Bilder:</strong> Automatische Optimierung auf 1024px, JPEG 85% Qualität<br>• <strong>PDFs:</strong> Conversion zu Bildern für OCR-Textanalyse<br>• <strong>Textdateien:</strong> Direkter Inhalt wird dem System-Prompt hinzugefügt
 usage_recommendations#:#<strong>Verwendungsempfehlungen:</strong><br>• Verwenden Sie spezifische System-Prompts für bessere Ergebnisse<br>• Aktivieren Sie Seitenkontext für kontextbezogene Antworten<br>• Begrenzen Sie große PDFs auf wesentliche Seiten<br>• Verwenden Sie persistente Chats für längere Unterhaltungen
-// Configuration GUI - Deutsche Übersetzungen (v1.0.6)
 config_title#:#AIChatPageComponent Konfiguration
 config_info#:#Konfigurieren Sie globale Standardwerte, die für alle von Benutzern erstellten AI Chat-Komponenten plattformweit angewendet werden.
 config_defaults_title#:#Standard-Werte
@@ -126,21 +119,21 @@ config_service_ramses_enabled#:#RAMSES Service aktivieren
 config_service_ramses_enabled_info#:#RAMSES (Universität zu Köln Mistral) Service für Auswahl verfügbar machen
 config_service_openai_enabled#:#OpenAI Service aktivieren
 config_service_openai_enabled_info#:#OpenAI GPT Service für Auswahl verfügbar machen
-// OpenAI Configuration
 config_openai_title#:#OpenAI API Konfiguration
 config_openai_info#:#Konfiguration der OpenAI GPT API-Verbindung und Modelle
-config_openai_api_url#:#OpenAI API Basis-URL
-config_openai_api_url_info#:#Basis-URL für OpenAI API-Endpunkte (z.B. https://api.openai.com). Spezifische Endpunkte wie /v1/chat/completions oder /v1/models werden automatisch angehängt.
-config_openai_api_token#:#OpenAI API Token
-config_openai_api_token_info#:#API-Token für die Authentifizierung bei OpenAI
-config_openai_selected_model#:#Ausgewähltes OpenAI Modell
-config_openai_selected_model_info#:#Wählen Sie das OpenAI GPT-Modell für neue Chat-Instanzen
-config_openai_streaming#:#OpenAI Streaming aktivieren
-config_openai_streaming_info#:#Streaming-Antworten für OpenAI GPT aktivieren
-// Configuration Tabs
+config_force_default_ai_service#:#Standard AI-Service erzwingen
+config_force_default_ai_service_info#:#Wenn aktiviert, werden alle Chat-Instanzen gezwungen, den oben ausgewählten Standard AI-Service zu verwenden. Benutzer können keinen anderen Service wählen.
 tab_general_config#:#Allgemeine Konfiguration
 tab_ramses_config#:#RAMSES API
 tab_openai_config#:#OpenAI API
+config_service_enabled#:#Service aktivieren
+config_service_enabled_info#:#Wenn aktiviert, steht dieser Service als KI-Service-Option für Chat-Instanzen zur Verfügung
+config_api_url#:#API Basis-URL
+config_api_url_info#:#Basis-URL für API-Endpunkte. Spezifische Endpunkte wie /v1/chat/completions oder /v1/models werden automatisch angehängt.
+config_api_token#:#API Token
+config_api_token_info#:#API-Token für die Authentifizierung
+config_selected_model#:#Ausgewähltes Modell
+config_selected_model_info#:#Wählen Sie das KI-Modell für neue Chat-Instanzen
 config_processing_title#:#Verarbeitungs-Limits
 config_processing_info#:#Limits für AI-Verarbeitung und Datenbearbeitung konfigurieren
 config_upload_title#:#Datei-Upload Beschränkungen
@@ -164,26 +157,22 @@ config_ai_service_not_found#:#KI-Dienst nicht konfiguriert
 config_save_error#:#Fehler beim Speichern der Konfiguration
 config_form_invalid#:#Bitte überprüfen Sie Ihre Formular-Eingaben
 config_load_error#:#Fehler beim Laden des Konfigurationsformulars
-// RAMSES API Configuration
 config_ramses_title#:#RAMSES API Konfiguration
 config_ramses_info#:#Konfiguration der RAMSES AI API-Verbindung und verfügbarer Modelle
-config_ramses_api_url#:#RAMSES API Basis-URL
-config_ramses_api_url_info#:#Basis-URL für RAMSES API-Endpunkte (z.B. https://ramses-oski.itcc.uni-koeln.de). Spezifische Endpunkte wie /v1/chat/completions oder /v1/models werden automatisch angehängt.
-config_ramses_api_token#:#RAMSES API Token
-config_ramses_api_token_info#:#API-Token für die Authentifizierung bei RAMSES
-config_ramses_selected_model#:#Ausgewähltes RAMSES Modell
-config_ramses_selected_model_info#:#Wählen Sie das RAMSES AI-Modell für neue Chat-Instanzen
-// RAMSES RAG Konfiguration
-config_ramses_rag_section_title#:#RAG Konfiguration
-config_ramses_rag_section_info#:#Konfiguration von RAMSES RAG (Retrieval-Augmented Generation) für effiziente Dokumentenverarbeitung
-config_ramses_application_id#:#Anwendungs-ID
-config_ramses_application_id_info#:#Anwendungskennung für RAG-Datei-Uploads (z.B. ILIAS)
-config_ramses_instance_id#:#Instanz-ID
-config_ramses_instance_id_info#:#Instanzkennung für RAG-Datei-Uploads (z.B. ilias9)
-config_ramses_rag_allowed_file_types#:#Erlaubte RAG-Dateitypen
-config_ramses_rag_allowed_file_types_info#:#Dateierweiterungen für RAG-Modus-Uploads (kommagetrennt, z.B. txt,md,csv,pdf)
+config_temperature#:#Temperatur
+config_temperature_info#:#Steuert die Zufälligkeit der AI-Antworten (0.0 = deterministisch, 1.0 = kreativ, 2.0 = sehr kreativ). Standard: 0.7. Sie können Komma (1,0) oder Punkt (1.0) als Dezimaltrennzeichen verwenden.
+config_streaming#:#Streaming aktivieren
+config_streaming_info#:#Wenn aktiviert, werden AI-Antworten in Echtzeit während der Generierung gestreamt
+config_file_handling#:#Dateiverarbeitung aktivieren
+config_file_handling_info#:#Wenn aktiviert, kann der AI-Service hochgeladene Dateien und Anhänge verarbeiten
 config_enable_rag#:#RAG-Modus aktivieren
-config_enable_rag_info#:#Wenn aktiviert, werden alle Dateien zu RAMSES RAG-Collections hochgeladen für effizientes Retrieval. Wenn deaktiviert, werden Dateien als Base64 in jeden Request eingebettet. Dateien werden in beiden Fällen in ILIAS gespeichert (für Vorschau, Download, Backup).
+config_enable_rag_info#:#Wenn aktiviert, werden Dateien zu RAG-Collections hochgeladen für effizientes Retrieval. Wenn deaktiviert, werden Dateien als Base64 in jeden Request eingebettet (Multimodal-Modus).
+config_rag_application_id#:#Anwendungs-ID
+config_rag_application_id_info#:#Anwendungskennung für RAG-Datei-Uploads (z.B. ILIAS)
+config_rag_instance_id#:#Instanz-ID
+config_rag_instance_id_info#:#Instanzkennung für RAG-Datei-Uploads (z.B. ilias9)
+config_rag_allowed_file_types#:#Erlaubte RAG-Dateitypen
+config_rag_allowed_file_types_info#:#Dateierweiterungen für RAG-Modus-Uploads (kommagetrennt, z.B. txt,md,csv,pdf)
 config_models_cache_info#:#Verfügbare Modelle
 config_models_cache_info_desc#:#Modelle werden von der RAMSES API geladen und zwischengespeichert
 config_refresh_models_button#:#Modelle von API aktualisieren
@@ -201,16 +190,9 @@ error_max_attachments#:#Maximal %d Anhänge pro Nachricht erlaubt
 error_file_too_large#:#Datei zu groß. Maximale Größe ist %dMB
 error_file_type_not_allowed#:#Dateityp nicht erlaubt: %s
 error_file_upload_failed#:#Datei-Upload fehlgeschlagen: %s
-
-// RAG Mode (Per-Chat Setting)
 enable_rag_label#:#RAG-Modus verwenden
 enable_rag_info#:#Wenn aktiv: Die KI kann in hochgeladenen Dokumenten suchen (nur Text-Dateien: TXT, MD, CSV, PDF). Wenn inaktiv: Die KI kann Bilder analysieren (PNG, JPG, GIF, WEBP, PDF).
 rag_not_supported#:#RAG wird von diesem AI-Service nicht unterstützt
 rag_not_supported_info#:#Der gewählte AI-Service unterstützt keine RAG-Funktionalität
-
-// RAG Mode (Global Config for RAMSES)
-config_ramses_enable_rag#:#RAG-Modus für RAMSES aktivieren
-config_ramses_enable_rag_info#:#Wenn aktiviert, werden Dateien zu RAMSES RAG-Collections hochgeladen für effizientes Abrufen. Wenn deaktiviert, werden Dateien als Base64 in jeden Request eingebettet (multimodaler Modus).
-// RAG Sync Messages
 rag_sync_success#:#%d Dateien wurden erfolgreich zu RAG hochgeladen
 rag_sync_error#:#Fehler beim Synchronisieren der Dateien zu RAG

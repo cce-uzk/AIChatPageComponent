@@ -14,6 +14,12 @@ use platform\AIChatPageComponentException;
  * Provides core functionality for AI language model integrations.
  * Handles message processing, file attachments, RAG mode, and multimodal interactions.
  *
+ * To add a new LLM service:
+ * 1. Create a new class extending this abstract class
+ * 2. Implement all abstract methods (metadata, configuration, capabilities)
+ * 3. Add the class to AIChatPageComponentLLMRegistry::getAvailableServices()
+ * 4. The system will automatically add configuration tab and service selector
+ *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 abstract class AIChatPageComponentLLM
@@ -28,6 +34,93 @@ abstract class AIChatPageComponentLLM
         global $DIC;
         $this->logger = $DIC->logger()->comp('pcaic');
     }
+
+    // ============================================
+    // Service Metadata (MUST be implemented by each service)
+    // ============================================
+
+    /**
+     * Get unique service identifier
+     *
+     * Used for configuration keys, routing, and service selection.
+     * Must be unique across all services.
+     *
+     * @return string Service ID (e.g., 'ramses', 'openai', 'gemini')
+     */
+    abstract public static function getServiceId(): string;
+
+    /**
+     * Get human-readable service name
+     *
+     * Displayed in UI (tabs, dropdowns, etc.)
+     *
+     * @return string Service name (e.g., 'RAMSES', 'OpenAI GPT', 'Google Gemini')
+     */
+    abstract public static function getServiceName(): string;
+
+    /**
+     * Get service description
+     *
+     * Short description shown in configuration
+     *
+     * @return string Service description
+     */
+    abstract public static function getServiceDescription(): string;
+
+    // ============================================
+    // Configuration Management (MUST be implemented by each service)
+    // ============================================
+
+    /**
+     * Get configuration form inputs for this service
+     *
+     * Returns array of ILIAS UI Factory form inputs that will be rendered
+     * in the service's configuration tab.
+     *
+     * @return array Array of form field name => Input component
+     */
+    abstract public function getConfigurationFormInputs(): array;
+
+    /**
+     * Save configuration data for this service
+     *
+     * Called when configuration form is submitted.
+     * Should save all service-specific settings.
+     *
+     * @param array $formData Form data from submission
+     * @return void
+     */
+    abstract public function saveConfiguration(array $formData): void;
+
+    /**
+     * Get default configuration values for this service
+     *
+     * Used during plugin installation and for fallback values.
+     *
+     * @return array Array of config_key => default_value
+     */
+    abstract public static function getDefaultConfiguration(): array;
+
+    // ============================================
+    // Service Capabilities (MUST be implemented by each service)
+    // ============================================
+
+    /**
+     * Get service capabilities
+     *
+     * Describes what features this service supports.
+     * Used for conditional UI rendering and feature availability checks.
+     *
+     * Expected keys:
+     * - 'streaming': bool - Supports streaming responses
+     * - 'rag': bool - Supports RAG mode
+     * - 'multimodal': bool - Supports images/files
+     * - 'file_types': array - Supported file extensions
+     * - 'max_tokens': int|null - Maximum context length
+     *
+     * @return array Service capabilities
+     */
+    abstract public function getCapabilities(): array;
 
     // ============================================
     // Configuration Getters/Setters
@@ -61,6 +154,35 @@ abstract class AIChatPageComponentLLM
     public function setStreaming(bool $streaming): void
     {
         $this->streaming = $streaming;
+    }
+
+    /**
+     * Check if file handling is enabled for this AI service (hierarchical check)
+     *
+     * @param string $aiService AI service identifier (ramses|openai)
+     * @return bool True if file handling should be used, false otherwise
+     */
+    protected function isFileHandlingEnabledForService(string $aiService): bool
+    {
+        // 1. Check central/global file handling setting
+        $global_file_handling = \platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1';
+        if ($global_file_handling !== '1') {
+            return false; // Centrally disabled
+        }
+
+        // 2. Check service-specific file handling setting
+        $service_file_handling_key = $aiService . '_file_handling_enabled';
+        $service_file_handling = \platform\AIChatPageComponentConfig::get($service_file_handling_key);
+
+        // Default values: Both RAMSES and OpenAI enabled by default
+        $default_file_handling = '1';
+        $service_file_handling = $service_file_handling ?? $default_file_handling;
+
+        if ($service_file_handling !== '1') {
+            return false; // Service-specific disabled
+        }
+
+        return true; // Both conditions met
     }
 
     // ============================================
@@ -104,15 +226,29 @@ abstract class AIChatPageComponentLLM
             $this->setPrompt($chatConfig->getSystemPrompt());
             $this->setMaxMemoryMessages($chatConfig->getMaxMemory());
 
+            // Check hierarchical file handling (global → service)
+            $ai_service = $chatConfig->getAiService();
+            $fileHandlingEnabled = $this->isFileHandlingEnabledForService($ai_service);
+
             // Check if we should use RAG (service + global + chat settings)
             // This must be determined BEFORE processing background files!
-            $collectionIds = $this->getAllRAGCollectionIds($chatConfig);
-            $useRAG = $this->isRagEnabledForChat($chatConfig) && !empty($collectionIds);
+            // RAG requires file handling to be enabled
+            $collectionIds = [];
+            $useRAG = false;
+            if ($fileHandlingEnabled) {
+                $collectionIds = $this->getAllRAGCollectionIds($chatConfig);
+                $useRAG = $this->isRagEnabledForChat($chatConfig) && !empty($collectionIds);
+            }
 
-            // Process background files as context
+            // Process background files as context (only if file handling is enabled)
             // In RAG mode: Skip PDFs (they're already in the collection)
             // In Multimodal mode: Convert PDFs to images
-            $contextResources = $this->processBackgroundFiles($chatConfig, $useRAG);
+            $contextResources = [];
+            if ($fileHandlingEnabled) {
+                $contextResources = $this->processBackgroundFiles($chatConfig, $useRAG);
+            } else {
+                $this->logger->debug("File handling disabled - skipping background files processing");
+            }
 
             // Add page context if enabled
             if ($chatConfig->isIncludePageContext()) {
@@ -129,10 +265,10 @@ abstract class AIChatPageComponentLLM
 
             // Convert recent messages to AI format
             $recent_limit = min($chatConfig->getMaxMemory(), 20);
-            $aiMessages = $this->processChatMessages($session, $recent_limit, $useRAG);
+            $aiMessages = $this->processChatMessages($session, $recent_limit, $useRAG, $fileHandlingEnabled);
 
-            // Sync chat attachments to RAG if RAG is enabled
-            if ($useRAG) {
+            // Sync chat attachments to RAG if RAG is enabled AND file handling is enabled
+            if ($useRAG && $fileHandlingEnabled) {
                 $this->logger->debug("RAG mode active, checking for chat attachments to sync");
                 $sync_stats = $this->syncChatAttachmentsToRAG($session, $recent_limit);
                 if ($sync_stats['uploaded'] > 0) {
@@ -298,9 +434,10 @@ abstract class AIChatPageComponentLLM
      * @param ChatSession $session User session
      * @param int $limit Maximum number of recent messages
      * @param bool $ragMode Whether RAG mode is active
+     * @param bool $fileHandlingEnabled Whether file handling is enabled (hierarchical check)
      * @return array AI-formatted messages array
      */
-    protected function processChatMessages(ChatSession $session, int $limit = 10, bool $ragMode = false): array
+    protected function processChatMessages(ChatSession $session, int $limit = 10, bool $ragMode = false, bool $fileHandlingEnabled = true): array
     {
         $aiMessages = [];
 
@@ -310,6 +447,16 @@ abstract class AIChatPageComponentLLM
             foreach ($recentMessages as $msg) {
                 $content = $msg->getMessage();
                 $attachments = $msg->getAttachments();
+
+                // Skip attachment processing if file handling is disabled
+                if (!$fileHandlingEnabled) {
+                    // File handling disabled: Text-only messages
+                    $aiMessages[] = [
+                        'role' => $msg->getRole(),
+                        'content' => $content
+                    ];
+                    continue; // Skip to next message
+                }
 
                 // In RAG mode: Skip attachments (they're either in collection or incompatible)
                 // In Multimodal mode: Process attachments as Base64
@@ -562,6 +709,26 @@ abstract class AIChatPageComponentLLM
     {
         $types = $this->getAllowedFileTypes($ragEnabled);
         return implode(', ', array_map(fn($type) => strtoupper($type), $types));
+    }
+
+    // ============================================
+    // Model Parameters
+    // ============================================
+
+    /**
+     * Get model-specific API parameters
+     *
+     * Override in subclasses to customize parameters for specific models/services.
+     * Some models don't support certain parameters (e.g., OpenAI o1 doesn't support temperature).
+     *
+     * @return array Associative array of API parameters (temperature, top_p, etc.)
+     */
+    protected function getModelParameters(): array
+    {
+        // Default parameters - override in subclasses if needed
+        return [
+            'temperature' => 0.7
+        ];
     }
 
     // ============================================

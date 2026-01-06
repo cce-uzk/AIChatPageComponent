@@ -20,8 +20,7 @@ $logger = $DIC->logger()->root();
 require_once(__DIR__ . '/classes/platform/class.AIChatPageComponentConfig.php');
 require_once(__DIR__ . '/classes/platform/class.AIChatPageComponentException.php');
 require_once(__DIR__ . '/classes/ai/class.AIChatPageComponentLLM.php');
-require_once(__DIR__ . '/classes/ai/class.AIChatPageComponentRAMSES.php');
-require_once(__DIR__ . '/classes/ai/class.AIChatPageComponentOpenAI.php');
+require_once(__DIR__ . '/classes/ai/class.AIChatPageComponentLLMRegistry.php');
 require_once(__DIR__ . '/src/Model/ChatConfig.php');
 require_once(__DIR__ . '/src/Model/ChatSession.php');
 require_once(__DIR__ . '/src/Model/ChatMessage.php');
@@ -105,8 +104,8 @@ try {
                 exit;
             }
 
-            // Create LLM instance and delegate
-            $llm = createLLMInstance($chatConfig->getAiService());
+            // Create LLM instance and delegate (respect force default service)
+            $llm = createLLMInstance(getEffectiveAiService($chatConfig));
             $llm->setStreaming(false);
 
             $response = $llm->handleSendMessage($chat_id, $user_id, $message, $attachment_ids);
@@ -148,9 +147,15 @@ try {
                 exit;
             }
 
+            // Get effective AI service (respects force default)
+            $aiService = getEffectiveAiService($chatConfig);
+
+            // Check hierarchical streaming settings (central → LLM → chat)
+            $streamingEnabled = isStreamingEnabledForChat($chatConfig, $aiService);
+
             // Create LLM instance and delegate
-            $llm = createLLMInstance($chatConfig->getAiService());
-            $llm->setStreaming(true);
+            $llm = createLLMInstance($aiService);
+            $llm->setStreaming($streamingEnabled);
 
             echo "data: " . json_encode(['type' => 'start']) . "\n\n";
             flush();
@@ -179,6 +184,13 @@ try {
                 exit;
             }
 
+            // Check hierarchical file handling (global → service)
+            $aiService = getEffectiveAiService($chatConfig);
+            if (!isFileHandlingEnabledForService($aiService)) {
+                echo json_encode(['error' => 'File handling is disabled for this AI service']);
+                exit;
+            }
+
             // Validate file upload
             $upload_info = $_FILES['file'];
             if ($upload_info['error'] !== UPLOAD_ERR_OK) {
@@ -187,7 +199,7 @@ try {
             }
 
             // Get LLM instance and check if RAG is enabled (service + global + chat)
-            $llm = createLLMInstance($chatConfig->getAiService());
+            $llm = createLLMInstance(getEffectiveAiService($chatConfig));
             $rag_enabled = isRagEnabledForChat($chatConfig, $llm);
 
             // Validate file type based on RAG mode
@@ -234,7 +246,7 @@ try {
                 $attachment->save();
 
                 // Check if we should upload to RAG (use chat-specific setting)
-                $llm = createLLMInstance($chatConfig->getAiService());
+                $llm = createLLMInstance(getEffectiveAiService($chatConfig));
                 $enable_rag = $chatConfig->isEnableRag() && $llm->supportsRAG();
 
                 // Get file info
@@ -449,7 +461,7 @@ try {
             }
 
             $chatConfig = new ChatConfig($chat_id);
-            $ai_service = $chatConfig->getAiService();
+            $ai_service = getEffectiveAiService($chatConfig);
 
             // Get LLM instance and check if RAG is enabled (service + global + chat)
             $llm = createLLMInstance($ai_service);
@@ -458,11 +470,19 @@ try {
             // Get allowed file types from LLM service based on actual RAG mode
             $allowed_extensions = $llm->getAllowedFileTypes($rag_enabled);
 
+            // Check hierarchical streaming settings (central → LLM → chat)
+            $streaming_enabled = isStreamingEnabledForChat($chatConfig, $ai_service);
+
+            // Check hierarchical file handling settings (central → LLM)
+            $file_handling_enabled = isFileHandlingEnabledForService($ai_service);
+
             echo json_encode([
                 'success' => true,
-                'upload_enabled' => $upload_enabled,
+                'upload_enabled' => $upload_enabled && $file_handling_enabled,
                 'allowed_extensions' => $allowed_extensions,
                 'rag_mode' => $rag_enabled,
+                'streaming_enabled' => $streaming_enabled,
+                'file_handling_enabled' => $file_handling_enabled,
                 'max_file_size_mb' => (int)(\platform\AIChatPageComponentConfig::get('max_upload_size_mb') ?: 10),
                 'max_attachments_per_message' => (int)(\platform\AIChatPageComponentConfig::get('max_attachments_per_message') ?: 5),
                 'max_char_limit' => (int)(\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000),
@@ -522,21 +542,125 @@ try {
 }
 
 /**
- * Create LLM instance based on service name
+ * Get effective AI service for a chat, respecting force default setting
  *
- * @param string $service Service identifier (ramses|openai)
+ * @param ChatConfig $chatConfig Chat configuration
+ * @return string Service identifier (e.g., ramses, openai, claude, etc.)
+ */
+function getEffectiveAiService(ChatConfig $chatConfig): string
+{
+    // Check if force default service is enabled
+    $force_default = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
+
+    if ($force_default === '1') {
+        // Force default service for all chats
+        return \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
+    }
+
+    // Use chat's configured service
+    return $chatConfig->getAiService();
+}
+
+/**
+ * Create LLM instance based on service name using LLMRegistry
+ *
+ * @param string $service Service identifier (e.g., ramses, openai, claude, etc.)
  * @return \ai\AIChatPageComponentLLM LLM instance
+ * @throws \Exception If service not found in registry
  */
 function createLLMInstance(string $service): \ai\AIChatPageComponentLLM
 {
-    switch ($service) {
-        case 'ramses':
-            return \ai\AIChatPageComponentRAMSES::fromConfig();
-        case 'openai':
-            return \ai\AIChatPageComponentOpenAI::fromConfig();
-        default:
-            return \ai\AIChatPageComponentRAMSES::fromConfig();
+    // Use LLMRegistry to dynamically create service instance
+    $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($service);
+
+    if ($instance === null) {
+        // Fallback to first available service if requested service not found
+        $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+        if (empty($availableServices)) {
+            throw new \Exception("No AI services available in registry");
+        }
+
+        $firstService = array_key_first($availableServices);
+        $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService);
+
+        if ($instance === null) {
+            throw new \Exception("Failed to create fallback AI service: {$firstService}");
+        }
     }
+
+    return $instance;
+}
+
+/**
+ * Check if streaming is enabled for this chat
+ *
+ * Streaming requires ALL three conditions to be met:
+ * 1. Streaming globally enabled (central setting for all LLMs)
+ * 2. Streaming enabled for the specific AI service (LLM-specific)
+ * 3. Streaming enabled for the specific chat
+ *
+ * @param ChatConfig $chatConfig Chat configuration
+ * @param string $aiService AI service identifier (e.g., ramses, openai, claude, etc.)
+ * @return bool True if streaming should be used, false otherwise
+ */
+function isStreamingEnabledForChat(ChatConfig $chatConfig, string $aiService): bool
+{
+    // 1. Check central/global streaming setting (applies to all LLMs)
+    $global_streaming = \platform\AIChatPageComponentConfig::get('enable_streaming') ?: '1';
+    if ($global_streaming !== '1') {
+        return false; // Centrally disabled
+    }
+
+    // 2. Check LLM-specific streaming setting
+    $llm_streaming_key = $aiService . '_streaming_enabled';
+    $llm_streaming = \platform\AIChatPageComponentConfig::get($llm_streaming_key);
+
+    // Default: enabled for all services (can be disabled per service in config)
+    $llm_streaming = $llm_streaming ?? '1';
+
+    if ($llm_streaming !== '1') {
+        return false; // LLM-specific disabled
+    }
+
+    // 3. Check chat-specific streaming setting
+    if (!$chatConfig->isEnableStreaming()) {
+        return false; // Chat-specific disabled
+    }
+
+    return true; // All three conditions met
+}
+
+/**
+ * Check if file handling is enabled for this AI service
+ *
+ * File handling requires both conditions to be met:
+ * 1. File handling globally enabled (central setting for all services)
+ * 2. File handling enabled for the specific AI service
+ *
+ * @param string $aiService AI service identifier (e.g., ramses, openai, claude, etc.)
+ * @return bool True if file handling should be used, false otherwise
+ */
+function isFileHandlingEnabledForService(string $aiService): bool
+{
+    // 1. Check central/global file handling setting
+    $global_file_handling = \platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1';
+    if ($global_file_handling !== '1') {
+        return false; // Centrally disabled
+    }
+
+    // 2. Check service-specific file handling setting
+    $service_file_handling_key = $aiService . '_file_handling_enabled';
+    $service_file_handling = \platform\AIChatPageComponentConfig::get($service_file_handling_key);
+
+    // Default values: Both RAMSES and OpenAI enabled by default
+    $default_file_handling = '1';
+    $service_file_handling = $service_file_handling ?? $default_file_handling;
+
+    if ($service_file_handling !== '1') {
+        return false; // Service-specific disabled
+    }
+
+    return true; // Both conditions met
 }
 
 /**
@@ -557,7 +681,7 @@ function isRagEnabledForChat(ChatConfig $chatConfig, \ai\AIChatPageComponentLLM 
         return false;
     }
 
-    $ai_service = $chatConfig->getAiService();
+    $ai_service = getEffectiveAiService($chatConfig);
     $rag_config_key = $ai_service . '_enable_rag';
     $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
     $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
