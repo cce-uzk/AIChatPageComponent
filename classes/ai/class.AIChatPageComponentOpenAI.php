@@ -461,16 +461,19 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         $errMsg = curl_error($curlSession);
         curl_close($curlSession);
 
-        if ($errNo) {
+        // Handle curl_exec returning false on failure
+        if ($response === false || $errNo) {
             if ($this->logger) {
-                $this->logger->error("OpenAI cURL Error", [
-                    'error_no' => $errNo,
-                    'error_msg' => $errMsg,
-                    'api_url' => $apiUrl,
+                $this->logger->error("OpenAI cURL execution failed", [
+                    'curl_error' => $errMsg,
+                    'curl_errno' => $errNo,
+                    'url' => $apiUrl,
+                    'total_time' => round($totalTime, 3),
+                    'connect_time' => round($connectTime, 3),
                     'has_api_key' => !empty($this->apiKey)
                 ]);
             }
-            throw new AIChatPageComponentException("HTTP Error: " . $errMsg);
+            throw new AIChatPageComponentException("cURL Error: " . $errMsg, $errNo);
         }
 
         if ($httpcode != 200) {

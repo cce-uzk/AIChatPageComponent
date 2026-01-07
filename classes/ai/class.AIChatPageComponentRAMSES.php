@@ -31,7 +31,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     private const ENDPOINT_MODELS = '/v1/models';
 
     /** @var string RAG chat completions endpoint */
-    private const ENDPOINT_RAG_CHAT = '/v1/rag/chat/completions';
+    private const ENDPOINT_RAG_CHAT = '/v1/rag/completions';
 
     /** @var string RAG file upload endpoint */
     private const ENDPOINT_RAG_UPLOAD = '/v1/rag/upload';
@@ -528,19 +528,31 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         $error = curl_error($curl);
         curl_close($curl);
 
-        $this->logger->debug("RAMSES RAG Upload Response: HTTP $httpCode | File: $filename | Size: " . filesize($filepath) . " | Response: " . substr($response, 0, 500));
+        // Handle curl_exec returning false on failure
+        if ($response === false) {
+            $this->logger->error("RAMSES RAG cURL execution failed", [
+                'curl_error' => $error,
+                'url' => $fileUploadUrl,
+                'entity_id' => $entityId,
+                'filename' => $filename
+            ]);
+            throw new AIChatPageComponentException("RAG file upload failed: cURL error - $error");
+        }
+
+        $responsePreview = is_string($response) ? substr($response, 0, 500) : '(non-string response)';
+        $this->logger->debug("RAMSES RAG Upload Response: HTTP $httpCode | File: $filename | Size: " . filesize($filepath) . " | Response: " . $responsePreview);
 
         if ($httpCode !== 200) {
             error_log("RAMSES RAG Upload Failed - HTTP $httpCode");
             error_log("cURL Error: " . $error);
-            error_log("Response: " . substr($response, 0, 1000));
+            error_log("Response: " . (is_string($response) ? substr($response, 0, 1000) : '(non-string)'));
             error_log("URL: " . $fileUploadUrl);
             error_log("Entity ID: " . $entityId);
 
             $this->logger->error("RAMSES RAG file upload failed", [
                 'http_code' => $httpCode,
                 'curl_error' => $error,
-                'response' => substr($response, 0, 500),
+                'response' => $responsePreview,
                 'url' => $fileUploadUrl,
                 'entity_id' => $entityId
             ]);
@@ -610,7 +622,18 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
 
         $response = curl_exec($curl);
         $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $error = curl_error($curl);
         curl_close($curl);
+
+        // Handle curl_exec returning false on failure
+        if ($response === false) {
+            $this->logger->error("RAMSES RAG cURL execution failed during deletion", [
+                'curl_error' => $error,
+                'remote_file_id' => $remoteFileId,
+                'entity_id' => $entityId
+            ]);
+            return false;
+        }
 
         // Accept 200, 204, and 400 (Moodle compatibility - see chatclient.php:370)
         $success = in_array($httpCode, [200, 204, 400]);
@@ -622,9 +645,11 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                 'http_code' => $httpCode
             ]);
         } else {
+            $responsePreview = is_string($response) ? substr($response, 0, 500) : '(non-string response)';
             $this->logger->warning("RAMSES RAG file deletion failed", [
                 'http_code' => $httpCode,
-                'response' => $response
+                'response' => $responsePreview,
+                'curl_error' => $error
             ]);
         }
 
@@ -934,8 +959,16 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         $errMsg = curl_error($curlSession);
         curl_close($curlSession);
 
-        if ($errNo) {
-            throw new AIChatPageComponentException("HTTP Error: " . $errMsg);
+        // Handle curl_exec returning false on failure
+        if ($response === false || $errNo) {
+            $this->logger->error("RAMSES API cURL execution failed", [
+                'curl_error' => $errMsg,
+                'curl_errno' => $errNo,
+                'url' => $apiUrl,
+                'total_time' => round($totalTime, 3),
+                'connect_time' => round($connectTime, 3)
+            ]);
+            throw new AIChatPageComponentException("cURL Error: " . $errMsg, $errNo);
         }
 
         if ($httpcode != 200) {
