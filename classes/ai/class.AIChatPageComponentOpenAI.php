@@ -596,4 +596,144 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             throw new AIChatPageComponentException("Failed to create OpenAI instance from plugin config: " . $e->getMessage());
         }
     }
+
+    /**
+     * Refresh available models from OpenAI API
+     *
+     * @return array ['success' => bool, 'message' => string, 'models' => array|null]
+     */
+    public function refreshModels(): array
+    {
+        $plugin = \ilAIChatPageComponentPlugin::getInstance();
+
+        try {
+            // Use endpoint URL from constant
+            $models_api_url = $this->getEndpointUrl(self::ENDPOINT_MODELS);
+
+            $api_token = \platform\AIChatPageComponentConfig::get('openai_api_token');
+
+            // Handle potential Password object conversion
+            if (is_object($api_token) && method_exists($api_token, 'toString')) {
+                $api_token = $api_token->toString();
+            }
+
+            if (empty($api_token)) {
+                return [
+                    'success' => false,
+                    'message' => $plugin->txt('refresh_models_no_token'),
+                    'models' => null
+                ];
+            }
+
+            // Fetch models from OpenAI API
+            $ch = curl_init();
+
+            curl_setopt($ch, CURLOPT_URL, $models_api_url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: Bearer ' . $api_token,
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+            // Handle proxy settings
+            if (class_exists('ilProxySettings') && \ilProxySettings::_getInstance()->isActive()) {
+                $proxyHost = \ilProxySettings::_getInstance()->getHost();
+                $proxyPort = \ilProxySettings::_getInstance()->getPort();
+                $proxyURL = $proxyHost . ":" . $proxyPort;
+                curl_setopt($ch, CURLOPT_PROXY, $proxyURL);
+            }
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            // Handle curl_exec returning false on failure
+            if ($response === false) {
+                if ($this->logger) {
+                    $this->logger->error("OpenAI models API cURL execution failed", [
+                        'curl_error' => $error,
+                        'url' => $models_api_url
+                    ]);
+                }
+                return [
+                    'success' => false,
+                    'message' => $plugin->txt('refresh_models_api_error') . ': cURL ' . $error,
+                    'models' => null
+                ];
+            }
+
+            if ($httpCode === 200 && $response) {
+                $models_response = json_decode($response, true);
+
+                // OpenAI uses format: {object: "list", data: [{id: "gpt-4", ...}, ...]}
+                if (isset($models_response['data']) && is_array($models_response['data'])) {
+                    $models = [];
+                    foreach ($models_response['data'] as $model) {
+                        $model_id = $model['id'] ?? null;
+                        // Filter to only include GPT chat models
+                        if ($model_id && (strpos($model_id, 'gpt-') === 0 || strpos($model_id, 'chatgpt-') === 0)) {
+                            // Create human-readable name from ID
+                            $model_name = ucwords(str_replace(['-', '_'], ' ', $model_id));
+                            $models[$model_id] = $model_name;
+                        }
+                    }
+
+                    if (!empty($models)) {
+                        // Cache models and timestamp
+                        \platform\AIChatPageComponentConfig::set('openai_cached_models', $models);
+                        \platform\AIChatPageComponentConfig::set('openai_models_cache_time', time());
+
+                        return [
+                            'success' => true,
+                            'message' => $plugin->txt('refresh_models_success') . ' (' . count($models) . ' ' . $plugin->txt('refresh_models_count') . ')',
+                            'models' => $models
+                        ];
+                    } else {
+                        return [
+                            'success' => false,
+                            'message' => $plugin->txt('refresh_models_no_models'),
+                            'models' => null
+                        ];
+                    }
+                } else {
+                    return [
+                        'success' => false,
+                        'message' => $plugin->txt('refresh_models_invalid_response'),
+                        'models' => null
+                    ];
+                }
+            } else {
+                $error_msg = $plugin->txt('refresh_models_api_error') . ' (HTTP ' . $httpCode . ')';
+                if ($error) {
+                    $error_msg .= ': ' . $error;
+                }
+
+                // Add debug information for HTTP 401
+                if ($httpCode === 401) {
+                    $error_msg .= ' - ' . $plugin->txt('refresh_models_no_token');
+                    if ($this->logger) {
+                        $this->logger->error("OpenAI Models API 401 Error", [
+                            'api_url' => $models_api_url,
+                            'token_length' => strlen($api_token),
+                            'token_starts_with' => substr($api_token, 0, 8) . '...'
+                        ]);
+                    }
+                }
+
+                return [
+                    'success' => false,
+                    'message' => $error_msg,
+                    'models' => null
+                ];
+            }
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => $plugin->txt('refresh_models_exception') . ': ' . $e->getMessage(),
+                'models' => null
+            ];
+        }
+    }
 }

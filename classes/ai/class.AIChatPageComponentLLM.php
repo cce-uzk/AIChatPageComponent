@@ -819,6 +819,23 @@ abstract class AIChatPageComponentLLM
         throw new AIChatPageComponentException("sendRagChat() not implemented in " . get_class($this));
     }
 
+    /**
+     * Refresh available models from API
+     *
+     * Fetches the list of available models from the service's API endpoint,
+     * caches them, and returns success/error information.
+     *
+     * @return array ['success' => bool, 'message' => string, 'models' => array|null]
+     */
+    public function refreshModels(): array
+    {
+        return [
+            'success' => false,
+            'message' => 'Model refresh not implemented for ' . static::getServiceName(),
+            'models' => null
+        ];
+    }
+
     public function getRecommendedFileHandlingMode(): string
     {
         if ($this->supportsRAG()) {

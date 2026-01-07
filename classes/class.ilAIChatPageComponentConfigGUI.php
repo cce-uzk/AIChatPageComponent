@@ -2,17 +2,17 @@
 
 /**
  * AIChatPageComponent Configuration GUI
- * 
+ *
  * Provides plugin-wide administrative configuration interface.
  * Allows administrators to set default values, enable/disable AI services,
  * and configure file upload constraints that apply across all chat instances.
- * 
+ *
  * This configuration acts as fallback defaults when the central AIChat plugin
  * is not available, and as admin-controlled platform-wide settings.
  *
  * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  * @version 1.0
- * 
+ *
  * @ilCtrl_IsCalledBy  ilAIChatPageComponentConfigGUI: ilObjComponentSettingsGUI
  */
 class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
@@ -24,7 +24,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
     public function __construct()
     {
         global $DIC;
-        
+
         $this->dic = $DIC;
         $this->ctrl = $DIC->ctrl();
         $this->plugin = ilAIChatPageComponentPlugin::getInstance();
@@ -130,7 +130,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
     /**
      * Build general configuration form (main tab)
-     * 
+     *
      * @return string Rendered HTML form
      * @throws \Exception If form building fails
      */
@@ -157,7 +157,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
         // AI Service Selection Section
         $inputs[] = $ui_factory->input()->field()->section(
-            $this->buildAiServiceSelectionInputs(), 
+            $this->buildAiServiceSelectionInputs(),
             $this->plugin->txt('config_services_title'),
             $this->plugin->txt('config_services_info')
         );
@@ -168,7 +168,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             $this->plugin->txt('config_upload_title'),
             $this->plugin->txt('config_upload_info')
         );
-        
+
         // File Upload Restrictions Section
         $inputs[] = $ui_factory->input()->field()->section(
             $this->buildFileUploadRestrictionsInputs(),
@@ -187,7 +187,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
     /**
      * Build configuration form using modern ILIAS 9 UI components (DEPRECATED)
-     * 
+     *
      * @deprecated Use tab-specific methods instead
      * @return string Rendered HTML form
      * @throws \Exception If form building fails
@@ -196,7 +196,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
     /**
      * Build default values input fields for new chat instances
      * Contains system prompt and disclaimer only
-     * 
+     *
      * @return array UI input components for default configuration
      */
     private function buildDefaultValuesInputs(): array
@@ -224,7 +224,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
     /**
      * Build processing limits input fields for AI constraints
      * Contains char limit, memory, PDF pages, and compressed image data limits
-     * 
+     *
      * @return array UI input components for processing configuration
      */
     private function buildProcessingLimitsInputs(): array
@@ -272,20 +272,20 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
     /**
      * Build RAMSES API configuration input fields
-     * 
+     *
      * @return array UI input components for RAMSES API configuration
      */
 
     /**
      * Get available models from cache only (no API calls)
      * Models are only fetched when user clicks the refresh button
-     * 
+     *
      * @return array Available models for dropdown
      */
 
     /**
      * Build AI service selection input fields
-     * 
+     *
      * @return array UI input components for service selection
      */
     private function buildAiServiceSelectionInputs(): array
@@ -326,7 +326,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
     /**
      * Build OpenAI API configuration input fields
-     * 
+     *
      * @return array UI input components for OpenAI API configuration
      */
 
@@ -339,7 +339,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
     /**
      * Build file upload constraint input fields
-     * 
+     *
      * @return array UI input components for file upload limits
      */
     private function buildUploadConstraintsInputs(): array
@@ -483,32 +483,32 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         try {
             // Build form structure matching buildGeneralConfigurationForm()
             $inputs = [];
-            
+
             // Only General Configuration sections (no RAMSES/OpenAI here)
             $inputs[] = $ui_factory->input()->field()->section(
                 $this->buildDefaultValuesInputs(),
                 $this->plugin->txt('config_defaults_title'),
                 $this->plugin->txt('config_defaults_info')
             );
-            
+
             $inputs[] = $ui_factory->input()->field()->section(
                 $this->buildProcessingLimitsInputs(),
                 $this->plugin->txt('config_processing_title'),
                 $this->plugin->txt('config_processing_info')
             );
-            
+
             $inputs[] = $ui_factory->input()->field()->section(
                 $this->buildAiServiceSelectionInputs(),
                 $this->plugin->txt('config_services_title'),
                 $this->plugin->txt('config_services_info')
             );
-            
+
             $inputs[] = $ui_factory->input()->field()->section(
                 $this->buildUploadConstraintsInputs(),
                 $this->plugin->txt('config_upload_title'),
                 $this->plugin->txt('config_upload_info')
             );
-            
+
             $inputs[] = $ui_factory->input()->field()->section(
                 $this->buildFileUploadRestrictionsInputs(),
                 $this->plugin->txt('config_file_restrictions_title'),
@@ -535,10 +535,10 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 } catch (\Exception $e) {
                     // Ignore logging errors
                 }
-                
+
                 // Extract data from sections (match buildGeneralConfigurationForm order)
                 $defaults_data = $data[0] ?? [];        // buildDefaultValuesInputs
-                $processing_data = $data[1] ?? [];      // buildProcessingLimitsInputs  
+                $processing_data = $data[1] ?? [];      // buildProcessingLimitsInputs
                 $services_data = $data[2] ?? [];        // buildAiServiceSelectionInputs
                 $constraints_data = $data[3] ?? [];     // buildUploadConstraintsInputs
                 $restrictions_data = $data[4] ?? [];    // buildFileUploadRestrictionsInputs
@@ -581,7 +581,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 }
 
                 // OpenAI configuration is handled in separate OpenAI tab
-                
+
                 // Save upload constraints
                 if (isset($constraints_data['max_file_size_mb'])) {
                     \platform\AIChatPageComponentConfig::set('max_file_size_mb', (int)$constraints_data['max_file_size_mb']);
@@ -592,7 +592,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 if (isset($constraints_data['max_total_upload_size_mb'])) {
                     \platform\AIChatPageComponentConfig::set('max_total_upload_size_mb', (int)$constraints_data['max_total_upload_size_mb']);
                 }
-                
+
                 // Save file upload restrictions (OptionalGroup structure)
                 // Note: Transformation returns array with 'enabled' key
                 $file_restrictions_value = $restrictions_data['file_restrictions'] ?? ['enabled' => false];
@@ -611,15 +611,15 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 }
 
                 $this->dic->ui()->mainTemplate()->setOnScreenMessage('success', $this->plugin->txt('config_saved_success'));
-                
+
             } else {
                 $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $this->plugin->txt('config_form_invalid'));
             }
-                
+
         } catch (\Exception $e) {
             $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $this->plugin->txt('config_save_error') . ': ' . $e->getMessage());
         }
-        
+
         $this->showConfigurationForm('general');
     }
 
@@ -802,40 +802,41 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
      */
     private function refreshServiceModels(string $serviceId): void
     {
-        // For now, delegate to service-specific methods if they exist
-        // This allows for custom model refresh logic per service
-        $serviceIdCap = ucfirst($serviceId);
-        $methodName = "refresh{$serviceIdCap}Models";
+        try {
+            // Create bare service instance (without full config validation)
+            $service = \ai\AIChatPageComponentLLMRegistry::createBareServiceInstance($serviceId);
 
-        if (method_exists($this, $methodName)) {
-            $this->$methodName();
-        } else {
+            if ($service === null) {
+                $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                    'failure',
+                    "Unknown service: {$serviceId}"
+                );
+                $this->showConfigurationForm($serviceId);
+                return;
+            }
+
+            // Call the service's refreshModels method
+            $result = $service->refreshModels();
+
+            // Display result message
+            if ($result['success']) {
+                $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                    'success',
+                    $result['message']
+                );
+            } else {
+                $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                    'failure',
+                    $result['message']
+                );
+            }
+        } catch (\Exception $e) {
             $this->dic->ui()->mainTemplate()->setOnScreenMessage(
-                'info',
-                "Model refresh not implemented for service: {$serviceId}"
+                'failure',
+                $this->plugin->txt('refresh_models_exception') . ': ' . $e->getMessage()
             );
-            $this->showConfigurationForm($serviceId);
         }
+
+        $this->showConfigurationForm($serviceId);
     }
-
-    // ============================================
-    // LEGACY Service-Specific Methods (Kept for backward compatibility)
-    // ============================================
-
-    /**
-     * Save RAMSES configuration settings
-     * @deprecated Use saveServiceConfiguration('ramses') instead
-     */
-
-    /**
-     * Save OpenAI configuration settings
-     */
-
-    /**
-     * Refresh RAMSES models from API
-     */
-
-    /**
-     * Refresh OpenAI models from API
-     */
 }

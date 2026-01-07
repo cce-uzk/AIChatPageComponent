@@ -1076,4 +1076,157 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             throw new AIChatPageComponentException("Failed to create RAMSES instance from plugin config: " . $e->getMessage());
         }
     }
+
+    /**
+     * Refresh available models from RAMSES API
+     *
+     * @return array ['success' => bool, 'message' => string, 'models' => array|null]
+     */
+    public function refreshModels(): array
+    {
+        $plugin = \ilAIChatPageComponentPlugin::getInstance();
+
+        try {
+            // Use endpoint URL from constant
+            $models_api_url = $this->getEndpointUrl(self::ENDPOINT_MODELS);
+
+            $api_token = \platform\AIChatPageComponentConfig::get('ramses_api_token');
+
+            // Handle potential Password object conversion
+            if (is_object($api_token) && method_exists($api_token, 'toString')) {
+                $api_token = $api_token->toString();
+            }
+
+            if (empty($api_token)) {
+                return [
+                    'success' => false,
+                    'message' => $plugin->txt('refresh_models_no_token'),
+                    'models' => null
+                ];
+            }
+
+            // Try to fetch models from API
+            $ch = curl_init();
+
+            // Get certificate path from this plugin
+            $plugin = \ilAIChatPageComponentPlugin::getInstance();
+            $plugin_path = $plugin->getDirectory();
+            $absolute_plugin_path = realpath($plugin_path);
+            $ca_cert_path = $absolute_plugin_path . '/certs/RAMSES.pem';
+
+            if (file_exists($ca_cert_path)) {
+                curl_setopt($ch, CURLOPT_CAINFO, $ca_cert_path);
+            } else {
+                // Fallback: disable SSL verification for development/testing
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            }
+
+            curl_setopt($ch, CURLOPT_URL, $models_api_url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: Bearer ' . $api_token,
+                'Content-Type: application/json'
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            // Handle curl_exec returning false on failure
+            if ($response === false) {
+                $this->logger->error("RAMSES models API cURL execution failed", [
+                    'curl_error' => $error,
+                    'url' => $models_api_url
+                ]);
+                return [
+                    'success' => false,
+                    'message' => $plugin->txt('refresh_models_api_error') . ': cURL ' . $error,
+                    'models' => null
+                ];
+            }
+
+            if ($httpCode === 200 && $response) {
+                $models_response = json_decode($response, true);
+
+                // Handle both old format (direct array) and new format (object with data array)
+                $models_data = [];
+                if (is_array($models_response)) {
+                    if (isset($models_response['object']) && $models_response['object'] === 'list' && isset($models_response['data'])) {
+                        // New format: {object: "list", data: [...]}
+                        $models_data = $models_response['data'];
+                    } else {
+                        // Old format: direct array
+                        $models_data = $models_response;
+                    }
+                }
+
+                if (is_array($models_data) && !empty($models_data)) {
+                    $models = [];
+                    foreach ($models_data as $model) {
+                        // Support both 'name' and 'id' as model identifier
+                        $model_id = $model['id'] ?? $model['name'] ?? null;
+                        $model_name = $model['display_name'] ?? $model['name'] ?? $model['id'] ?? null;
+
+                        if ($model_id && $model_name) {
+                            $models[$model_id] = $model_name;
+                        }
+                    }
+
+                    if (!empty($models)) {
+                        // Cache models and timestamp
+                        \platform\AIChatPageComponentConfig::set('cached_models', $models);
+                        \platform\AIChatPageComponentConfig::set('models_cache_time', time());
+
+                        return [
+                            'success' => true,
+                            'message' => $plugin->txt('refresh_models_success') . ' (' . count($models) . ' ' . $plugin->txt('refresh_models_count') . ')',
+                            'models' => $models
+                        ];
+                    } else {
+                        return [
+                            'success' => false,
+                            'message' => $plugin->txt('refresh_models_no_models'),
+                            'models' => null
+                        ];
+                    }
+                } else {
+                    return [
+                        'success' => false,
+                        'message' => $plugin->txt('refresh_models_invalid_response'),
+                        'models' => null
+                    ];
+                }
+            } else {
+                $error_msg = $plugin->txt('refresh_models_api_error') . ' (HTTP ' . $httpCode . ')';
+                if ($error) {
+                    $error_msg .= ': ' . $error;
+                }
+
+                // Add debug information for HTTP 401
+                if ($httpCode === 401) {
+                    $error_msg .= ' - ' . $plugin->txt('refresh_models_no_token');
+                    $this->logger->error("RAMSES Models API 401 Error", [
+                        'api_url' => $models_api_url,
+                        'token_length' => strlen($api_token),
+                        'token_starts_with' => substr($api_token, 0, 8) . '...'
+                    ]);
+                }
+
+                return [
+                    'success' => false,
+                    'message' => $error_msg,
+                    'models' => null
+                ];
+            }
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => $plugin->txt('refresh_models_exception') . ': ' . $e->getMessage(),
+                'models' => null
+            ];
+        }
+    }
 }
