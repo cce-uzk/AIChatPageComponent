@@ -124,10 +124,10 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         $access = $DIC->access();
 
         // Strategy 1: Check if AIChat Repository Plugin is available and use its permissions
-        try {
+        /*try {
             $ai_chat_plugin = $component_repository->getPluginById("xaic");
 
-            if ($ai_chat_plugin && $ai_chat_plugin->isActive()) {
+            if (false && $ai_chat_plugin && $ai_chat_plugin->isActive()) {
                 // AIChat plugin is active - use its creation permission
                 $has_create_access = $access->checkAccess('create_xaic', '', $parent_ref_id);
 
@@ -148,7 +148,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
             }
         } catch (Exception $e) {
             $logger->debug("AIChat plugin not found or inactive", ['error' => $e->getMessage()]);
-        }
+        }*/
 
         // Strategy 2: Fallback - check if user can edit content (write permission)
         // This ensures content editors can add AI Chat components even without AIChat plugin
@@ -774,7 +774,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
      */
     public function getParentTypes(): array
     {
-        $par_types = ["blp", "lm", "sahs", "qpl", "wpg", "auth", "cont", "impr" ];
+        $par_types = ["blp", "lm", "sahs", "qpl", "wpg", "auth", "cont", "copa", "impr" ];
         return $par_types;
     }
 
