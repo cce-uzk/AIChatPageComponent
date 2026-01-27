@@ -225,7 +225,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Check global file handling (hierarchical service-specific check happens in API)
         $file_handling_enabled = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
         $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
-        $allowed_extensions = FileUploadValidator::getAllowedExtensions('background');
+
+        // Determine allowed extensions based on RAG mode
+        // For background files, we need to check if RAG is likely to be enabled
+        $allowed_extensions = $this->getAllowedBackgroundFileExtensions($a_create);
 
         if (!$file_handling_enabled) {
             // File handling completely disabled - show clear message
@@ -248,10 +251,17 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             require_once(__DIR__ . '/class.ilAIChatPageComponentFileUploadHandlerGUI.php');
             $upload_handler = new ilAIChatPageComponentFileUploadHandlerGUI();
 
+            // Convert extensions to accept attribute values (MIME types + extensions)
+            // This ensures browser compatibility for all file types including .md
+            $allowed_accept_values = FileUploadValidator::extensionsToAcceptValues($allowed_extensions);
+
             $file_upload = $ui_factory->input()->field()->file(
                 $upload_handler,
                 $this->plugin->txt('background_files_upload_label')
-            )->withByline($info_text)->withDedicatedName('background_files')->withMaxFiles(10);
+            )->withByline($info_text)
+             ->withDedicatedName('background_files')
+             ->withMaxFiles(10)
+             ->withAcceptedMimeTypes($allowed_accept_values);
 
             // Set existing values for EDIT mode
             if (!$a_create && isset($prop['background_files'])) {
@@ -1669,6 +1679,98 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
 
 
+
+    /**
+     * Get allowed file extensions for background files based on RAG configuration
+     *
+     * This method determines which file types are allowed for background file uploads
+     * based on the RAG mode settings. If RAG is enabled for the AI service, only
+     * RAG-compatible file types are allowed.
+     *
+     * @param bool $a_create Whether this is create mode (no existing chat)
+     * @return array Array of allowed file extensions
+     */
+    private function getAllowedBackgroundFileExtensions(bool $a_create): array
+    {
+        require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
+        require_once(__DIR__ . '/ai/class.AIChatPageComponentLLMRegistry.php');
+
+        // Determine AI service to use
+        $ai_service = null;
+        $rag_enabled_for_chat = false;
+
+        if (!$a_create) {
+            // EDIT mode: Try to get settings from existing chat
+            $old_properties = $this->getProperties();
+            $chat_id = $old_properties['chat_id'] ?? '';
+
+            if (!empty($chat_id)) {
+                try {
+                    $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+                    if ($chatConfig->exists()) {
+                        $ai_service = $chatConfig->getAiService();
+                        $rag_enabled_for_chat = $chatConfig->isEnableRag();
+                    }
+                } catch (\Exception $e) {
+                    $this->logger->warning("Error loading ChatConfig for file extensions", ['error' => $e->getMessage()]);
+                }
+            }
+        }
+
+        // Fallback: Use default/forced AI service
+        if (empty($ai_service)) {
+            $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
+            if ($force_default_service === '1') {
+                $ai_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
+            } else {
+                // Use first available enabled service
+                $service_options = \ai\AIChatPageComponentLLMRegistry::getServiceOptions(true);
+                $ai_service = !empty($service_options) ? array_key_first($service_options) : 'ramses';
+            }
+        }
+
+        // Get LLM instance
+        $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
+        if ($llm === null) {
+            // Fallback to default extensions
+            return FileUploadValidator::getAllowedExtensions('background');
+        }
+
+        // Check if RAG is globally enabled for this service
+        $rag_config_key = $ai_service . '_enable_rag';
+        $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
+        $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
+
+        // Determine effective RAG state:
+        // - In EDIT mode: Use chat-specific RAG setting (if RAG is globally enabled)
+        // - In CREATE mode: If RAG is globally enabled, show RAG-restricted types
+        //   (user will likely enable RAG, and we want to prevent incompatible uploads)
+        $effective_rag_enabled = false;
+        if ($rag_globally_enabled && $llm->supportsRAG()) {
+            if ($a_create) {
+                // CREATE mode: Use RAG-restricted types if RAG is globally available
+                // This prevents uploading incompatible files that would fail if RAG is enabled
+                $effective_rag_enabled = true;
+            } else {
+                // EDIT mode: Use the chat's actual RAG setting
+                $effective_rag_enabled = $rag_enabled_for_chat;
+            }
+        }
+
+        // Get allowed file types from LLM service
+        $allowed_extensions = $llm->getAllowedFileTypes($effective_rag_enabled);
+
+        $this->logger->debug("Background file extensions determined", [
+            'ai_service' => $ai_service,
+            'rag_globally_enabled' => $rag_globally_enabled,
+            'rag_enabled_for_chat' => $rag_enabled_for_chat,
+            'effective_rag_enabled' => $effective_rag_enabled,
+            'allowed_extensions' => $allowed_extensions,
+            'mode' => $a_create ? 'create' : 'edit'
+        ]);
+
+        return $allowed_extensions;
+    }
 
     /**
      * Convert property value to boolean

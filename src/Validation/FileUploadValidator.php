@@ -179,27 +179,87 @@ class FileUploadValidator
     
     /**
      * Check if file uploads are enabled for specific type
-     * 
+     *
      * @param string $upload_type Either 'background' or 'chat'
      * @return bool True if uploads are enabled
      */
     public static function isUploadEnabled(string $upload_type): bool
     {
         $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
-        
+
         // If file handling is disabled, no uploads are allowed for AI processing
         if (!($file_restrictions['enabled'] ?? false)) {
             return false;
         }
-        
+
         if ($upload_type === 'background') {
             return $file_restrictions['allow_background_files'] ?? true;
         }
-        
+
         if ($upload_type === 'chat') {
             return $file_restrictions['allow_chat_uploads'] ?? true;
         }
-        
+
         return false;
+    }
+
+    /**
+     * Convert file extensions to MIME types
+     *
+     * @param array $extensions Array of file extensions (e.g., ['pdf', 'txt', 'png'])
+     * @return array Array of MIME types (e.g., ['application/pdf', 'text/plain', 'image/png'])
+     */
+    public static function extensionsToMimeTypes(array $extensions): array
+    {
+        $mime_types = [];
+        foreach ($extensions as $ext) {
+            $ext = strtolower($ext);
+            if (isset(self::EXTENSION_TO_MIME[$ext])) {
+                $mime_types[] = self::EXTENSION_TO_MIME[$ext];
+            }
+        }
+        // Return unique MIME types (e.g., jpg and jpeg both map to image/jpeg)
+        return array_values(array_unique($mime_types));
+    }
+
+    /**
+     * Convert file extensions to accept attribute values (MIME types + extensions)
+     *
+     * Returns both MIME types and file extensions for maximum browser compatibility.
+     * Some browsers don't recognize certain MIME types (e.g., text/markdown),
+     * so we include both the MIME type and the extension.
+     *
+     * @param array $extensions Array of file extensions (e.g., ['pdf', 'txt', 'md', 'png'])
+     * @return array Array of MIME types and extensions for HTML accept attribute
+     */
+    public static function extensionsToAcceptValues(array $extensions): array
+    {
+        $accept_values = [];
+
+        foreach ($extensions as $ext) {
+            $ext = strtolower($ext);
+
+            // Add MIME type if known
+            if (isset(self::EXTENSION_TO_MIME[$ext])) {
+                $accept_values[] = self::EXTENSION_TO_MIME[$ext];
+            }
+
+            // Always add the extension for browser compatibility
+            // (some MIME types like text/markdown are not well-supported)
+            $accept_values[] = '.' . $ext;
+        }
+
+        // Return unique values
+        return array_values(array_unique($accept_values));
+    }
+
+    /**
+     * Get the extension to MIME type mapping
+     *
+     * @return array Associative array of extension => MIME type
+     */
+    public static function getExtensionToMimeMapping(): array
+    {
+        return self::EXTENSION_TO_MIME;
     }
 }

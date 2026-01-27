@@ -190,7 +190,7 @@ error_file_too_large#:#File too large. Maximum size is %dMB
 error_file_type_not_allowed#:#File type not allowed: %s
 error_file_upload_failed#:#File upload failed: %s
 enable_rag_label#:#Use RAG Mode
-enable_rag_info#:#When enabled: AI can search in uploaded documents (text files only: TXT, MD, CSV, PDF). When disabled: AI can analyze images (PNG, JPG, GIF, WEBP, PDF).
+enable_rag_info#:#When enabled: AI can search in uploaded documents (PDF only). When disabled: AI can analyze images and documents to a limited extent (PNG, JPG, GIF, WEBP, PDF).
 rag_not_supported#:#RAG not supported by this AI service
 rag_not_supported_info#:#The selected AI service does not support RAG functionality
 rag_sync_success#:#%d files successfully uploaded to RAG

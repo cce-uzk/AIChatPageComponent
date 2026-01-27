@@ -443,8 +443,17 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     {
         if ($ragEnabled) {
             $configured_types = \platform\AIChatPageComponentConfig::get('ramses_rag_allowed_file_types');
+
+            // Handle both array and comma-separated string formats from config
+            if (is_string($configured_types) && !empty($configured_types)) {
+                // Convert comma-separated string to array (e.g., "pdf" or "txt,pdf,md")
+                $configured_types = array_map('trim', explode(',', $configured_types));
+                // Remove empty values and convert to lowercase
+                $configured_types = array_filter(array_map('strtolower', $configured_types));
+            }
+
             return is_array($configured_types) && !empty($configured_types)
-                ? $configured_types
+                ? array_values($configured_types)  // Re-index array
                 : ['txt', 'md', 'csv', 'pdf'];
         } else {
             return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'md', 'csv'];

@@ -470,6 +470,12 @@ try {
             // Get allowed file types from LLM service based on actual RAG mode
             $allowed_extensions = $llm->getAllowedFileTypes($rag_enabled);
 
+            // Convert extensions to MIME types for browser file input accept attribute
+            $allowed_mime_types = \ILIAS\Plugin\pcaic\Validation\FileUploadValidator::extensionsToMimeTypes($allowed_extensions);
+
+            // Also get combined accept values (MIME types + extensions) for maximum compatibility
+            $allowed_accept_values = \ILIAS\Plugin\pcaic\Validation\FileUploadValidator::extensionsToAcceptValues($allowed_extensions);
+
             // Check hierarchical streaming settings (central → LLM → chat)
             $streaming_enabled = isStreamingEnabledForChat($chatConfig, $ai_service);
 
@@ -480,6 +486,8 @@ try {
                 'success' => true,
                 'upload_enabled' => $upload_enabled && $file_handling_enabled,
                 'allowed_extensions' => $allowed_extensions,
+                'allowed_mime_types' => $allowed_mime_types,
+                'allowed_accept_values' => $allowed_accept_values,
                 'rag_mode' => $rag_enabled,
                 'streaming_enabled' => $streaming_enabled,
                 'file_handling_enabled' => $file_handling_enabled,

@@ -244,28 +244,24 @@ class AIChatPageComponent {
             if (data.success) {
                 // Apply global upload configuration
                 this.globalChatUploadsEnabled = data.upload_enabled;
-                
-                // Convert allowed_mime_types object to array
-                let allowedMimeTypes = data.allowed_mime_types || {};
-                if (typeof allowedMimeTypes === 'object' && !Array.isArray(allowedMimeTypes)) {
-                    // Convert object values to array
-                    this.allowedFileTypes = Object.values(allowedMimeTypes);
-                } else if (Array.isArray(allowedMimeTypes)) {
-                    this.allowedFileTypes = allowedMimeTypes;
-                } else {
-                    this.allowedFileTypes = [];
-                }
-                
+
+                // Use pre-computed accept values from server (includes both MIME types and extensions)
+                // This ensures consistency between editor and chat uploads
+                this.allowedAcceptValues = data.allowed_accept_values || [];
+
+                // Also store individual arrays for validation
+                this.allowedFileTypes = data.allowed_mime_types || [];
                 this.allowedExtensions = data.allowed_extensions || [];
-                
+
                 debug('AIChatPageComponent: Processed allowed file types:', {
-                    original: data.allowed_mime_types,
-                    processed: this.allowedFileTypes
+                    acceptValues: this.allowedAcceptValues,
+                    mimeTypes: this.allowedFileTypes,
+                    extensions: this.allowedExtensions
                 });
-                
+
                 // Apply global limits that override local PageComponent settings
                 this.applyGlobalLimits(data);
-                
+
                 // Update file input restrictions based on server configuration
                 this.updateFileInputAcceptAttribute();
                 
@@ -3411,30 +3407,46 @@ class AIChatPageComponent {
     
     /**
      * Update file input accept attribute based on global configuration
+     *
+     * Uses pre-computed accept values from server (MIME types + extensions)
+     * for consistency with the editor background file upload.
      */
     updateFileInputAcceptAttribute() {
-        if (!this.fileInput || !this.allowedExtensions || this.allowedExtensions.length === 0) {
+        if (!this.fileInput) {
             return;
         }
-        
-        // Build accept attribute from allowed extensions
+
+        // Use pre-computed accept values from server if available
+        // This ensures consistency between editor and chat uploads
+        if (this.allowedAcceptValues && this.allowedAcceptValues.length > 0) {
+            const acceptString = this.allowedAcceptValues.join(',');
+            this.fileInput.setAttribute('accept', acceptString);
+            debug('AIChatPageComponent: Updated file input accept attribute (from server):', acceptString);
+            return;
+        }
+
+        // Fallback: Build accept attribute from extensions if server values not available
+        if (!this.allowedExtensions || this.allowedExtensions.length === 0) {
+            return;
+        }
+
         const acceptValues = [];
-        
+
         // Add MIME types first
         if (this.allowedFileTypes && this.allowedFileTypes.length > 0) {
             acceptValues.push(...this.allowedFileTypes);
         }
-        
+
         // Add file extensions as fallback
         this.allowedExtensions.forEach(ext => {
             acceptValues.push('.' + ext);
         });
-        
+
         // Set the accept attribute on file input
         const acceptString = acceptValues.join(',');
         this.fileInput.setAttribute('accept', acceptString);
-        
-        debug('AIChatPageComponent: Updated file input accept attribute:', acceptString);
+
+        debug('AIChatPageComponent: Updated file input accept attribute (fallback):', acceptString);
     }
     
     /**

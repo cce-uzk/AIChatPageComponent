@@ -191,7 +191,7 @@ error_file_too_large#:#Datei zu groß. Maximale Größe ist %dMB
 error_file_type_not_allowed#:#Dateityp nicht erlaubt: %s
 error_file_upload_failed#:#Datei-Upload fehlgeschlagen: %s
 enable_rag_label#:#RAG-Modus verwenden
-enable_rag_info#:#Wenn aktiv: Die KI kann in hochgeladenen Dokumenten suchen (nur Text-Dateien: TXT, MD, CSV, PDF). Wenn inaktiv: Die KI kann Bilder analysieren (PNG, JPG, GIF, WEBP, PDF).
+enable_rag_info#:#Wenn aktiv: Die KI kann in hochgeladenen Dokumenten suchen (nur: PDF). Wenn inaktiv: Die KI kann Bilder und im beschränkten Umfang Dokumente analysieren (PNG, JPG, GIF, WEBP, PDF).
 rag_not_supported#:#RAG wird von diesem AI-Service nicht unterstützt
 rag_not_supported_info#:#Der gewählte AI-Service unterstützt keine RAG-Funktionalität
 rag_sync_success#:#%d Dateien wurden erfolgreich zu RAG hochgeladen
