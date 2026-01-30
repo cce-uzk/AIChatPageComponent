@@ -62,7 +62,7 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
             $newChatId = $this->createChatFromImport($xml, $a_mapping);
             $this->updatePageComponentProperties($mappedId, $xml, $newChatId);
 
-            $DIC->logger()->comp('pcaic')->info('Import completed', [
+            $DIC->logger()->pcaic()->info('Import completed', [
                 'entity' => $a_entity,
                 'original_id' => $a_id,
                 'mapped_id' => $mappedId,
@@ -71,7 +71,7 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
             ]);
 
         } catch (Exception $e) {
-            $DIC->logger()->comp('pcaic')->error('Import failed', [
+            $DIC->logger()->pcaic()->error('Import failed', [
                 'entity' => $a_entity,
                 'id' => $a_id,
                 'error' => $e->getMessage()
@@ -98,7 +98,7 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
 
             $importFile = $this->findImportFile($filename);
             if (!$importFile) {
-                $DIC->logger()->comp('pcaic')->warning('Import: Background file not found', [
+                $DIC->logger()->pcaic()->warning('Import: Background file not found', [
                     'filename' => $filename,
                     'original_path' => $originalPath
                 ]);
@@ -115,13 +115,13 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
                     $a_mapping->addMapping('Services/ResourceStorage', 'resource_id', $oldResourceId, $identifier->serialize());
                 }
 
-                $DIC->logger()->comp('pcaic')->info('Import: Background file uploaded', [
+                $DIC->logger()->pcaic()->info('Import: Background file uploaded', [
                     'filename' => $filename,
                     'new_resource_id' => $identifier->serialize()
                 ]);
 
             } catch (Exception $e) {
-                $DIC->logger()->comp('pcaic')->error('Import: Failed to upload background file', [
+                $DIC->logger()->pcaic()->error('Import: Failed to upload background file', [
                     'filename' => $filename,
                     'error' => $e->getMessage()
                 ]);
@@ -187,7 +187,7 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
         $newChatId = 'chat_' . uniqid() . '.' . time();
 
         if (!isset($xml->chat_config)) {
-            $DIC->logger()->comp('pcaic')->warning('Import: No chat_config in XML');
+            $DIC->logger()->pcaic()->warning('Import: No chat_config in XML');
             return $newChatId;
         }
 
@@ -219,7 +219,7 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
 
         $backgroundFilesCount = $this->createBackgroundFileAttachments($newChatId, $xml, $a_mapping);
 
-        $DIC->logger()->comp('pcaic')->info('Import: Chat configuration created', [
+        $DIC->logger()->pcaic()->info('Import: Chat configuration created', [
             'new_chat_id' => $newChatId,
             'title' => $newChat->getTitle(),
             'background_files_count' => $backgroundFilesCount
@@ -252,7 +252,7 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
             $newResourceId = $a_mapping->getMapping('Services/ResourceStorage', 'resource_id', $oldResourceId);
 
             if (!$newResourceId) {
-                $DIC->logger()->comp('pcaic')->warning('Import: No resource mapping for background file', [
+                $DIC->logger()->pcaic()->warning('Import: No resource mapping for background file', [
                     'old_resource_id' => $oldResourceId
                 ]);
                 continue;
@@ -269,14 +269,14 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
 
                 $count++;
 
-                $DIC->logger()->comp('pcaic')->debug('Import: Background file attachment created', [
+                $DIC->logger()->pcaic()->debug('Import: Background file attachment created', [
                     'chat_id' => $chatId,
                     'resource_id' => $newResourceId,
                     'attachment_id' => $attachment->getId()
                 ]);
 
             } catch (\Exception $e) {
-                $DIC->logger()->comp('pcaic')->error('Import: Failed to create background file attachment', [
+                $DIC->logger()->pcaic()->error('Import: Failed to create background file attachment', [
                     'chat_id' => $chatId,
                     'resource_id' => $newResourceId,
                     'error' => $e->getMessage()
@@ -305,7 +305,7 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
 
         self::setPCProperties($mappedId, $updatedProperties);
 
-        $DIC->logger()->comp('pcaic')->info('Import: PageComponent properties updated', [
+        $DIC->logger()->pcaic()->info('Import: PageComponent properties updated', [
             'mapped_id' => $mappedId,
             'new_chat_id' => $newChatId
         ]);

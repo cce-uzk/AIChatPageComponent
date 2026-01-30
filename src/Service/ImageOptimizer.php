@@ -84,7 +84,7 @@ class ImageOptimizer
             $optimizedSize = strlen($optimizedData);
             
             global $DIC;
-            $DIC->logger()->comp('pcaic')->debug("Image optimized", [
+            $DIC->logger()->pcaic()->debug("Image optimized", [
                 'original_width' => $originalWidth,
                 'original_height' => $originalHeight,
                 'original_size' => $originalSize,
@@ -97,7 +97,7 @@ class ImageOptimizer
             
         } catch (\Exception $e) {
             global $DIC;
-            $DIC->logger()->comp('pcaic')->warning("Image optimization failed", ['error' => $e->getMessage()]);
+            $DIC->logger()->pcaic()->warning("Image optimization failed", ['error' => $e->getMessage()]);
             // Return original on error
             return ['data' => $imageData, 'mime_type' => $mimeType];
         }

@@ -117,7 +117,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
             $this->dic->ui()->mainTemplate()->setContent($form_html);
         } catch (\Exception $e) {
-            $this->dic->logger()->comp('pcaic')->error('Failed to show configuration form', [
+            $this->dic->logger()->pcaic()->error('Failed to show configuration form', [
                 'error' => $e->getMessage(),
                 'active_tab' => $active_tab
             ]);
@@ -527,7 +527,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             if ($data !== null) {
                 // Debug: Log received form data
                 try {
-                    $this->dic->logger()->comp('pcaic')->debug("Form data received", [
+                    $this->dic->logger()->pcaic()->debug("Form data received", [
                         'raw_data' => $data,
                         'data_count' => count($data),
                         'data_keys' => array_keys($data)
@@ -783,7 +783,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             }
 
         } catch (\Exception $e) {
-            $this->dic->logger()->comp('pcaic')->error("Failed to save {$serviceId} configuration", [
+            $this->dic->logger()->pcaic()->error("Failed to save {$serviceId} configuration", [
                 'error' => $e->getMessage()
             ]);
             $this->dic->ui()->mainTemplate()->setOnScreenMessage(

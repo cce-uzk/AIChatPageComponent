@@ -86,7 +86,7 @@ class Attachment
         global $DIC;
 
         $this->db = $DIC->database();
-        $this->logger = $DIC->logger()->comp('pcaic');
+        $this->logger = $DIC->logger()->pcaic();
         $this->resource_storage = $DIC->resourceStorage();
 
         if ($id) {
@@ -343,7 +343,7 @@ class Attachment
         global $DIC;
         
         if (!$upload_result->isOK()) {
-            $logger = $DIC->logger()->comp('pcaic');
+            $logger = $DIC->logger()->pcaic();
             $logger->debug("Upload failed: " . $upload_result->getStatus()->getMessage());
             throw new Exception("Upload failed");
         }

@@ -117,7 +117,7 @@ class ChatConfig
             }
             
             global $DIC;
-            $DIC->logger()->comp('pcaic')->debug("Loaded global defaults for new ChatConfig", [
+            $DIC->logger()->pcaic()->debug("Loaded global defaults for new ChatConfig", [
                 'system_prompt_length' => strlen($this->systemPrompt),
                 'disclaimer_length' => strlen($this->disclaimer),
                 'char_limit' => $this->charLimit,
@@ -126,7 +126,7 @@ class ChatConfig
             
         } catch (\Exception $e) {
             global $DIC;
-            $DIC->logger()->comp('pcaic')->warning("Failed to load global defaults for ChatConfig", [
+            $DIC->logger()->pcaic()->warning("Failed to load global defaults for ChatConfig", [
                 'error' => $e->getMessage()
             ]);
         }

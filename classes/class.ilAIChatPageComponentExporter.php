@@ -66,7 +66,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
         try {
             $properties = self::getPCProperties($a_id);
             if (!$properties || !isset($properties['chat_id'])) {
-                $DIC->logger()->comp('pcaic')->warning('Export: No chat_id in PageComponent properties', [
+                $DIC->logger()->pcaic()->warning('Export: No chat_id in PageComponent properties', [
                     'pc_id' => $a_id,
                     'properties' => $properties
                 ]);
@@ -77,7 +77,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
             $chatConfig = new ChatConfig($chatId);
 
             if (!$chatConfig->exists()) {
-                $DIC->logger()->comp('pcaic')->warning('Export: Chat configuration not found', [
+                $DIC->logger()->pcaic()->warning('Export: Chat configuration not found', [
                     'chat_id' => $chatId,
                     'pc_id' => $a_id
                 ]);
@@ -94,7 +94,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
 
             $this->addChatConfig($xml, $root, $chatConfig);
 
-            $DIC->logger()->comp('pcaic')->info('Export completed', [
+            $DIC->logger()->pcaic()->info('Export completed', [
                 'chat_id' => $chatId,
                 'schema_version' => self::SCHEMA_VERSION
             ]);
@@ -102,7 +102,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
             return $xml->saveXML($root);
 
         } catch (Exception $e) {
-            $DIC->logger()->comp('pcaic')->error('Export failed', [
+            $DIC->logger()->pcaic()->error('Export failed', [
                 'pc_id' => $a_id,
                 'error' => $e->getMessage()
             ]);
@@ -181,7 +181,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
                     $exportPath = $this->exportFile($identification, $filename);
                 }
             } catch (Exception $e) {
-                $DIC->logger()->comp('pcaic')->warning('Export: Failed to export background file', [
+                $DIC->logger()->pcaic()->warning('Export: Failed to export background file', [
                     'resource_id' => $resourceId,
                     'error' => $e->getMessage()
                 ]);
@@ -232,7 +232,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
             return $filename;
 
         } catch (Exception $e) {
-            $DIC->logger()->comp('pcaic')->error('Export: File write failed', [
+            $DIC->logger()->pcaic()->error('Export: File write failed', [
                 'filename' => $filename,
                 'error' => $e->getMessage()
             ]);
@@ -289,7 +289,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
             ];
 
         } catch (Exception $e) {
-            $DIC->logger()->comp('pcaic')->warning('Export: Failed to load file metadata', [
+            $DIC->logger()->pcaic()->warning('Export: Failed to load file metadata', [
                 'resource_id' => $resourceId,
                 'error' => $e->getMessage()
             ]);

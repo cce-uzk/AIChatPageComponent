@@ -64,7 +64,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $this->request = $DIC->http()->request();
 
         // Initialize component-specific logging
-        $this->logger = $DIC->logger()->comp('pcaic');
+        $this->logger = $DIC->logger()->pcaic();
     }
 
     /**
@@ -917,13 +917,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Log config source for debugging
         global $DIC;
         if ($max_size_config !== null) {
-            $DIC->logger()->comp('pcaic')->debug("Template: Using central config for file size", [
+            $DIC->logger()->pcaic()->debug("Template: Using central config for file size", [
                 'source' => 'central_config',
                 'value' => $max_size_config,
                 'effective_mb' => $max_size_mb
             ]);
         } else {
-            $DIC->logger()->comp('pcaic')->debug("Template: Using fallback file size limit", [
+            $DIC->logger()->pcaic()->debug("Template: Using fallback file size limit", [
                 'source' => 'fallback',
                 'effective_mb' => $max_size_mb
             ]);

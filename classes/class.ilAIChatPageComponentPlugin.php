@@ -102,7 +102,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     public function isValidParentType(string $a_parent_type) : bool
     {
         global $DIC;
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
 
         // First check if parent type is supported for AI Chat Page Components
         $supported_types = $this->getParentTypes();
@@ -176,7 +176,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     private function getCurrentParentRefId(): ?int
     {
         global $DIC;
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
 
         // Strategy 1: Direct GET parameter (most common case)
         if (isset($_GET['ref_id']) && is_numeric($_GET['ref_id'])) {
@@ -222,7 +222,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
             }
         } catch (\Exception $e) {
             global $DIC;
-            $logger = $DIC->logger()->comp('pcaic');
+            $logger = $DIC->logger()->pcaic();
             $logger->warning("Failed to resolve references for object", [
                 'obj_id' => $obj_id,
                 'obj_type' => $obj_type,
@@ -252,7 +252,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     public function onClone(array &$a_properties, string $a_plugin_version) : void
     {
         global $DIC;
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
 
         // Clone additional data if it exists
         if ($additional_data_id = ($a_properties['additional_data_id'] ?? null)) {
@@ -459,7 +459,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     public function deleteCompleteChat(string $chat_id): void
     {
         global $DIC;
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
         $db = $DIC->database();
 
         $logger->info('Delete: Starting chat deletion', ['chat_id' => $chat_id]);
@@ -580,7 +580,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     protected function beforeActivation(): bool
     {
         global $DIC;
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
 
         try {
             // Create/update database tables
@@ -629,7 +629,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     {
         global $DIC;
         $db = $DIC->database();
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
 
         try {
             // Step 1: Cleanup all chat data and IRSS files
@@ -749,7 +749,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         }
 
         global $DIC;
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
         $irss = $DIC->resourceStorage();
         $cloned_files = [];
 
@@ -833,7 +833,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     {
         global $DIC;
         $ilDB = $DIC->database();
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
 
         $type = self::PLUGIN_ID; // 'pcaic'
 
@@ -967,7 +967,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     {
         global $DIC;
         $ilDB = $DIC->database();
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
 
         $type = self::PLUGIN_ID; // 'pcaic'
         $create_operation = "create_" . $type;
@@ -1042,7 +1042,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     {
         global $DIC;
         $db = $DIC->database();
-        $logger = $DIC->logger()->comp('pcaic');
+        $logger = $DIC->logger()->pcaic();
         $irss = $DIC->resourceStorage();
 
         try {

@@ -74,7 +74,7 @@ class AIChatPageComponentConfig
             
             try {
                 global $DIC;
-                $DIC->logger()->comp('pcaic')->debug("Config using built-in default", [
+                $DIC->logger()->pcaic()->debug("Config using built-in default", [
                     'key' => $key,
                     'default_value' => $default_value,
                     'source' => 'built_in_default'
@@ -87,7 +87,7 @@ class AIChatPageComponentConfig
         } catch (\Exception $e) {
             try {
                 global $DIC;
-                $DIC->logger()->comp('pcaic')->error("Failed to get config value", [
+                $DIC->logger()->pcaic()->error("Failed to get config value", [
                     'key' => $key,
                     'error' => $e->getMessage()
                 ]);
@@ -112,7 +112,7 @@ class AIChatPageComponentConfig
         } catch (\Exception $e) {
             try {
                 global $DIC;
-                $DIC->logger()->comp('pcaic')->error("Failed to set config value", [
+                $DIC->logger()->pcaic()->error("Failed to set config value", [
                     'key' => $key,
                     'value' => $value,
                     'error' => $e->getMessage()
@@ -163,7 +163,7 @@ class AIChatPageComponentConfig
             }
             
             try {
-                $DIC->logger()->comp('pcaic')->debug("Config saved to plugin database", [
+                $DIC->logger()->pcaic()->debug("Config saved to plugin database", [
                     'key' => $key,
                     'value' => $value,
                     'source' => 'pcaic_config_table'
@@ -177,7 +177,7 @@ class AIChatPageComponentConfig
         } catch (\Exception $e) {
             try {
                 global $DIC;
-                $DIC->logger()->comp('pcaic')->error("Failed to save to plugin config table", [
+                $DIC->logger()->pcaic()->error("Failed to save to plugin config table", [
                     'key' => $key,
                     'value' => $value,
                     'error' => $e->getMessage()
@@ -216,7 +216,7 @@ class AIChatPageComponentConfig
                 }
                 
                 try {
-                    $DIC->logger()->comp('pcaic')->debug("Config loaded from plugin database", [
+                    $DIC->logger()->pcaic()->debug("Config loaded from plugin database", [
                         'key' => $key,
                         'value' => $value,
                         'source' => 'pcaic_config_table'
@@ -233,7 +233,7 @@ class AIChatPageComponentConfig
         } catch (\Exception $e) {
             try {
                 global $DIC;
-                $DIC->logger()->comp('pcaic')->error("Failed to read from plugin config table", [
+                $DIC->logger()->pcaic()->error("Failed to read from plugin config table", [
                     'key' => $key,
                     'error' => $e->getMessage()
                 ]);
@@ -276,7 +276,7 @@ class AIChatPageComponentConfig
         } catch (\Exception $e) {
             try {
                 global $DIC;
-                $DIC->logger()->comp('pcaic')->error("Failed to load all config values", [
+                $DIC->logger()->pcaic()->error("Failed to load all config values", [
                     'error' => $e->getMessage()
                 ]);
             } catch (\Exception $logError) {

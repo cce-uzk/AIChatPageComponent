@@ -32,7 +32,7 @@ abstract class AIChatPageComponentLLM
     public function __construct()
     {
         global $DIC;
-        $this->logger = $DIC->logger()->comp('pcaic');
+        $this->logger = $DIC->logger()->pcaic();
     }
 
     // ============================================
