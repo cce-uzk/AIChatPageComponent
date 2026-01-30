@@ -195,3 +195,9 @@ rag_not_supported#:#RAG not supported by this AI service
 rag_not_supported_info#:#The selected AI service does not support RAG functionality
 rag_sync_success#:#%d files successfully uploaded to RAG
 rag_sync_error#:#Error syncing files to RAG
+chat_aria_label#:#AI Chat: %s
+messages_aria_label#:#Chat messages
+attachments_aria_label#:#File attachments
+actions_aria_label#:#Message actions
+new_message_aria#:#New message received
+skip_to_input#:#Skip to chat input

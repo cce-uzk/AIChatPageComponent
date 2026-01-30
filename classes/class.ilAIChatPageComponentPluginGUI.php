@@ -839,6 +839,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("SEND_ARIA_LABEL", $this->plugin->txt('send_aria_label'));
         $tpl->setVariable("FILE_INPUT_ARIA_LABEL", $this->plugin->txt('file_input_aria_label'));
 
+        // Accessibility (ARIA) labels and skip link
+        $chat_title = htmlspecialchars($config_properties['chat_title'] ?? $this->plugin->txt('default_chat_title'));
+        $tpl->setVariable("SKIP_TO_INPUT", $this->plugin->txt('skip_to_input'));
+        $tpl->setVariable("CHAT_ARIA_LABEL", sprintf($this->plugin->txt('chat_aria_label'), $chat_title));
+        $tpl->setVariable("MESSAGES_ARIA_LABEL", $this->plugin->txt('messages_aria_label'));
+        $tpl->setVariable("ATTACHMENTS_ARIA_LABEL", $this->plugin->txt('attachments_aria_label'));
+        $tpl->setVariable("ACTIONS_ARIA_LABEL", $this->plugin->txt('actions_aria_label'));
+        $tpl->setVariable("NEW_MESSAGE_ARIA", $this->plugin->txt('new_message_aria'));
+
         // Clear chat related strings
         $tpl->setVariable("CLEAR_CHAT_TEXT", $this->plugin->txt('clear_chat_text'));
         $tpl->setVariable("CLEAR_CHAT_TITLE", $this->plugin->txt('clear_chat_title'));

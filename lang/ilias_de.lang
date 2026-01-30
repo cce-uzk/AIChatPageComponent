@@ -196,3 +196,9 @@ rag_not_supported#:#RAG wird von diesem AI-Service nicht unterstützt
 rag_not_supported_info#:#Der gewählte AI-Service unterstützt keine RAG-Funktionalität
 rag_sync_success#:#%d Dateien wurden erfolgreich zu RAG hochgeladen
 rag_sync_error#:#Fehler beim Synchronisieren der Dateien zu RAG
+chat_aria_label#:#KI-Chat: %s
+messages_aria_label#:#Chat-Nachrichten
+attachments_aria_label#:#Dateianhänge
+actions_aria_label#:#Nachrichtenaktionen
+new_message_aria#:#Neue Nachricht erhalten
+skip_to_input#:#Zum Eingabefeld springen

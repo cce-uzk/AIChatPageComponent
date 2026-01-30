@@ -440,93 +440,120 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Delete complete chat with all related data (config, sessions, messages, attachments)
+     * Delete chat and all associated data.
+     *
+     * Performs cascading deletion in dependency order:
+     * 1. Attachments (with RAG and IRSS file cleanup)
+     * 2. Messages
+     * 3. Sessions
+     * 4. Chat configuration
+     *
+     * Uses Attachment::delete() for proper cleanup of:
+     * - IRSS stored files
+     * - RAG collection entries
+     * - Database records
+     *
+     * @param string $chat_id Unique chat identifier
+     * @throws ilException On deletion failure
      */
-    public function deleteCompleteChat(string $chat_id) : void
+    public function deleteCompleteChat(string $chat_id): void
     {
         global $DIC;
         $logger = $DIC->logger()->comp('pcaic');
         $db = $DIC->database();
 
-        try {
-            // Delete background files from IRSS
-            $bg_files_query = "SELECT background_files FROM pcaic_chats WHERE chat_id = " . $db->quote($chat_id, 'text');
-            $bg_files_result = $db->query($bg_files_query);
+        $logger->info('Delete: Starting chat deletion', ['chat_id' => $chat_id]);
 
-            $background_files_deleted = 0;
-            if ($row = $db->fetchAssoc($bg_files_result)) {
-                $background_files = json_decode($row['background_files'] ?? '[]', true);
-                if (is_array($background_files)) {
-                    $irss = $DIC->resourceStorage();
-                    foreach ($background_files as $file_id) {
-                        try {
-                            $identification = $irss->manage()->find($file_id);
-                            if ($identification) {
-                                $irss->manage()->remove($identification, new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder());
-                                $background_files_deleted++;
-                            }
-                        } catch (\Exception $e) {
-                            $logger->warning("Failed to delete background file during chat cleanup", [
-                                'chat_id' => $chat_id,
-                                'file_id' => $file_id,
-                                'error' => $e->getMessage()
-                            ]);
+        $attachmentCount = 0;
+        $ragCount = 0;
+
+        try {
+            // Collect session IDs
+            $sessionIds = [];
+            $result = $db->query(
+                "SELECT session_id FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text')
+            );
+            while ($row = $db->fetchAssoc($result)) {
+                $sessionIds[] = $row['session_id'];
+            }
+
+            // Collect message IDs
+            $messageIds = [];
+            if (!empty($sessionIds)) {
+                $quotedSessionIds = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $sessionIds));
+                $result = $db->query("SELECT message_id FROM pcaic_messages WHERE session_id IN ($quotedSessionIds)");
+                while ($row = $db->fetchAssoc($result)) {
+                    $messageIds[] = (int)$row['message_id'];
+                }
+            }
+
+            // Delete message attachments
+            if (!empty($messageIds)) {
+                $quotedMessageIds = implode(',', array_map(fn($id) => $db->quote($id, 'integer'), $messageIds));
+                $result = $db->query("SELECT id FROM pcaic_attachments WHERE message_id IN ($quotedMessageIds)");
+                while ($row = $db->fetchAssoc($result)) {
+                    try {
+                        $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int)$row['id']);
+                        if ($attachment->getRAGRemoteFileId()) {
+                            $ragCount++;
                         }
+                        $attachment->delete();
+                        $attachmentCount++;
+                    } catch (\Exception $e) {
+                        $logger->warning('Delete: Attachment cleanup failed', [
+                            'attachment_id' => $row['id'],
+                            'error' => $e->getMessage()
+                        ]);
                     }
                 }
             }
 
-            // Delete attachments from IRSS and database
-            $attachments_query = "SELECT resource_id FROM pcaic_attachments WHERE message_id IN (
-                SELECT message_id FROM pcaic_messages WHERE session_id IN (
-                    SELECT session_id FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text') . "
-                )
-            )";
-            $attachments_result = $db->query($attachments_query);
-
-            $attachment_files_deleted = 0;
-            $irss = $DIC->resourceStorage();
-            while ($row = $db->fetchAssoc($attachments_result)) {
+            // Delete chat-level attachments (background files, pending uploads)
+            $result = $db->query(
+                "SELECT id FROM pcaic_attachments WHERE chat_id = " . $db->quote($chat_id, 'text')
+            );
+            while ($row = $db->fetchAssoc($result)) {
                 try {
-                    $identification = $irss->manage()->find($row['resource_id']);
-                    if ($identification) {
-                        $irss->manage()->remove($identification, new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder());
-                        $attachment_files_deleted++;
+                    $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int)$row['id']);
+                    if ($attachment->getRAGRemoteFileId()) {
+                        $ragCount++;
                     }
+                    $attachment->delete();
+                    $attachmentCount++;
                 } catch (\Exception $e) {
-                    $logger->warning("Failed to delete attachment file during chat cleanup", [
-                        'chat_id' => $chat_id,
-                        'resource_id' => $row['resource_id'],
+                    $logger->warning('Delete: Chat attachment cleanup failed', [
+                        'attachment_id' => $row['id'],
                         'error' => $e->getMessage()
                     ]);
                 }
             }
 
-            // Delete database records in cascade order
-            $db->manipulate("DELETE FROM pcaic_attachments WHERE message_id IN (
-                SELECT message_id FROM pcaic_messages WHERE session_id IN (
-                    SELECT session_id FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text') . "
-                ))");
+            // Delete messages
+            if (!empty($sessionIds)) {
+                $quotedSessionIds = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $sessionIds));
+                $db->manipulate("DELETE FROM pcaic_messages WHERE session_id IN ($quotedSessionIds)");
+            }
 
-            $db->manipulate("DELETE FROM pcaic_messages WHERE session_id IN (
-                SELECT session_id FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text') . ")");
-
+            // Delete sessions
             $db->manipulate("DELETE FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text'));
 
+            // Delete chat configuration
             $db->manipulate("DELETE FROM pcaic_chats WHERE chat_id = " . $db->quote($chat_id, 'text'));
 
-            $logger->info("Chat configuration deleted successfully", [
+            $logger->info('Delete: Chat deleted successfully', [
                 'chat_id' => $chat_id,
-                'background_files_deleted' => $background_files_deleted,
-                'attachment_files_deleted' => $attachment_files_deleted
+                'attachments' => $attachmentCount,
+                'rag_files' => $ragCount,
+                'sessions' => count($sessionIds),
+                'messages' => count($messageIds)
             ]);
 
         } catch (\Exception $e) {
-            $logger->error("Chat deletion failed", [
+            $logger->error('Delete: Chat deletion failed', [
                 'chat_id' => $chat_id,
                 'error' => $e->getMessage()
             ]);
-            throw new ilException("Failed to delete chat");
+            throw new ilException('Failed to delete chat: ' . $e->getMessage());
         }
     }
 

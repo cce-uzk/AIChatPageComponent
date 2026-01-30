@@ -103,6 +103,7 @@ class AIChatPageComponent {
         this.sendButton = this.container.querySelector('.ai-chat-send');
         this.welcomeMsg = this.container.querySelector('.ai-chat-welcome');
         this.loadingDiv = this.container.querySelector('.ai-chat-loading');
+        this.srStatus = this.container.querySelector('.ai-chat-sr-status');
         
         // Initialize file upload DOM elements
         this.attachBtn = this.container.querySelector('.ai-chat-attach-btn');
@@ -170,7 +171,8 @@ class AIChatPageComponent {
             generationStopped: this.container.dataset.generationStopped || 'Generation stopped by user.',
             regenerateFailed: this.container.dataset.regenerateFailed || 'Failed to regenerate response. Please try again.',
             welcomeMessage: this.container.dataset.welcomeMessage || 'Start a conversation...',
-            stopGeneration: this.container.dataset.stopGeneration || 'Stop generation'
+            stopGeneration: this.container.dataset.stopGeneration || 'Stop generation',
+            newMessageAria: this.container.dataset.newMessageAria || 'New message received'
         };
         
         // Initialize ILIAS page context integration
@@ -1229,7 +1231,7 @@ class AIChatPageComponent {
             copyBtn.className = 'ai-chat-message-action';
             copyBtn.title = this.lang.copyMessageTitle;
             copyBtn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
                     <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
                     <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
                 </svg>
@@ -1268,7 +1270,7 @@ class AIChatPageComponent {
             regenBtn.className = 'ai-chat-message-action';
             regenBtn.title = this.lang.regenerateResponseTitle;
             regenBtn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
                     <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
                     <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
                 </svg>
@@ -1287,8 +1289,13 @@ class AIChatPageComponent {
         
         this.messagesArea.appendChild(messageDiv);
         this.messagesArea.scrollTop = this.messagesArea.scrollHeight;
+
+        // Announce new assistant messages to screen readers
+        if (role === 'assistant') {
+            this.announceToScreenReader(this.lang.newMessageAria);
+        }
     }
-    
+
     /**
      * Basic markdown renderer for AI responses
      */
@@ -1391,7 +1398,7 @@ class AIChatPageComponent {
                 <div class="ai-chat-code-header">
                     <span class="ai-chat-code-language">${lang}</span>
                     <button class="ai-chat-code-copy" onclick="copyCodeToClipboard(this)" title="Copy code">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
                             <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
                         </svg>
                     </button>
@@ -1991,7 +1998,7 @@ class AIChatPageComponent {
         if (loading) {
             // Replace send button with stop button (use same icon as template)
             this.sendButton.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
                     <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2z"/>
                 </svg>
             `;
@@ -2001,7 +2008,7 @@ class AIChatPageComponent {
         } else {
             // Restore send button with correct icon from template
             this.sendButton.innerHTML = `
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" focusable="false">
                     <path d="M8.99992 16V6.41407L5.70696 9.70704C5.31643 10.0976 4.68342 10.0976 4.29289 9.70704C3.90237 9.31652 3.90237 8.6835 4.29289 8.29298L9.29289 3.29298L9.36907 3.22462C9.76184 2.90427 10.3408 2.92686 10.707 3.29298L15.707 8.29298L15.7753 8.36915C16.0957 8.76192 16.0731 9.34092 15.707 9.70704C15.3408 10.0732 14.7618 10.0958 14.3691 9.7754L14.2929 9.70704L10.9999 6.41407V16C10.9999 16.5523 10.5522 17 9.99992 17C9.44764 17 8.99992 16.5523 8.99992 16Z"></path>
                 </svg>
             `;
@@ -2965,10 +2972,37 @@ class AIChatPageComponent {
             }, 400);
         }, 2000);
     }
-    
+
     /**
-     * Clear chat history
+     * Announce message to screen readers via live region
+     *
+     * Updates the screen reader status element with a brief announcement
+     * and clears it after a delay to prevent repeated readings.
+     *
+     * @private
+     * @param {string} message - Message to announce
      */
+    announceToScreenReader(message) {
+        if (!this.srStatus) {
+            return;
+        }
+
+        // Clear first to ensure announcement is read even if same text
+        this.srStatus.textContent = '';
+
+        // Use requestAnimationFrame to ensure the clear is processed
+        requestAnimationFrame(() => {
+            this.srStatus.textContent = message;
+
+            // Clear after announcement is made
+            setTimeout(() => {
+                if (this.srStatus) {
+                    this.srStatus.textContent = '';
+                }
+            }, 1000);
+        });
+    }
+
     /**
      * Clear all chat messages and history
      * 
@@ -3642,7 +3676,7 @@ class AIChatPageComponent {
         copyBtn.className = 'ai-chat-message-action';
         copyBtn.title = this.lang.copyMessageTitle;
         copyBtn.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
                 <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
                 <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
             </svg>
@@ -3661,7 +3695,7 @@ class AIChatPageComponent {
         regenBtn.className = 'ai-chat-message-action';
         regenBtn.title = this.lang.regenerateResponseTitle;
         regenBtn.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
                 <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
                 <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
             </svg>
@@ -3671,10 +3705,10 @@ class AIChatPageComponent {
             const messageDiv = e.target.closest('.ai-chat-message');
             this.regenerateResponse(messageDiv);
         });
-        
+
         actionsDiv.appendChild(copyBtn);
         actionsDiv.appendChild(regenBtn);
-        
+
         return actionsDiv;
     }
 }

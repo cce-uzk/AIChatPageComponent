@@ -189,7 +189,7 @@
     overflow-x: hidden;
 }
 
-/* Assistant message actions */
+/* Assistant message actions - accessible for keyboard and mouse users */
 .ai-chat-message-actions {
     display: flex;
     align-items: center;
@@ -199,7 +199,10 @@
     transition: opacity 0.2s ease;
 }
 
-.ai-chat-message.assistant:hover .ai-chat-message-actions {
+/* Show actions on hover OR when any action button has focus (keyboard navigation) */
+.ai-chat-message.assistant:hover .ai-chat-message-actions,
+.ai-chat-message.assistant:focus-within .ai-chat-message-actions,
+.ai-chat-message-actions:focus-within {
     opacity: 1;
 }
 
@@ -216,12 +219,29 @@
     justify-content: center;
     transition: all 0.2s ease;
     position: relative;
-    overflow: visible; /* Allow sliding text to show outside button */
+    overflow: visible;
 }
 
 .ai-chat-message-action:hover {
     background: var(--chat-bg-tertiary);
     color: var(--chat-text-primary);
+}
+
+/* Enhanced focus state for keyboard navigation */
+.ai-chat-message-action:focus {
+    outline: 2px solid var(--chat-accent);
+    outline-offset: 2px;
+    background: var(--chat-bg-tertiary);
+    color: var(--chat-text-primary);
+}
+
+.ai-chat-message-action:focus:not(:focus-visible) {
+    outline: none;
+}
+
+.ai-chat-message-action:focus-visible {
+    outline: 2px solid var(--chat-accent);
+    outline-offset: 2px;
 }
 
 .ai-chat-message-action svg {
@@ -1364,4 +1384,156 @@
     color: var(--chat-text-secondary);
     font-style: italic;
     font-size: 0.9em;
+}
+
+/* ==========================================================================
+   Accessibility (A11y) Styles
+   ========================================================================== */
+
+/* Screen reader only - visually hidden but accessible */
+.sr-only,
+.ai-chat-sr-status {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+/* Skip link - hidden until focused */
+.ai-chat-skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--chat-accent);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 0 0 4px 0;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+    z-index: 1000;
+    transition: top 0.2s ease;
+}
+
+.ai-chat-skip-link:focus {
+    top: 0;
+    outline: 2px solid var(--chat-accent);
+    outline-offset: 2px;
+}
+
+/* Focus visible indicator for messages area (keyboard scrolling) */
+.ai-chat-messages:focus {
+    outline: 2px solid var(--chat-accent);
+    outline-offset: -2px;
+}
+
+.ai-chat-messages:focus:not(:focus-visible) {
+    outline: none;
+}
+
+.ai-chat-messages:focus-visible {
+    outline: 2px solid var(--chat-accent);
+    outline-offset: -2px;
+}
+
+/* Enhanced focus states for all interactive elements */
+.ai-chat-container button:focus-visible,
+.ai-chat-container a:focus-visible,
+.ai-chat-container [tabindex]:focus-visible {
+    outline: 2px solid var(--chat-accent) !important;
+    outline-offset: 2px !important;
+}
+
+/* Skip link (optional, for future use) */
+.ai-chat-skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--chat-accent);
+    color: white;
+    padding: 8px 16px;
+    z-index: 100;
+    transition: top 0.3s ease;
+    border-radius: 0 0 4px 0;
+}
+
+.ai-chat-skip-link:focus {
+    top: 0;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .ai-chat-container {
+        border: 2px solid var(--chat-text-primary) !important;
+    }
+
+    .ai-chat-message.user .ai-chat-message-content {
+        border: 1px solid var(--chat-text-primary);
+    }
+
+    .ai-chat-composer-inner {
+        border-width: 2px !important;
+    }
+
+    .ai-chat-send,
+    .ai-chat-message-action,
+    .ai-chat-clear-btn {
+        border: 1px solid currentColor !important;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .ai-chat-container *,
+    .ai-chat-container *::before,
+    .ai-chat-container *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .ai-chat-loading-dot {
+        animation: none !important;
+        opacity: 0.6;
+    }
+
+    .streaming-cursor {
+        animation: none !important;
+        opacity: 1;
+    }
+
+    .ai-chat-message {
+        animation: none !important;
+    }
+}
+
+/* Ensure sufficient color contrast for disabled states */
+.ai-chat-send:disabled {
+    color: #9e9e9e !important;
+    background: #424242 !important;
+}
+
+/* Attachment thumbnails - ensure remove button is keyboard accessible */
+.ai-chat-thumbnail-remove:focus {
+    outline: 2px solid white;
+    outline-offset: 1px;
+}
+
+/* Message role indicator for screen readers (added via JS) */
+.ai-chat-message[data-role]::before {
+    content: attr(data-role-label);
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
