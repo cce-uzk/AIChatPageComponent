@@ -500,17 +500,17 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             'purpose' => 'assistants'
         ];
 
-        // Log request details for debugging
-        error_log("RAMSES RAG Upload Request:");
-        error_log("  File: " . $filepath);
-        error_log("  Filename: " . $filename);
-        error_log("  MIME Type: " . $mimeType);
-        error_log("  File size: " . filesize($filepath) . " bytes");
-        error_log("  File exists: " . (file_exists($filepath) ? 'yes' : 'no'));
-        error_log("  Application ID (numeric): " . $applicationId . " (from: " . $applicationIdText . ")");
-        error_log("  Instance ID (numeric): " . $instanceId . " (from: " . $instanceIdText . ")");
-        error_log("  Entity ID (numeric): " . $entityIdNumeric . " (from: " . $entityId . ")");
-        error_log("  URL: " . $fileUploadUrl);
+        $this->logger->debug("RAMSES RAG Upload Request", [
+            'file'           => $filepath,
+            'filename'       => $filename,
+            'mime_type'      => $mimeType,
+            'file_size'      => filesize($filepath),
+            'file_exists'    => file_exists($filepath),
+            'application_id' => $applicationId,
+            'instance_id'    => $instanceId,
+            'entity_id'      => $entityIdNumeric,
+            'url'            => $fileUploadUrl,
+        ]);
 
         $curl = curl_init();
         curl_setopt($curl, CURLOPT_URL, $fileUploadUrl);
@@ -552,12 +552,6 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         $this->logger->debug("RAMSES RAG Upload Response: HTTP $httpCode | File: $filename | Size: " . filesize($filepath) . " | Response: " . $responsePreview);
 
         if ($httpCode !== 200) {
-            error_log("RAMSES RAG Upload Failed - HTTP $httpCode");
-            error_log("cURL Error: " . $error);
-            error_log("Response: " . (is_string($response) ? substr($response, 0, 1000) : '(non-string)'));
-            error_log("URL: " . $fileUploadUrl);
-            error_log("Entity ID: " . $entityId);
-
             $this->logger->error("RAMSES RAG file upload failed", [
                 'http_code' => $httpCode,
                 'curl_error' => $error,
@@ -1045,31 +1039,61 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             return $content;
         }
 
-        // Process streaming response
-        $messages = explode("\n", $responseContent);
+        // Log the raw streaming response for structure analysis
+        $this->logger->debug("RAMSES Streaming Raw Response", [
+            'http_code'    => $httpcode,
+            'raw_length'   => strlen($responseContent),
+            'raw_preview'  => substr($responseContent, -2000), // last 2000 chars most likely contain metadata
+        ]);
+
+        // Process streaming response – extract text, metadata and usage from all chunks
+        $lines          = explode("\n", $responseContent);
         $completeMessage = '';
 
-        foreach ($messages as $message) {
-            if (trim($message) !== '' && strpos($message, 'data: ') === 0) {
-                $jsonData = substr($message, strlen('data: '));
-                if ($jsonData === '[DONE]') {
-                    continue;
-                }
-                $json = json_decode($jsonData, true);
-                if ($json === null && json_last_error() !== JSON_ERROR_NONE) {
-                    continue; // Skip invalid JSON chunks
-                }
-                if (is_array($json) && isset($json['choices'][0]['delta']['content'])) {
-                    $completeMessage .= $json['choices'][0]['delta']['content'];
-                }
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || strpos($line, 'data: ') !== 0) {
+                continue;
+            }
+            $jsonData = substr($line, strlen('data: '));
+            if ($jsonData === '[DONE]') {
+                continue;
+            }
+            $json = json_decode($jsonData, true);
+            if (!is_array($json)) {
+                continue;
+            }
+
+            // Text delta
+            if (isset($json['choices'][0]['delta']['content'])) {
+                $completeMessage .= $json['choices'][0]['delta']['content'];
+            }
+
+            // RAG sources / metadata (may appear in any chunk, typically the last)
+            if (isset($json['metadata']) && is_array($json['metadata'])) {
+                $this->lastResponseMetadata = $json['metadata'];
+            }
+
+            // Token usage
+            if (isset($json['usage']) && is_array($json['usage'])) {
+                $this->lastResponseUsage = $json['usage'];
             }
         }
 
-        // Log complete streaming response
+        $sourceCount = $this->lastResponseMetadata ? count($this->lastResponseMetadata) : 0;
+
         $this->logger->debug("RAMSES Chat Response (Streaming): HTTP " . $httpcode .
                            " | Content Length=" . strlen($completeMessage) .
-                           " | Chunks Processed=" . count($messages) .
+                           " | Chunks Processed=" . count($lines) .
+                           " | Sources=" . $sourceCount .
                            " | Complete Message: " . substr($completeMessage, 0, 1000) . (strlen($completeMessage) > 1000 ? '...' : ''));
+
+        if ($sourceCount > 0) {
+            $this->logger->debug("RAG sources found (streaming)", [
+                'count'   => $sourceCount,
+                'sources' => $this->lastResponseMetadata,
+            ]);
+        }
 
         return $completeMessage;
     }

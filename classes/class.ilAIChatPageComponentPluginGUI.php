@@ -303,6 +303,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                             'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
                             'enable_streaming' => $chatConfig->isEnableStreaming(),
                             'enable_rag' => $chatConfig->isEnableRag(),
+                            'show_sources' => $chatConfig->isShowSources(),
+                            'allow_source_downloads' => $chatConfig->isAllowSourceDownloads(),
                             'is_online' => $chatConfig->isOnline(),
                             'disclaimer' => $chatConfig->getDisclaimer(),
                             'background_files' => json_encode($chatConfig->getBackgroundFiles())
@@ -514,6 +516,17 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             )->withDedicatedName('enable_rag')->withValue($this->toBool($prop['enable_rag'] ?? false));
         }
 
+        // Source visibility settings — only relevant when RAG is available
+        $show_sources = $ui_factory->input()->field()->checkbox(
+            $this->plugin->txt('show_sources_label'),
+            $this->plugin->txt('show_sources_info')
+        )->withDedicatedName('show_sources')->withValue($this->toBool($prop['show_sources'] ?? true));
+
+        $allow_source_downloads = $ui_factory->input()->field()->checkbox(
+            $this->plugin->txt('allow_source_downloads_label'),
+            $this->plugin->txt('allow_source_downloads_info')
+        )->withDedicatedName('allow_source_downloads')->withValue($this->toBool($prop['allow_source_downloads'] ?? true));
+
         // Disclaimer
         $disclaimer = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('legal_disclaimer_label'),
@@ -555,6 +568,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $form_fields['enable_rag'] = $enable_rag;
         }
 
+        $form_fields['show_sources'] = $show_sources;
+        $form_fields['allow_source_downloads'] = $allow_source_downloads;
         $form_fields['disclaimer'] = $disclaimer;
 
         // Only show background files field if file handling is enabled (hierarchical) AND background files are allowed
@@ -687,6 +702,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $chatConfig->setEnableRag(false); // Force disabled when not supported or globally disabled
             }
 
+            $chatConfig->setShowSources((bool) ($form_data['show_sources'] ?? true));
+            $chatConfig->setAllowSourceDownloads((bool) ($form_data['allow_source_downloads'] ?? true));
             $chatConfig->setDisclaimer($form_data['disclaimer'] ?? '');
 
             // Save to database
@@ -1196,6 +1213,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         // Anonymous users must never see or use upload functionality
         $is_anonymous = $DIC->user()->isAnonymous();
+
+        // Admin raw data panel – only for ILIAS system administrators (role ID 2)
+        $is_ilias_admin = $DIC->rbac()->review()->isAssigned($DIC->user()->getId(), SYSTEM_ROLE_ID);
+        $tpl->setVariable("IS_ADMIN", $is_ilias_admin ? 'true' : 'false');
 
         // Page setting, global setting, and authenticated user all required
         $effective_chat_uploads_enabled = $is_chat_uploads_enabled && $chat_uploads_globally_enabled && !$is_anonymous;

@@ -781,3 +781,37 @@ if ($db->tableExists('pcaic_chats')) {
     }
 }
 ?>
+
+<#10>
+<?php
+/**
+ * Step 10: Add per-chat source visibility and download permission flags (v1.5.0)
+ *
+ * show_sources:           controls whether RAG citations are returned to the client at all
+ * allow_source_downloads: controls whether secure download URLs are included in citations
+ *
+ * Both default to 1 (enabled) so existing chats keep their current behaviour.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_chats')) {
+    if (!$db->tableColumnExists('pcaic_chats', 'show_sources')) {
+        $db->addTableColumn('pcaic_chats', 'show_sources', array(
+            'type' => 'integer',
+            'length' => 1,
+            'notnull' => true,
+            'default' => 1
+        ));
+    }
+
+    if (!$db->tableColumnExists('pcaic_chats', 'allow_source_downloads')) {
+        $db->addTableColumn('pcaic_chats', 'allow_source_downloads', array(
+            'type' => 'integer',
+            'length' => 1,
+            'notnull' => true,
+            'default' => 1
+        ));
+    }
+}
+?>

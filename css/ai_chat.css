@@ -1501,6 +1501,35 @@
     color: var(--chat-text-primary);
 }
 
+.ai-chat-source-link {
+    flex: 1;
+    font-weight: 500;
+    color: var(--chat-link);
+    text-decoration: none;
+    word-break: break-word;
+}
+
+.ai-chat-source-link:hover { text-decoration: underline; }
+
+.ai-chat-source-download {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    color: var(--chat-text-secondary);
+    text-decoration: none;
+    transition: background 0.15s ease, color 0.15s ease;
+    margin-left: auto;
+}
+
+.ai-chat-source-download:hover {
+    background: var(--chat-accent-glow);
+    color: var(--chat-accent);
+}
+
 .ai-chat-source-pages {
     font-size: 11px;
     color: var(--chat-text-secondary);
@@ -1547,8 +1576,10 @@
 }
 
 .ai-chat-chip-icon {
-    width: 14px !important;
-    height: 14px !important;
+    width: 20px !important;
+    height: 20px !important;
+    min-width: 20px !important;
+    border-radius: 50% !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -1557,12 +1588,46 @@
 
 .ai-chat-chip-icon svg { width: 11px !important; height: 11px !important; }
 
-.ai-chat-chip-name {
-    max-width: 140px !important;
+/* Chip icon circles – type colours (specificity 0,3,0 beats message-content resets) */
+.ai-chat-source-chip .ai-chat-chip-icon[data-type="pdf"]   { background: rgba(231,  76,  60, 0.2) !important; color: #e74c3c !important; }
+.ai-chat-source-chip .ai-chat-chip-icon[data-type="web"]   { background: rgba( 52, 152, 219, 0.2) !important; color: #3498db !important; }
+.ai-chat-source-chip .ai-chat-chip-icon[data-type="wiki"]  { background: rgba(155,  89, 182, 0.2) !important; color: #9b59b6 !important; }
+.ai-chat-source-chip .ai-chat-chip-icon[data-type="doc"]   { background: rgba( 46, 204, 113, 0.2) !important; color: #2ecc71 !important; }
+.ai-chat-source-chip .ai-chat-chip-icon[data-type="image"] { background: rgba(230, 126,  34, 0.2) !important; color: #e67e22 !important; }
+.ai-chat-source-chip .ai-chat-chip-icon[data-type="text"]  { background: rgba(149, 165, 166, 0.2) !important; color: #95a5a6 !important; }
+.ai-chat-source-chip .ai-chat-chip-icon[data-type="other"] { background: rgba( 52,  73,  94, 0.2) !important; color: #95a5a6 !important; }
+
+/* Higher specificity (0,2,0) beats the message-content span reset (0,1,1) */
+.ai-chat-source-chip .ai-chat-chip-name {
+    max-width: 120px !important;
+    min-width: 0 !important;       /* flex child must be allowed to shrink */
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
     font-weight: 500 !important;
+}
+
+.ai-chat-source-chip .ai-chat-chip-text {
+    display: inline-block !important;
+    white-space: nowrap !important;
+    max-width: none !important;    /* must not be capped – full text width needed for scroll */
+    overflow: visible !important;
+}
+
+/* Remove ellipsis while scrolling */
+.ai-chat-chip-scrollable:hover .ai-chat-chip-name {
+    text-overflow: clip !important;
+}
+
+/* Scroll left until full text visible, pause, jump back, repeat */
+.ai-chat-chip-scrollable:hover .ai-chat-chip-text {
+    animation: chip-name-scroll 3.5s ease-in-out infinite !important;
+}
+
+@keyframes chip-name-scroll {
+    0%, 8%   { transform: translateX(0); }
+    75%, 92% { transform: translateX(var(--chip-scroll-offset, 0px)); }
+    100%     { transform: translateX(0); }
 }
 
 /* Footnote links */
@@ -1605,15 +1670,50 @@ a.ai-chat-footnote-link:hover,
     line-height: 1.5;
     box-shadow: 0 4px 16px var(--chat-shadow);
     border: 1px solid var(--chat-border);
-    max-height: 150px;
+    max-height: 200px;
     overflow-y: auto;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: auto;
     animation: tooltip-fade-in 0.15s ease-out;
 }
 
 @keyframes tooltip-fade-in {
     from { opacity: 0; transform: translateY(-4px); }
     to   { opacity: 1; transform: translateY(0);    }
+}
+
+.ai-chat-source-info-tooltip { min-width: 180px; }
+
+/* Cap all text sizes inside the tooltip – headings must not dominate */
+.ai-chat-source-info-tooltip * { font-size: inherit !important; }
+.ai-chat-source-info-tooltip h1,
+.ai-chat-source-info-tooltip h2,
+.ai-chat-source-info-tooltip h3,
+.ai-chat-source-info-tooltip h4,
+.ai-chat-source-info-tooltip h5,
+.ai-chat-source-info-tooltip h6 { font-size: 13px !important; font-weight: 600 !important; margin: 4px 0 2px !important; }
+
+.ai-chat-tooltip-filename {
+    font-weight: 600;
+    color: var(--chat-text-primary);
+    word-break: break-all;
+    margin-bottom: 4px;
+}
+
+.ai-chat-tooltip-pages {
+    font-size: 11px;
+    color: var(--chat-accent);
+    margin-bottom: 6px;
+}
+
+.ai-chat-tooltip-excerpt {
+    font-size: 11px;
+    color: var(--chat-text-secondary);
+    border-top: 1px solid var(--chat-border);
+    padding-top: 6px;
+    line-height: 1.5;
+    max-height: 120px;
+    overflow-y: auto;
 }
 
 
@@ -1673,6 +1773,63 @@ a.ai-chat-footnote-link:hover,
     border: 0;
 }
 
+
+/* =============================================================================
+   ADMIN RAW DATA PANEL
+   ============================================================================= */
+
+.ai-chat-raw-btn {
+    font-family: monospace;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+}
+
+.ai-chat-raw-panel {
+    margin-top: 8px;
+    border: 1px solid var(--chat-surface-md);
+    border-radius: var(--chat-radius-small);
+    background: var(--chat-surface-xs);
+    overflow: hidden;
+}
+
+.ai-chat-raw-panel summary {
+    padding: 6px 10px;
+    font-size: 11px;
+    font-family: monospace;
+    color: var(--chat-text-secondary);
+    cursor: pointer;
+    background: var(--chat-surface-sm);
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ai-chat-raw-panel summary::-webkit-details-marker { display: none; }
+
+.ai-chat-raw-panel summary::before {
+    content: "▶";
+    font-size: 9px;
+    transition: transform 0.15s ease;
+}
+
+.ai-chat-raw-panel[open] summary::before { transform: rotate(90deg); }
+
+.ai-chat-raw-pre {
+    margin: 0;
+    padding: 10px 12px;
+    font-size: 11px;
+    font-family: monospace;
+    color: var(--chat-text-primary);
+    background: transparent;
+    overflow-x: auto;
+    white-space: pre;
+    max-height: 400px;
+    overflow-y: auto;
+    border-top: 1px solid var(--chat-surface-md);
+    line-height: 1.5;
+}
 
 /* =============================================================================
    RESPONSIVE

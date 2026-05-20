@@ -156,6 +156,7 @@ class AIChatPageComponent {
         this.enableStreaming = this.container.dataset.enableStreaming === 'true';
         this.isAnonymous = this.container.dataset.isAnonymous === 'true';
         this.serviceUnavailable = this.container.dataset.serviceUnavailable === 'true';
+        this.isAdmin = this.container.dataset.isAdmin === 'true';
 
         // In-memory conversation history for stateless anonymous sessions.
         // Never persisted to DB or localStorage; resets on every page load by design.
@@ -169,8 +170,8 @@ class AIChatPageComponent {
         this.lang = {
             copyMessageTitle: this.container.dataset.copyMessageTitle || 'Copy message',
             regenerateResponseTitle: this.container.dataset.regenerateResponseTitle || 'Regenerate response',
-            // likeResponseTitle: this.container.dataset.likeResponseTitle || 'Good response',       // temporarily hidden
-            // dislikeResponseTitle: this.container.dataset.dislikeResponseTitle || 'Poor response', // temporarily hidden
+            likeResponseTitle: this.container.dataset.likeResponseTitle || 'Good response',
+            dislikeResponseTitle: this.container.dataset.dislikeResponseTitle || 'Poor response',
             messageCopied: this.container.dataset.messageCopied || 'Copied!',
             messageCopyFailed: this.container.dataset.messageCopyFailed || 'Failed to copy',
             thinkingHeader: this.container.dataset.thinkingHeader || 'Thinking...',
@@ -1211,9 +1212,14 @@ class AIChatPageComponent {
         // Use stored raw content if available, otherwise use finalContent
         let contentToFormat = contentEl.dataset.rawContent || finalContent;
 
-        // Strip inline sources if we have structured sources to display separately
+        // Strip inline sources and collect any web links the AI embedded in them
+        let effectiveSources = sources;
         if (sources && sources.length > 0) {
-            contentToFormat = this.stripInlineSources(contentToFormat);
+            const { text: stripped, webLinks } = this.stripInlineSourcesWithLinks(contentToFormat, sources);
+            contentToFormat = stripped;
+            if (webLinks.length > 0) {
+                effectiveSources = [...sources, ...webLinks];
+            }
         }
 
         // Set final content with markdown formatting
@@ -1223,15 +1229,29 @@ class AIChatPageComponent {
         delete contentEl.dataset.rawContent;
 
         // Add sources row if sources are available
-        if (sources && sources.length > 0) {
-            const sourcesRow = this.renderSourcesRow(sources, messageEl);
+        if (effectiveSources && effectiveSources.length > 0) {
+            const sourcesRow = this.renderSourcesRow(effectiveSources, messageEl);
             messageEl.appendChild(sourcesRow);
-            // Convert footnotes to chips
-            this.convertFootnotesToChips(contentEl, sourcesRow, sources);
+            // Convert footnotes to chips (use original sources for index mapping)
+            this.convertFootnotesToChips(contentEl, sourcesRow, effectiveSources);
         }
 
         // Add message action buttons
         const actionsEl = this.createMessageActions();
+
+        // Admin raw data button
+        if (this.isAdmin) {
+            const rawBtn = document.createElement('button');
+            rawBtn.className = 'ai-chat-message-action ai-chat-raw-btn';
+            rawBtn.title = 'Raw data (Admin)';
+            rawBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z"/></svg>`;
+            rawBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.toggleRawPanel(messageEl, finalContent, effectiveSources, usage);
+            });
+            actionsEl.appendChild(rawBtn);
+        }
+
         messageEl.appendChild(actionsEl);
 
         // Add to message history (include sources and usage for persistence)
@@ -1352,9 +1372,17 @@ class AIChatPageComponent {
 
         // For assistant messages, render markdown
         if (role === 'assistant') {
-            // Strip inline sources if we have structured sources to display separately
-            const displayContent = (sources && sources.length > 0) ? this.stripInlineSources(content) : content;
+            // Strip inline sources and collect web links from the AI's own sources section
+            let displayContent = content;
+            let effectiveSources = sources;
+            if (sources && sources.length > 0) {
+                const { text: stripped, webLinks } = this.stripInlineSourcesWithLinks(content, sources);
+                displayContent = stripped;
+                if (webLinks.length > 0) effectiveSources = [...sources, ...webLinks];
+            }
             contentWrapper.innerHTML = this.renderMarkdown(displayContent);
+            // Re-assign sources so the block below uses the merged list
+            sources = effectiveSources;
         } else {
             contentWrapper.textContent = content;
         }
@@ -1477,6 +1505,19 @@ class AIChatPageComponent {
             // actionsDiv.appendChild(dislikeBtn);
             actionsDiv.appendChild(regenBtn);
 
+            // Admin-only raw data button
+            if (this.isAdmin) {
+                const rawBtn = document.createElement('button');
+                rawBtn.className = 'ai-chat-message-action ai-chat-raw-btn';
+                rawBtn.title = 'Raw data (Admin)';
+                rawBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z"/></svg>`;
+                rawBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.toggleRawPanel(messageDiv, content, sources, usage);
+                });
+                actionsDiv.appendChild(rawBtn);
+            }
+
             messageDiv.appendChild(actionsDiv);
         }
 
@@ -1505,7 +1546,7 @@ class AIChatPageComponent {
      */
     renderMarkdown(text) {
         if (!text) return '';
-        
+
         // Use marked.js for proper markdown parsing
         if (typeof marked !== 'undefined') {
             // Configure marked options
@@ -1515,11 +1556,36 @@ class AIChatPageComponent {
                 sanitize: false,
                 smartypants: false
             });
-            
+
+            const renderer = new marked.Renderer();
+
+            // ── Citation marker pre-processing ──────────────────────────────────
+            // CommonMark closing-delimiter rule 2b: a run closing ** must be followed
+            // by whitespace or punctuation when preceded by punctuation (e.g. ')').
+            // Unicode superscripts ¹²³ have category "Other Number" (No) – neither
+            // whitespace nor punctuation – so ')**¹' fails to close bold.
+            // Carets '^' ARE punctuation, so ')**^1' works but ')**¹' does not.
+            //
+            // Fix A: convert ^N → ¹ (caret is punctuation so the bold already closes;
+            //         conversion happens after so the rendered ** is already resolved)
+            text = text.replace(/\^(\d+)/g, (_, n) => {
+                const sup = ['⁰','¹','²','³','⁴','⁵','⁶','⁷','⁸','⁹'];
+                return n.split('').map(d => sup[parseInt(d, 10)] || d).join('');
+            });
+
+            // Fix B: insert a space between a closing ** and a directly following
+            // Unicode superscript so marked.js can recognise the bold delimiter.
+            // The space becomes an invisible text node; convertFootnotesToChips
+            // still finds and replaces the superscript immediately after.
+            text = text.replace(/(\S)\*\*([¹²³⁴⁵⁶⁷⁸⁹⁰])/g, '$1** $2');
+
             // Apply Mistral-specific formatting before markdown processing
             text = this.renderMistralSpecialFormatting(text);
-            
-            return marked.parse(text);
+
+            let html = marked.parse(text, { renderer });
+            // Open all external links in a new tab (post-process, renderer API varies by version)
+            html = html.replace(/<a href="(https?:[^"]+)"/g, '<a href="$1" target="_blank" rel="noopener noreferrer"');
+            return html;
         }
         
         // Fallback to custom implementation if marked.js not available
@@ -1852,7 +1918,7 @@ class AIChatPageComponent {
 
             // Render markdown in excerpt for proper formatting
             tooltip.innerHTML = this.renderMarkdown(excerpt);
-            document.body.appendChild(tooltip);
+            this.container.appendChild(tooltip);
 
             // Position tooltip
             const rect = element.getBoundingClientRect();
@@ -1882,6 +1948,98 @@ class AIChatPageComponent {
                 tooltip = null;
             }
         });
+    }
+
+    /**
+     * Toggle raw data panel for admin debugging.
+     * Shows original message text, RAG sources and token usage.
+     */
+    toggleRawPanel(messageEl, rawText, sources, usage) {
+        let panel = messageEl.querySelector('.ai-chat-raw-panel');
+        if (panel) {
+            panel.remove();
+            return;
+        }
+
+        const data = {
+            message: rawText || '',
+            sources: sources || [],
+            usage:   usage   || {}
+        };
+
+        panel = document.createElement('details');
+        panel.className = 'ai-chat-raw-panel';
+        panel.open = true;
+        panel.innerHTML = `<summary>Raw Data</summary><pre class="ai-chat-raw-pre">${this.escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+        messageEl.appendChild(panel);
+    }
+
+    /**
+     * Hover tooltip for source chips: shows full filename, pages and excerpt.
+     * Uses position:fixed so it is never clipped by overflow:hidden parents.
+     */
+    addSourceInfoTooltip(element, sourceData) {
+        let tooltip   = null;
+        let closeTimer = null;
+
+        const cancelClose = () => {
+            if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        };
+
+        const scheduleClose = () => {
+            cancelClose();
+            closeTimer = setTimeout(() => {
+                if (tooltip) { tooltip.remove(); tooltip = null; }
+            }, 120);
+        };
+
+        element.addEventListener('mouseenter', () => {
+            cancelClose();
+
+            if (tooltip) return; // already open
+
+            tooltip = document.createElement('div');
+            tooltip.className = 'ai-chat-source-tooltip ai-chat-source-info-tooltip';
+
+            let html = `<div class="ai-chat-tooltip-filename">${this.escapeHtml(sourceData.filename)}</div>`;
+
+            if (sourceData.pages && sourceData.pages.length > 0) {
+                const pageLabel = sourceData.pages.length === 1
+                    ? (this.container.dataset.pageLabel  || 'S.')
+                    : (this.container.dataset.pagesLabel || 'S.');
+                html += `<div class="ai-chat-tooltip-pages">${pageLabel} ${sourceData.pages.join(', ')}</div>`;
+            }
+
+            if (sourceData.excerpt) {
+                html += `<div class="ai-chat-tooltip-excerpt">${this.renderMarkdown(sourceData.excerpt)}</div>`;
+            }
+
+            tooltip.innerHTML = html;
+            this.container.appendChild(tooltip);
+
+            // Keep tooltip open when the mouse moves into it
+            tooltip.addEventListener('mouseenter', cancelClose);
+            tooltip.addEventListener('mouseleave', scheduleClose);
+
+            const rect     = element.getBoundingClientRect();
+            const maxWidth = Math.min(380, window.innerWidth - 40);
+            let left = rect.left;
+            let top  = rect.bottom + 6;
+
+            if (left + maxWidth > window.innerWidth - 20) {
+                left = window.innerWidth - maxWidth - 20;
+            }
+            const tipHeight = tooltip.getBoundingClientRect().height;
+            if (top + tipHeight > window.innerHeight - 20) {
+                top = rect.top - tipHeight - 6;
+            }
+
+            tooltip.style.left     = `${Math.max(10, left)}px`;
+            tooltip.style.top      = `${top}px`;
+            tooltip.style.maxWidth = `${maxWidth}px`;
+        });
+
+        element.addEventListener('mouseleave', scheduleClose);
     }
 
     /**
@@ -1998,21 +2156,28 @@ class AIChatPageComponent {
     stripInlineSources(text) {
         if (!text) return '';
 
-        // Match various formats of "Quellen" headers:
-        // - Markdown headers: ### Quellen, ## Quellen:, # Quellen
-        // - Bold: **Quellen:** or __Quellen:__
-        // - Plain: Quellen:
-        // Pattern matches newline, optional whitespace, optional markdown header (#), optional bold (**), the word, optional bold, colon
+        // Keywords to detect AI-generated source sections
+        const kw = '(Quellen|Sources|Quellenangaben|Quellenverzeichnis|Referenzen|References|Literatur)';
+
+        // Patterns ordered from most specific to least specific.
+        // Optional leading --- separator, optional bold markers around the keyword.
         const patterns = [
-            /\n#{1,6}\s*(Quellen|Sources|Referenzen|References)\s*:?[\s\S]*$/i,  // Markdown headers
-            /\n\s*\*{1,2}(Quellen|Sources|Referenzen|References)\*{1,2}\s*:?[\s\S]*$/i,  // Bold
-            /\n\s*_{1,2}(Quellen|Sources|Referenzen|References)_{1,2}\s*:?[\s\S]*$/i,  // Underline bold
-            /\n\s*(Quellen|Sources|Referenzen|References)\s*:[\s\S]*$/i,  // Plain with colon
+            // ### **Quellen**: or --- \n ### **Quellen**:
+            new RegExp('\\n?---\\s*\\n+#{1,6}\\s*\\*{0,2}' + kw + '\\*{0,2}\\s*:?[\\s\\S]*$', 'i'),
+            // ### **Quellen**: (no preceding hr)
+            new RegExp('\\n#{1,6}\\s*\\*{0,2}' + kw + '\\*{0,2}\\s*:?[\\s\\S]*$', 'i'),
+            // **Quellen:** standalone bold line
+            new RegExp('\\n\\s*\\*{1,2}' + kw + '\\*{1,2}\\s*:?[\\s\\S]*$', 'i'),
+            // __Quellen:__ standalone
+            new RegExp('\\n\\s*_{1,2}' + kw + '_{1,2}\\s*:?[\\s\\S]*$', 'i'),
+            // Plain "Quellen:" line
+            new RegExp('\\n\\s*' + kw + '\\s*:[\\s\\S]*$', 'i'),
         ];
 
         for (const pattern of patterns) {
             const match = text.match(pattern);
-            if (match && match.index > text.length * 0.5) {
+            // Only strip if found in the last ~60% of the text to avoid false positives
+            if (match && match.index > text.length * 0.4) {
                 text = text.substring(0, match.index);
                 break;
             }
@@ -2031,6 +2196,40 @@ class AIChatPageComponent {
         text = text.trimEnd();
 
         return text;
+    }
+
+    /**
+     * Strip AI-generated sources section and return any web links found in it.
+     * @param {string} text
+     * @param {Array} ragSources - existing RAG sources (used to avoid duplicates)
+     * @returns {{ text: string, webLinks: Array<{filename:string,url:string}> }}
+     */
+    stripInlineSourcesWithLinks(text, ragSources = []) {
+        const ragFilenames = new Set((ragSources || []).map(s => s.filename));
+
+        // Find where the sources section starts
+        const kw = '(Quellen|Sources|Quellenangaben|Quellenverzeichnis|Referenzen|References|Literatur)';
+        const sectionRegex = new RegExp(
+            '(?:\\n?---\\s*\\n+|\\n)#{1,6}\\s*\\*{0,2}' + kw + '\\*{0,2}\\s*:?[\\s\\S]*$', 'i'
+        );
+        const match = text.match(sectionRegex);
+        const webLinks = [];
+
+        if (match && match.index > text.length * 0.4) {
+            const section = match[0];
+            // Extract markdown links [label](url) from the section
+            const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+            let m;
+            while ((m = linkRegex.exec(section)) !== null) {
+                const label = m[1].trim();
+                const url   = m[2].trim();
+                if (!ragFilenames.has(label) && !ragFilenames.has(url)) {
+                    webLinks.push({ filename: label, url, pages: [] });
+                }
+            }
+        }
+
+        return { text: this.stripInlineSources(text), webLinks };
     }
 
     // Attachment rendering methods for different file types
@@ -4256,7 +4455,8 @@ class AIChatPageComponent {
      * @param {string} filename - Source filename
      * @returns {string} Source type: 'pdf', 'web', 'wiki', 'doc', 'image', 'other'
      */
-    detectSourceType(filename) {
+    detectSourceType(filename, url = null) {
+        if (url) return 'web';
         if (!filename) return 'other';
         const lower = filename.toLowerCase();
 
@@ -4318,7 +4518,7 @@ class AIChatPageComponent {
         // Detect unique source types
         const typeCount = {};
         sources.forEach(source => {
-            const type = this.detectSourceType(source.filename);
+            const type = this.detectSourceType(source.filename, source.url);
             typeCount[type] = (typeCount[type] || 0) + 1;
         });
         const uniqueTypes = Object.keys(typeCount).slice(0, 3);
@@ -4356,38 +4556,68 @@ class AIChatPageComponent {
         sourcesSection.className = 'ai-chat-sources-section';
         sourcesSection.dataset.sourcesId = sourcesId;
 
+        // Deduplicate sources by filename, merging page numbers across occurrences
+        const deduped = [];
+        const origToDedup = {}; // 1-based original index → 1-based dedup index
+
+        sources.forEach((source, origIdx) => {
+            const existing = deduped.findIndex(d => d.filename === source.filename);
+            if (existing >= 0) {
+                const merged = new Set([...(deduped[existing].pages || []), ...(source.pages || [])]);
+                deduped[existing].pages = [...merged].sort((a, b) => a - b);
+                origToDedup[origIdx + 1] = existing + 1;
+            } else {
+                deduped.push({ ...source, pages: [...(source.pages || [])] });
+                origToDedup[origIdx + 1] = deduped.length;
+            }
+        });
+
+        // Update toggle button count to reflect deduplicated number
+        const countEl = btn.querySelector('.ai-chat-sources-count');
+        if (countEl) {
+            countEl.textContent = `${deduped.length} ${deduped.length === 1 ? 'Quelle' : 'Quellen'}`;
+        }
+
         const sourcesList = document.createElement('div');
         sourcesList.className = 'ai-chat-sources-list';
 
-        sources.forEach((source, index) => {
-            const type = this.detectSourceType(source.filename);
+        deduped.forEach((source, dedupIdx) => {
+            const type = this.detectSourceType(source.filename, source.url);
             const item = document.createElement('div');
             item.className = 'ai-chat-source-item';
-            item.id = `${sourcesId}-source-${index + 1}`;
-            item.dataset.sourceIndex = index + 1;
+            item.id = `${sourcesId}-source-dedup-${dedupIdx + 1}`;
             item.dataset.type = type;
 
             let pageInfo = '';
             if (source.pages && source.pages.length > 0) {
-                const pageLabel = source.pages.length === 1 ? 'S.' : 'S.';
-                pageInfo = `<span class="ai-chat-source-pages">${pageLabel} ${source.pages.join(', ')}</span>`;
+                pageInfo = `<span class="ai-chat-source-pages">S. ${source.pages.join(', ')}</span>`;
             }
 
-            // Get short filename
-            const shortName = source.filename.length > 40
-                ? source.filename.substring(0, 37) + '...'
-                : source.filename;
+            const nameHtml = source.url
+                ? `<a class="ai-chat-source-link" href="${this.escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${this.escapeHtml(source.filename)}</a>`
+                : `<span class="ai-chat-source-name">${this.escapeHtml(source.filename)}</span>`;
+
+            const downloadBtn = source.download_url
+                ? `<a class="ai-chat-source-download" href="${this.escapeHtml(source.download_url)}" target="_blank" rel="noopener noreferrer" title="Herunterladen" aria-label="Datei herunterladen"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg></a>`
+                : '';
 
             item.innerHTML = `
                 <span class="ai-chat-source-icon" data-type="${type}">${this.getSourceTypeIcon(type)}</span>
-                <span class="ai-chat-source-name">${this.escapeHtml(shortName)}</span>
+                ${nameHtml}
                 ${pageInfo}
+                ${downloadBtn}
             `;
 
-            if (source.excerpt) {
-                item.dataset.excerpt = source.excerpt;
-                this.addExcerptTooltip(item, source.excerpt);
-            }
+            // Add invisible anchors for every original index that maps to this item
+            // so getElementById still works from chip click handlers
+            Object.entries(origToDedup).forEach(([origIdx, dIdx]) => {
+                if (parseInt(dIdx) === dedupIdx + 1) {
+                    const anchor = document.createElement('span');
+                    anchor.id = `${sourcesId}-source-${origIdx}`;
+                    anchor.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;';
+                    item.appendChild(anchor);
+                }
+            });
 
             sourcesList.appendChild(item);
         });
@@ -4428,6 +4658,7 @@ class AIChatPageComponent {
 
         const sourcesId = sourcesRow.dataset.sourcesId;
         const self = this;
+        const createdChips = []; // collected for post-DOM scroll measurement
 
         // Map superscript numbers to regular numbers
         const superscriptMap = {
@@ -4471,17 +4702,14 @@ class AIChatPageComponent {
             chip.className = 'ai-chat-source-chip';
             chip.dataset.sourceIndex = num;
 
-            const type = self.detectSourceType(sourceData.filename);
-            const shortName = sourceData.filename.length > 20
-                ? sourceData.filename.substring(0, 17) + '...'
-                : sourceData.filename;
+            const type = self.detectSourceType(sourceData.filename, sourceData.url);
 
-            chip.innerHTML = `<span class="ai-chat-chip-icon">${self.getSourceTypeIcon(type)}</span><span class="ai-chat-chip-name">${self.escapeHtml(shortName)}</span>`;
+            chip.innerHTML = `<span class="ai-chat-chip-icon" data-type="${type}">${self.getSourceTypeIcon(type)}</span><span class="ai-chat-chip-name"><span class="ai-chat-chip-text">${self.escapeHtml(sourceData.filename)}</span></span>`;
 
-            // Tooltip
-            if (sourceData.excerpt) {
-                self.addExcerptTooltip(chip, sourceData.excerpt);
-            }
+            createdChips.push(chip);
+
+            // Fixed-position tooltip with full filename, pages and excerpt
+            self.addSourceInfoTooltip(chip, sourceData);
 
             // Click to expand and highlight
             chip.addEventListener('click', (e) => {
@@ -4492,8 +4720,12 @@ class AIChatPageComponent {
                     section.classList.add('open');
                     btn.classList.add('active');
                 }
-                const targetItem = document.getElementById(`${sourcesId}-source-${num}`);
+                let targetItem = document.getElementById(`${sourcesId}-source-${num}`);
                 if (targetItem) {
+                    // May be an invisible anchor inside the real item (dedup case)
+                    if (!targetItem.classList.contains('ai-chat-source-item')) {
+                        targetItem = targetItem.closest('.ai-chat-source-item') || targetItem;
+                    }
                     targetItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     targetItem.classList.add('highlighted');
                     setTimeout(() => targetItem.classList.remove('highlighted'), 2000);
@@ -4568,6 +4800,20 @@ class AIChatPageComponent {
             }
 
             textNode.parentNode.replaceChild(fragment, textNode);
+        });
+
+        // After chips are in the DOM: measure real overflow and enable scroll animation.
+        requestAnimationFrame(() => {
+            createdChips.forEach(chip => {
+                const nameEl = chip.querySelector('.ai-chat-chip-name');
+                const textEl = chip.querySelector('.ai-chat-chip-text');
+                if (!nameEl || !textEl) return;
+                const overflow = textEl.scrollWidth - nameEl.clientWidth;
+                if (overflow > 0) {
+                    chip.style.setProperty('--chip-scroll-offset', `-${overflow}px`);
+                    chip.classList.add('ai-chat-chip-scrollable');
+                }
+            });
         });
     }
 }

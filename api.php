@@ -154,22 +154,35 @@ try {
                 $response = $llm->handleSendMessage($chat_id, $user_id, $message, $attachment_ids);
             }
 
+            // Strip sources from response text when show_sources is disabled
+            if (!$chatConfig->isShowSources()) {
+                $response = stripSourcesFromResponse($response);
+            }
+
             // Build response with optional metadata
             $jsonResponse = [
                 'success' => true,
                 'message' => $response
             ];
 
-            // Include RAG sources if available
-            $metadata = $llm->getLastResponseMetadata();
-            if ($metadata !== null && !empty($metadata)) {
-                $jsonResponse['sources'] = array_map(function($source) {
-                    return [
-                        'filename' => $source['filename'] ?? 'Unknown',
-                        'pages' => $source['page_numbers'] ?? [],
-                        'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null
-                    ];
-                }, $metadata);
+            // Include RAG sources if enabled for this chat
+            if ($chatConfig->isShowSources()) {
+                $metadata = $llm->getLastResponseMetadata();
+                if ($metadata !== null && !empty($metadata)) {
+                    $bgUrls = $chatConfig->isAllowSourceDownloads()
+                        ? getBackgroundFileDownloadUrls($chat_id)
+                        : [];
+                    $jsonResponse['sources'] = array_map(function($source) use ($bgUrls, $chat_id) {
+                        $filename = $source['filename'] ?? 'Unknown';
+                        $attachmentId = $bgUrls[$filename] ?? null;
+                        return [
+                            'filename'     => $filename,
+                            'pages'        => $source['page_numbers'] ?? [],
+                            'excerpt'      => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
+                            'download_url' => $attachmentId ? buildSecureDownloadUrl($chat_id, $attachmentId) : null,
+                        ];
+                    }, $metadata);
+                }
             }
 
             // Include token usage if available
@@ -258,19 +271,32 @@ try {
                 $response = $llm->handleSendMessage($chat_id, $user_id, $message, $attachment_ids);
             }
 
+            // Strip sources from response text when show_sources is disabled
+            if (!$chatConfig->isShowSources()) {
+                $response = stripSourcesFromResponse($response);
+            }
+
             // Build complete response with optional metadata
             $completeData = ['type' => 'complete', 'message' => $response];
 
-            // Include RAG sources if available
-            $metadata = $llm->getLastResponseMetadata();
-            if ($metadata !== null && !empty($metadata)) {
-                $completeData['sources'] = array_map(function($source) {
-                    return [
-                        'filename' => $source['filename'] ?? 'Unknown',
-                        'pages' => $source['page_numbers'] ?? [],
-                        'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null
-                    ];
-                }, $metadata);
+            // Include RAG sources if enabled for this chat
+            if ($chatConfig->isShowSources()) {
+                $metadata = $llm->getLastResponseMetadata();
+                if ($metadata !== null && !empty($metadata)) {
+                    $bgUrls = $chatConfig->isAllowSourceDownloads()
+                        ? getBackgroundFileDownloadUrls($chat_id)
+                        : [];
+                    $completeData['sources'] = array_map(function($source) use ($bgUrls, $chat_id) {
+                        $filename = $source['filename'] ?? 'Unknown';
+                        $attachmentId = $bgUrls[$filename] ?? null;
+                        return [
+                            'filename'     => $filename,
+                            'pages'        => $source['page_numbers'] ?? [],
+                            'excerpt'      => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
+                            'download_url' => $attachmentId ? buildSecureDownloadUrl($chat_id, $attachmentId) : null,
+                        ];
+                    }, $metadata);
+                }
             }
 
             // Include token usage if available
@@ -498,16 +524,33 @@ try {
                     $formatted_attachments[] = $att->toArray();
                 }
 
+                $msgText = $msg->getMessage();
+                $showSources = $chatConfig->isShowSources();
+
+                // Strip sources from assistant messages when show_sources is disabled
+                if ($msg->getRole() === 'assistant' && !$showSources) {
+                    $msgText = stripSourcesFromResponse($msgText);
+                }
+
                 $formatted_msg = [
                     'role' => $msg->getRole(),
-                    'message' => $msg->getMessage(),
+                    'message' => $msgText,
                     'timestamp' => $msg->getTimestamp(),
                     'attachments' => $formatted_attachments
                 ];
 
                 // Include sources for assistant messages (RAG citations)
-                if ($msg->getRole() === 'assistant' && $msg->hasSources()) {
-                    $formatted_msg['sources'] = $msg->getFormattedSources();
+                if ($msg->getRole() === 'assistant' && $showSources && $msg->hasSources()) {
+                    $bgUrls = $chatConfig->isAllowSourceDownloads()
+                        ? getBackgroundFileDownloadUrls($chat_id)
+                        : [];
+                    $formatted_msg['sources'] = array_map(function($source) use ($bgUrls, $chat_id) {
+                        $filename = $source['filename'] ?? 'Unknown';
+                        $attachmentId = $bgUrls[$filename] ?? null;
+                        return array_merge($source, [
+                            'download_url' => $attachmentId ? buildSecureDownloadUrl($chat_id, $attachmentId) : null,
+                        ]);
+                    }, $msg->getFormattedSources());
                 }
 
                 // Include usage data if available
@@ -723,6 +766,61 @@ try {
                 'max_memory_limit' => (int)(\platform\AIChatPageComponentConfig::get('max_memory_messages') ?: 10)
             ]);
             break;
+
+        // ========================================
+        // Download Background File (secure, session-checked)
+        // ========================================
+        case 'download_background_file':
+            // Must be logged in
+            if ($is_anonymous) {
+                http_response_code(403);
+                exit;
+            }
+
+            $attachment_id = (int)($data['attachment_id'] ?? 0);
+            if (!$attachment_id || !$chat_id) {
+                http_response_code(400);
+                exit;
+            }
+
+            // Permission: user must have read access to this chat
+            $dlChatConfig = new ChatConfig($chat_id);
+            if (!checkChatAccess($dlChatConfig, 'read')) {
+                http_response_code(403);
+                exit;
+            }
+
+            // Downloads must be enabled for this chat
+            if (!$dlChatConfig->isAllowSourceDownloads()) {
+                http_response_code(403);
+                exit;
+            }
+
+            // Load attachment and verify it belongs to this chat as a background file
+            try {
+                $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
+                if (!$attachment->isBackgroundFile() || $attachment->getChatId() !== $chat_id) {
+                    http_response_code(403);
+                    exit;
+                }
+
+                $resource_id = $attachment->getResourceIdentification();
+                if (!$resource_id) {
+                    http_response_code(404);
+                    exit;
+                }
+
+                // Deliver via IRSS download consumer (forces download disposition)
+                $download_consumer = $DIC->resourceStorage()->consume()->download($resource_id);
+                $download_consumer->run();
+            } catch (\Exception $e) {
+                $logger->warning("Background file download failed", [
+                    'attachment_id' => $attachment_id,
+                    'error'         => $e->getMessage()
+                ]);
+                http_response_code(500);
+            }
+            exit;
 
         // ========================================
         // Unknown Action
@@ -1030,4 +1128,87 @@ function isRagEnabledForChat(ChatConfig $chatConfig, \ai\AIChatPageComponentLLM 
     }
 
     return $chatConfig->isEnableRag();
+}
+
+/**
+ * Strip RAG source citations from an AI response text.
+ *
+ * Removes:
+ * - Inline footnote superscripts (¹²³⁴⁵⁶⁷⁸⁹⁰ and [1][2]… variants, ^N)
+ * - The entire sources/references section at the end of the response
+ *   (triggered by headings like "### Quellen", "### Sources", "### Références",
+ *    "### References", optionally bold-wrapped, preceded by ---)
+ */
+function stripSourcesFromResponse(string $text): string
+{
+    // Remove trailing sources section (--- separator or heading variants)
+    // Matches from the first occurrence of a sources heading to end of string
+    $sectionPattern = '/\s*(?:---\s*)?#{1,4}\s*\*{0,2}(?:Quellen|Sources?|R[eé]f[eé]rences?|Literatur(?:verzeichnis)?|Bibliography)\*{0,2}\s*:?.*$/us';
+    $text = preg_replace($sectionPattern, '', $text);
+
+    // Remove numbered reference list at end (lines like "1. filename, S. 3")
+    // Only if they appear to be a citation block (number + dot + text pattern, multiple lines)
+    $text = preg_replace('/(?:\n\d+\.\s+[^\n]+){2,}\s*$/u', '', $text);
+
+    // Remove inline Unicode superscript footnote markers (¹²³⁴⁵⁶⁷⁸⁹⁰ combinations)
+    $text = preg_replace('/[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{2079}]+/u', '', $text);
+
+    // Remove ^N caret-style markers
+    $text = preg_replace('/\^[\d,\s]+/', '', $text);
+
+    // Remove [N] bracket-style markers
+    $text = preg_replace('/\[\d+\]/', '', $text);
+
+    // Convert markdown links [label](url) → label (keep readable text, drop URL)
+    $text = preg_replace('/\[([^\]]+)\]\(https?:\/\/[^)]+\)/', '$1', $text);
+
+    // Remove bare URLs
+    $text = preg_replace('/https?:\/\/\S+/', '', $text);
+
+    return rtrim($text);
+}
+
+/**
+ * Build a filename → attachment_id map for all background files of a chat.
+ * Used to enrich RAG source citations with secure download links.
+ *
+ * @param string $chat_id
+ * @return array<string, int>  e.g. ['report.pdf' => 42]
+ */
+function getBackgroundFileDownloadUrls(string $chat_id): array
+{
+    $map = [];
+    try {
+        $attachments = \ILIAS\Plugin\pcaic\Model\Attachment::getByChatId($chat_id);
+        foreach ($attachments as $attachment) {
+            if (!$attachment->isBackgroundFile()) {
+                continue;
+            }
+            $title = $attachment->getTitle();
+            $id    = $attachment->getId();
+            if ($title && $id) {
+                $map[$title] = $id;
+                // RAMSES replaces spaces with underscores in filenames
+                $map[str_replace(' ', '_', $title)] = $id;
+            }
+        }
+    } catch (\Exception $e) {
+        // Non-critical – sources are still shown, just without download links
+    }
+    return $map;
+}
+
+/**
+ * Build a secure download URL for a background file attachment.
+ * Routes through api.php so ILIAS session + read permission are enforced.
+ */
+function buildSecureDownloadUrl(string $chat_id, int $attachment_id): string
+{
+    global $DIC;
+    $base = rtrim(preg_replace('~(/Customizing)(?=/|$).*~i', '', ILIAS_HTTP_PATH), '/');
+    $plugin_path = '/Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent/api.php';
+    return $base . $plugin_path
+        . '?action=download_background_file'
+        . '&chat_id=' . urlencode($chat_id)
+        . '&attachment_id=' . (int)$attachment_id;
 }

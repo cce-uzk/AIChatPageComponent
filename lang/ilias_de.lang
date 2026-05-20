@@ -258,3 +258,7 @@ stat_chat_not_found#:#Chat nicht gefunden.
 stat_yes#:#Ja
 stat_no#:#Nein
 stat_no_title#:#ohne Titel
+show_sources_label#:#Quellen anzeigen
+show_sources_info#:#Wenn aktiviert, werden RAG-Quellenangaben für Nutzer angezeigt. Wenn deaktiviert, werden Quellen serverseitig herausgefiltert und Nutzer sehen nur die KI-Antwort.
+allow_source_downloads_label#:#Quellen-Download erlauben
+allow_source_downloads_info#:#Wenn aktiviert, können Nutzer die als Quellen zitierten Hintergrunddateien herunterladen. Erfordert aktive Option "Quellen anzeigen".

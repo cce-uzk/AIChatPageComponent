@@ -257,3 +257,7 @@ stat_chat_not_found#:#Chat not found.
 stat_yes#:#Yes
 stat_no#:#No
 stat_no_title#:#untitled
+show_sources_label#:#Show Sources
+show_sources_info#:#If enabled, RAG citations are shown to users. If disabled, sources are stripped server-side and users see only the AI answer.
+allow_source_downloads_label#:#Allow Source Downloads
+allow_source_downloads_info#:#If enabled, users can download the background files cited as sources. Requires "Show Sources" to be active.

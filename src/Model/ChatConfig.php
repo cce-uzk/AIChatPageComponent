@@ -26,6 +26,8 @@ class ChatConfig
     private bool $enableChatUploads = false;
     private bool $enableStreaming = true;
     private bool $enableRag = false;
+    private bool $showSources = true;
+    private bool $allowSourceDownloads = true;
     private bool $isOnline = true;
     private string $disclaimer = '';
     private ?string $ragCollectionId = null;
@@ -77,6 +79,8 @@ class ChatConfig
             $this->enableChatUploads = (bool)$row['enable_chat_uploads'];
             $this->enableStreaming = (bool)($row['enable_streaming'] ?? true);
             $this->enableRag = (bool)($row['enable_rag'] ?? false);
+            $this->showSources = (bool)($row['show_sources'] ?? true);
+            $this->allowSourceDownloads = (bool)($row['allow_source_downloads'] ?? true);
             $this->isOnline = (bool)($row['is_online'] ?? true);
             $this->disclaimer = $row['disclaimer'] ?? '';
             $this->ragCollectionId = $row['rag_collection_id'] ?? null;
@@ -166,6 +170,8 @@ class ChatConfig
             'enable_chat_uploads' => ['integer', $this->enableChatUploads ? 1 : 0],
             'enable_streaming' => ['integer', $this->enableStreaming ? 1 : 0],
             'enable_rag' => ['integer', $this->enableRag ? 1 : 0],
+            'show_sources' => ['integer', $this->showSources ? 1 : 0],
+            'allow_source_downloads' => ['integer', $this->allowSourceDownloads ? 1 : 0],
             'is_online' => ['integer', $this->isOnline ? 1 : 0],
             'disclaimer' => ['clob', $this->disclaimer],
             'rag_collection_id' => ['text', $this->ragCollectionId],
@@ -269,6 +275,10 @@ class ChatConfig
 
     public function isEnableRag(): bool { return $this->enableRag; }
     public function setEnableRag(bool $enableRag): void { $this->enableRag = $enableRag; }
+    public function isShowSources(): bool { return $this->showSources; }
+    public function setShowSources(bool $showSources): void { $this->showSources = $showSources; }
+    public function isAllowSourceDownloads(): bool { return $this->allowSourceDownloads; }
+    public function setAllowSourceDownloads(bool $allowSourceDownloads): void { $this->allowSourceDownloads = $allowSourceDownloads; }
     public function isOnline(): bool { return $this->isOnline; }
     public function setIsOnline(bool $isOnline): void { $this->isOnline = $isOnline; }
     public function getDisclaimer(): string { return $this->disclaimer; }
@@ -298,6 +308,8 @@ class ChatConfig
             'persistent' => $this->persistent,
             'include_page_context' => $this->includePageContext,
             'enable_chat_uploads' => $this->enableChatUploads,
+            'show_sources' => $this->showSources,
+            'allow_source_downloads' => $this->allowSourceDownloads,
             'is_online' => $this->isOnline,
             'disclaimer' => $this->disclaimer,
             'rag_collection_id' => $this->ragCollectionId,
