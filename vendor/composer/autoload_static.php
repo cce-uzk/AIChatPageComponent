@@ -21,6 +21,8 @@ class ComposerStaticInit52975239271cd8444140239aa621a8e3
     );
 
     public static $classMap = array (
+        'AIChatStatisticsDataRetrieval' => __DIR__ . '/../..' . '/classes/Statistics/class.AIChatStatisticsDataRetrieval.php',
+        'AIChatStatisticsTableGUI' => __DIR__ . '/../..' . '/classes/Statistics/class.AIChatStatisticsTableGUI.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
         'ILIAS\\Plugin\\pcaic\\Exception\\PluginException' => __DIR__ . '/../..' . '/src/Exception/PluginException.php',
         'ILIAS\\Plugin\\pcaic\\Model\\Attachment' => __DIR__ . '/../..' . '/src/Model/Attachment.php',

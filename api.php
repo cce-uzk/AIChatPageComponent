@@ -31,7 +31,15 @@ use ILIAS\Plugin\pcaic\Model\ChatSession;
 use ILIAS\Plugin\pcaic\Model\ChatMessage;
 use ILIAS\Plugin\pcaic\Model\Attachment;
 
-header('Access-Control-Allow-Origin: *');
+// Restrict CORS to the ILIAS installation's own origin
+$allowed_origin = defined('ILIAS_HTTP_PATH') ? rtrim(ILIAS_HTTP_PATH, '/') : '';
+$request_origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if ($allowed_origin !== '' && $request_origin === $allowed_origin) {
+    header('Access-Control-Allow-Origin: ' . $allowed_origin);
+} elseif ($allowed_origin === '') {
+    // Fallback when ILIAS_HTTP_PATH is not yet defined
+    header('Access-Control-Allow-Origin: ' . ($_SERVER['HTTP_ORIGIN'] ?? ''));
+}
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
@@ -64,9 +72,19 @@ if ($method === 'GET') {
     }
 }
 
-$action = $data['action'] ?? $_REQUEST['action'] ?? '';
-$chat_id = $data['chat_id'] ?? $_REQUEST['chat_id'] ?? '';
+$action = $data['action'] ?? '';
+$chat_id = $data['chat_id'] ?? '';
 $user_id = (int) ($DIC->user()->getId() ?? 0);
+$is_anonymous = $DIC->user()->isAnonymous();
+$allow_anonymous = (\platform\AIChatPageComponentConfig::get('allow_anonymous_access') === '1');
+
+// Block all access for anonymous users when globally disabled
+if ($is_anonymous && !$allow_anonymous) {
+    header('Content-Type: application/json');
+    http_response_code(403);
+    echo json_encode(['error' => 'anonymous_access_blocked']);
+    exit;
+}
 
 try {
     // ============================================
@@ -104,16 +122,63 @@ try {
                 exit;
             }
 
+            if (!checkChatAccess($chatConfig)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Access denied']);
+                exit;
+            }
+
+            // Daily message rate limit (authenticated users only)
+            if (!$is_anonymous) {
+                $limit_error = checkDailyMessageLimit($chat_id, $user_id);
+                if ($limit_error !== null) {
+                    http_response_code(429);
+                    echo json_encode(['error' => $limit_error]);
+                    exit;
+                }
+            }
+
             // Create LLM instance and delegate (respect force default service)
             $llm = createLLMInstance(getEffectiveAiService($chatConfig));
             $llm->setStreaming(false);
 
-            $response = $llm->handleSendMessage($chat_id, $user_id, $message, $attachment_ids);
+            if ($is_anonymous) {
+                // Stateless mode: no DB session, history comes from frontend
+                $conversation_history = $data['conversation_history'] ?? [];
+                if (is_string($conversation_history)) {
+                    $conversation_history = json_decode($conversation_history, true) ?: [];
+                }
+                $conversation_history = sanitizeConversationHistory($conversation_history);
+                $response = $llm->handleStatelessMessage($chat_id, $conversation_history, $message);
+            } else {
+                $response = $llm->handleSendMessage($chat_id, $user_id, $message, $attachment_ids);
+            }
 
-            echo json_encode([
+            // Build response with optional metadata
+            $jsonResponse = [
                 'success' => true,
                 'message' => $response
-            ]);
+            ];
+
+            // Include RAG sources if available
+            $metadata = $llm->getLastResponseMetadata();
+            if ($metadata !== null && !empty($metadata)) {
+                $jsonResponse['sources'] = array_map(function($source) {
+                    return [
+                        'filename' => $source['filename'] ?? 'Unknown',
+                        'pages' => $source['page_numbers'] ?? [],
+                        'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null
+                    ];
+                }, $metadata);
+            }
+
+            // Include token usage if available
+            $usage = $llm->getLastResponseUsage();
+            if ($usage !== null) {
+                $jsonResponse['usage'] = $usage;
+            }
+
+            echo json_encode($jsonResponse);
             break;
 
         // ========================================
@@ -147,22 +212,74 @@ try {
                 exit;
             }
 
+            if (!checkChatAccess($chatConfig)) {
+                http_response_code(403);
+                echo "data: " . json_encode(['error' => 'Access denied']) . "\n\n";
+                exit;
+            }
+
+            // Daily message rate limit (authenticated users only)
+            // Note: EventSource uses HTTP 200 always – errors must be sent as SSE events.
+            if (!$is_anonymous) {
+                $limit_error = checkDailyMessageLimit($chat_id, $user_id);
+                if ($limit_error !== null) {
+                    echo "data: " . json_encode(['type' => 'error', 'error' => $limit_error]) . "\n\n";
+                    flush();
+                    exit;
+                }
+            }
+
             // Get effective AI service (respects force default)
             $aiService = getEffectiveAiService($chatConfig);
 
             // Check hierarchical streaming settings (central → LLM → chat)
             $streamingEnabled = isStreamingEnabledForChat($chatConfig, $aiService);
 
+            // Flush start event BEFORE creating the LLM instance so that headers_sent()
+            // is true when createLLMInstance() throws (e.g. no_service_available).
+            // EventSource only fires onmessage for HTTP 200 responses; a 503 would only
+            // trigger onerror where the body is inaccessible.
+            echo "data: " . json_encode(['type' => 'start']) . "\n\n";
+            flush();
+
             // Create LLM instance and delegate
             $llm = createLLMInstance($aiService);
             $llm->setStreaming($streamingEnabled);
 
-            echo "data: " . json_encode(['type' => 'start']) . "\n\n";
-            flush();
+            if ($is_anonymous) {
+                // Stateless mode: no DB session, history comes from frontend
+                $conversation_history = $data['conversation_history'] ?? [];
+                if (is_string($conversation_history)) {
+                    $conversation_history = json_decode($conversation_history, true) ?: [];
+                }
+                $conversation_history = sanitizeConversationHistory($conversation_history);
+                $response = $llm->handleStatelessMessage($chat_id, $conversation_history, $message);
+            } else {
+                $response = $llm->handleSendMessage($chat_id, $user_id, $message, $attachment_ids);
+            }
 
-            $response = $llm->handleSendMessage($chat_id, $user_id, $message, $attachment_ids);
+            // Build complete response with optional metadata
+            $completeData = ['type' => 'complete', 'message' => $response];
 
-            echo "data: " . json_encode(['type' => 'complete', 'message' => $response]) . "\n\n";
+            // Include RAG sources if available
+            $metadata = $llm->getLastResponseMetadata();
+            if ($metadata !== null && !empty($metadata)) {
+                $completeData['sources'] = array_map(function($source) {
+                    return [
+                        'filename' => $source['filename'] ?? 'Unknown',
+                        'pages' => $source['page_numbers'] ?? [],
+                        'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null
+                    ];
+                }, $metadata);
+            }
+
+            // Include token usage if available
+            $usage = $llm->getLastResponseUsage();
+            if ($usage !== null) {
+                $completeData['usage'] = $usage;
+            }
+
+            echo "data: " . json_encode($completeData) . "\n\n";
             flush();
             break;
 
@@ -171,6 +288,14 @@ try {
         // ========================================
         case 'upload_file':
             header('Content-Type: application/json');
+
+            // File uploads are never permitted for anonymous users – regardless of the
+            // allow_anonymous_access setting. Anonymous can chat (stateless) but never upload.
+            if ($is_anonymous) {
+                http_response_code(403);
+                echo json_encode(['error' => 'File uploads are not available for anonymous users']);
+                exit;
+            }
 
             if (!isset($_FILES['file'])) {
                 echo json_encode(['error' => 'No file uploaded']);
@@ -181,6 +306,12 @@ try {
             $chatConfig = new ChatConfig($chat_id);
             if (!$chatConfig->exists()) {
                 echo json_encode(['error' => 'Chat not found']);
+                exit;
+            }
+
+            if (!checkChatAccess($chatConfig)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Access denied']);
                 exit;
             }
 
@@ -317,7 +448,7 @@ try {
                 $logger->error("File upload failed", [
                     'error' => $e->getMessage()
                 ]);
-                echo json_encode(['error' => 'File upload failed: ' . $e->getMessage()]);
+                echo json_encode(['error' => 'File upload failed. Please try again.']);
             }
             break;
 
@@ -326,6 +457,12 @@ try {
         // ========================================
         case 'load_chat':
             header('Content-Type: application/json');
+
+            // Anonymous sessions are stateless – no server-side history exists
+            if ($is_anonymous) {
+                echo json_encode(['success' => true, 'messages' => [], 'session' => null, 'config' => []]);
+                exit;
+            }
 
             if (empty($chat_id)) {
                 echo json_encode(['error' => 'Missing chat_id']);
@@ -336,6 +473,12 @@ try {
             $chatConfig = new ChatConfig($chat_id);
             if (!$chatConfig->exists()) {
                 echo json_encode(['error' => 'Chat configuration not found']);
+                exit;
+            }
+
+            if (!checkChatAccess($chatConfig)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Access denied']);
                 exit;
             }
 
@@ -355,12 +498,25 @@ try {
                     $formatted_attachments[] = $att->toArray();
                 }
 
-                $formatted_messages[] = [
+                $formatted_msg = [
                     'role' => $msg->getRole(),
                     'message' => $msg->getMessage(),
                     'timestamp' => $msg->getTimestamp(),
                     'attachments' => $formatted_attachments
                 ];
+
+                // Include sources for assistant messages (RAG citations)
+                if ($msg->getRole() === 'assistant' && $msg->hasSources()) {
+                    $formatted_msg['sources'] = $msg->getFormattedSources();
+                }
+
+                // Include usage data if available
+                $usage = $msg->getUsage();
+                if ($usage !== null) {
+                    $formatted_msg['usage'] = $usage;
+                }
+
+                $formatted_messages[] = $formatted_msg;
             }
 
             echo json_encode([
@@ -369,6 +525,20 @@ try {
                 'session' => $session->toArray(),
                 'messages' => $formatted_messages
             ]);
+
+            // Lazy session cleanup: run with ~5% probability, restricted to users with
+            // write access on the parent object so it never runs in a plain user context.
+            if (mt_rand(1, 20) === 1 && checkChatAccess($chatConfig, 'write')) {
+                $cleanup_days = (int)(\platform\AIChatPageComponentConfig::get('session_cleanup_days') ?? 90);
+                if ($cleanup_days > 0) {
+                    try {
+                        $plugin = ilAIChatPageComponentPlugin::getInstance();
+                        $plugin->cleanupInactiveSessions($cleanup_days);
+                    } catch (\Exception $e) {
+                        $logger->warning("Lazy session cleanup failed", ['error' => $e->getMessage()]);
+                    }
+                }
+            }
             break;
 
         // ========================================
@@ -377,8 +547,26 @@ try {
         case 'clear_chat':
             header('Content-Type: application/json');
 
+            // Anonymous sessions are stateless – nothing to clear server-side
+            if ($is_anonymous) {
+                echo json_encode(['success' => true]);
+                exit;
+            }
+
             if (empty($chat_id)) {
                 echo json_encode(['error' => 'Missing chat_id']);
+                exit;
+            }
+
+            $chatConfig = new ChatConfig($chat_id);
+            if (!$chatConfig->exists()) {
+                echo json_encode(['error' => 'Chat not found']);
+                exit;
+            }
+
+            if (!checkChatAccess($chatConfig)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Access denied']);
                 exit;
             }
 
@@ -444,6 +632,32 @@ try {
         case 'get_global_config':
             header('Content-Type: application/json');
 
+            // Anonymous users never get upload access
+            if ($DIC->user()->isAnonymous()) {
+                $chatConfig = new ChatConfig($data['chat_id'] ?? '');
+                $ai_service = getEffectiveAiService($chatConfig);
+                $llm = createLLMInstance($ai_service);
+                $rag_enabled = isRagEnabledForChat($chatConfig, $llm);
+                $allowed_extensions = $llm->getAllowedFileTypes($rag_enabled);
+                $streaming_enabled = isStreamingEnabledForChat($chatConfig, $ai_service);
+
+                echo json_encode([
+                    'success' => true,
+                    'upload_enabled' => false,
+                    'allowed_extensions' => $allowed_extensions,
+                    'allowed_mime_types' => [],
+                    'allowed_accept_values' => [],
+                    'rag_mode' => $rag_enabled,
+                    'streaming_enabled' => $streaming_enabled,
+                    'file_handling_enabled' => false,
+                    'max_file_size_mb' => 0,
+                    'max_attachments_per_message' => 0,
+                    'max_char_limit' => (int)(\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000),
+                    'max_memory_limit' => (int)(\platform\AIChatPageComponentConfig::get('max_memory_messages') ?: 10)
+                ]);
+                exit;
+            }
+
             // Check if uploads are globally enabled
             $upload_enabled = true; // Default to enabled
             $enable_uploads_setting = \platform\AIChatPageComponentConfig::get('enable_file_uploads');
@@ -461,6 +675,18 @@ try {
             }
 
             $chatConfig = new ChatConfig($chat_id);
+            if (!$chatConfig->exists()) {
+                http_response_code(404);
+                echo json_encode(['error' => 'Chat not found']);
+                exit;
+            }
+
+            if (!checkChatAccess($chatConfig)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Access denied']);
+                exit;
+            }
+
             $ai_service = getEffectiveAiService($chatConfig);
 
             // Get LLM instance and check if RAG is enabled (service + global + chat)
@@ -499,20 +725,6 @@ try {
             break;
 
         // ========================================
-        // Test Endpoint
-        // ========================================
-        case 'test':
-            header('Content-Type: application/json');
-
-            echo json_encode([
-                'success' => true,
-                'message' => 'API is working',
-                'user_id' => $user_id,
-                'timestamp' => date('Y-m-d H:i:s')
-            ]);
-            break;
-
-        // ========================================
         // Unknown Action
         // ========================================
         default:
@@ -525,28 +737,142 @@ try {
     }
 
 } catch (\Exception $e) {
+    $is_no_service = ($e->getMessage() === 'no_service_available');
+
     $logger->error("API Error", [
         'action' => $action,
         'chat_id' => $chat_id,
         'error' => $e->getMessage(),
-        'trace' => $e->getTraceAsString()
+        'trace' => $is_no_service ? '' : $e->getTraceAsString()
     ]);
 
-    // Only set headers if they haven't been sent yet (e.g., not in streaming mode)
+    $client_message = $is_no_service
+        ? 'no_service_available'
+        : 'An internal error occurred. Please try again.';
+
     if (!headers_sent()) {
         header('Content-Type: application/json');
-        http_response_code(500);
-        echo json_encode([
-            'error' => 'Server error: ' . $e->getMessage()
-        ]);
+        http_response_code($is_no_service ? 503 : 500);
+        echo json_encode(['error' => $client_message]);
     } else {
-        // In streaming mode, send error as SSE event
-        echo "data: " . json_encode([
-            'type' => 'error',
-            'error' => 'Server error: ' . $e->getMessage()
-        ]) . "\n\n";
+        echo "data: " . json_encode(['type' => 'error', 'error' => $client_message]) . "\n\n";
         flush();
     }
+}
+
+/**
+ * Check whether the authenticated user has exceeded their daily message limit.
+ *
+ * Counts 'user' role messages sent today (UTC) for this user+chat combination.
+ * Returns null when within limits, or a translated error string when exceeded.
+ *
+ * @param string $chat_id  Chat identifier
+ * @param int    $user_id  Authenticated user ID
+ * @return string|null     null = OK, string = error message to return to client
+ */
+function checkDailyMessageLimit(string $chat_id, int $user_id): ?string
+{
+    $max = (int)(\platform\AIChatPageComponentConfig::get('max_messages_per_day') ?? 50);
+    if ($max <= 0) {
+        return null; // 0 = unlimited
+    }
+
+    global $DIC;
+    $db = $DIC->database();
+
+    $today = date('Y-m-d');
+
+    $result = $db->query(
+        "SELECT COUNT(*) AS cnt " .
+        "FROM pcaic_messages m " .
+        "INNER JOIN pcaic_sessions s ON m.session_id = s.session_id " .
+        "WHERE s.user_id = " . $db->quote($user_id, 'integer') . " " .
+        "AND s.chat_id = "  . $db->quote($chat_id, 'text')    . " " .
+        "AND m.role = 'user' " .
+        "AND DATE(m.timestamp) = " . $db->quote($today, 'text')
+    );
+
+    $row = $db->fetchAssoc($result);
+    $count = (int) ($row['cnt'] ?? 0);
+
+    if ($count >= $max) {
+        $plugin = ilAIChatPageComponentPlugin::getInstance();
+        return sprintf($plugin->txt('error_rate_limit_exceeded'), $max);
+    }
+
+    return null;
+}
+
+/**
+ * Check whether the current user has read access to the parent ILIAS object
+ * that contains the given chat.
+ *
+ * parent_id is stored as obj_id (ilPageObject::getParentId()).
+ * All matching ref_ids are checked; access is granted if any passes.
+ *
+ * @param ChatConfig $chatConfig Chat configuration with parent context
+ * @return bool True if access is permitted
+ */
+function checkChatAccess(ChatConfig $chatConfig, string $permission = 'read'): bool
+{
+    global $DIC;
+
+    $parent_id = $chatConfig->getParentId();
+    if ($parent_id <= 0) {
+        return false;
+    }
+
+    // parent_id is obj_id – resolve to ref_ids for the access check
+    $refs = ilObject::_getAllReferences($parent_id);
+
+    if (empty($refs)) {
+        // Fallback: treat parent_id directly as ref_id (some page types store it that way)
+        $refs = [$parent_id];
+    }
+
+    foreach ($refs as $ref_id) {
+        if ($DIC->access()->checkAccess($permission, '', (int)$ref_id)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Sanitize conversation history from anonymous frontend
+ *
+ * Enforces hard limits to prevent memory exhaustion and token abuse.
+ * Only 'user' and 'assistant' roles are allowed; each entry is truncated
+ * to the configured character limit.
+ *
+ * @param array $history Raw history array from request
+ * @return array Sanitized history
+ */
+function sanitizeConversationHistory(array $history): array
+{
+    $char_limit = (int)(\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000);
+    $max_entries = 40; // Hard cap: 20 exchanges max regardless of max_memory setting
+
+    $sanitized = [];
+    foreach (array_slice($history, -$max_entries) as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        $role = $entry['role'] ?? '';
+        $message = $entry['message'] ?? '';
+        if (!in_array($role, ['user', 'assistant'], true)) {
+            continue;
+        }
+        if (!is_string($message)) {
+            continue;
+        }
+        $sanitized[] = [
+            'role' => $role,
+            'message' => mb_substr($message, 0, $char_limit)
+        ];
+    }
+    return $sanitized;
 }
 
 /**
@@ -578,22 +904,27 @@ function getEffectiveAiService(ChatConfig $chatConfig): string
  */
 function createLLMInstance(string $service): \ai\AIChatPageComponentLLM
 {
-    // Use LLMRegistry to dynamically create service instance
-    $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($service);
+    // Only use enabled services – disabled ones must not be instantiated
+    $enabledServices = \ai\AIChatPageComponentLLMRegistry::getEnabledServices();
+
+    if (empty($enabledServices)) {
+        throw new \Exception("no_service_available");
+    }
+
+    // Try requested service first (only if it is enabled)
+    if (isset($enabledServices[$service])) {
+        $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($service);
+        if ($instance !== null) {
+            return $instance;
+        }
+    }
+
+    // Fallback: first enabled service
+    $firstService = array_key_first($enabledServices);
+    $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService);
 
     if ($instance === null) {
-        // Fallback to first available service if requested service not found
-        $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
-        if (empty($availableServices)) {
-            throw new \Exception("No AI services available in registry");
-        }
-
-        $firstService = array_key_first($availableServices);
-        $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService);
-
-        if ($instance === null) {
-            throw new \Exception("Failed to create fallback AI service: {$firstService}");
-        }
+        throw new \Exception("no_service_available");
     }
 
     return $instance;

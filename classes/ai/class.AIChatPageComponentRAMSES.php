@@ -1018,12 +1018,28 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
                 throw new AIChatPageComponentException("Unexpected API response structure from RAMSES" . $response);
             }
 
-            // Log complete response for debugging
+            // Extract content
             $content = $decodedResponse['choices'][0]['message']['content'];
+
+            // Store metadata (RAG sources) in parent class property
+            if (isset($decodedResponse['metadata']) && is_array($decodedResponse['metadata'])) {
+                $this->lastResponseMetadata = $decodedResponse['metadata'];
+                $this->logger->debug("RAG sources found", [
+                    'count' => count($decodedResponse['metadata'])
+                ]);
+            }
+
+            // Store usage (token data) in parent class property
+            if (isset($decodedResponse['usage']) && is_array($decodedResponse['usage'])) {
+                $this->lastResponseUsage = $decodedResponse['usage'];
+            }
+
+            // Log complete response for debugging
             $usage = $decodedResponse['usage'] ?? [];
             $this->logger->debug("RAMSES Chat Response: HTTP " . $httpcode .
                                " | Content Length=" . strlen($content) .
                                " | Tokens: " . json_encode($usage) .
+                               " | Sources: " . (isset($decodedResponse['metadata']) ? count($decodedResponse['metadata']) : 0) .
                                " | Full Response: " . json_encode($decodedResponse, JSON_PRETTY_PRINT));
 
             return $content;

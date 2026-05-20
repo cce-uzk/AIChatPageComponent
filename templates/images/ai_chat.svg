@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="#005176">
+  <!-- Antenna stem -->
+  <rect x="14.5" y="0" width="3" height="5" rx="1"/>
+  <!-- Antenna tip -->
+  <circle cx="16" cy="0" r="2"/>
+
+  <!-- Speech bubble body -->
+  <rect x="1" y="4" width="30" height="22" rx="3"/>
+  <!-- Speech bubble tail (bottom-left) -->
+  <polygon points="4,26 4,32 11,26"/>
+
+  <!-- Robot left eye (white cutout) -->
+  <circle fill="white" cx="11" cy="13" r="2.5"/>
+  <!-- Robot right eye (white cutout) -->
+  <circle fill="white" cx="21" cy="13" r="2.5"/>
+
+  <!-- Robot mouth bar (white cutout) -->
+  <rect fill="white" x="8" y="17.5" width="16" height="4" rx="1"/>
+  <!-- Grille dividers -->
+  <rect fill="#005176" x="12.5" y="17.5" width="1" height="4"/>
+  <rect fill="#005176" x="15.5" y="17.5" width="1" height="4"/>
+  <rect fill="#005176" x="18.5" y="17.5" width="1" height="4"/>
+</svg>

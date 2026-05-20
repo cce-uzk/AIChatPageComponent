@@ -725,3 +725,59 @@ if ($db->tableExists('pcaic_chats')) {
     }
 }
 ?>
+
+<#8>
+<?php
+/**
+ * Step 8: Add RAG metadata and token usage tracking (v1.3.0)
+ *
+ * Adds columns to store:
+ * - metadata: RAG source citations (filename, page_numbers, text excerpts)
+ * - usage: Token consumption data (prompt_tokens, completion_tokens, total_tokens)
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_messages')) {
+    // Add metadata column for RAG source citations (JSON)
+    if (!$db->tableColumnExists('pcaic_messages', 'metadata')) {
+        $db->addTableColumn('pcaic_messages', 'metadata', array(
+            'type' => 'clob',
+            'notnull' => false,
+            'default' => null
+        ));
+    }
+
+    // Add usage column for token tracking (JSON)
+    if (!$db->tableColumnExists('pcaic_messages', 'usage')) {
+        $db->addTableColumn('pcaic_messages', 'usage', array(
+            'type' => 'clob',
+            'notnull' => false,
+            'default' => null
+        ));
+    }
+}
+?>
+
+<#9>
+<?php
+/**
+ * Step 9: Add online/offline visibility toggle per chat (v1.4.0)
+ *
+ * Adds is_online column to pcaic_chats.
+ * Default 1 (online) so existing chats remain visible after migration.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_chats')) {
+    if (!$db->tableColumnExists('pcaic_chats', 'is_online')) {
+        $db->addTableColumn('pcaic_chats', 'is_online', array(
+            'type' => 'integer',
+            'length' => 1,
+            'notnull' => true,
+            'default' => 1
+        ));
+    }
+}
+?>

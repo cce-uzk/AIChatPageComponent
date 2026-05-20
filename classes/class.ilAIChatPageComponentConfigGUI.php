@@ -38,6 +38,14 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
      */
     public function performCommand(string $cmd): void
     {
+        $tpl = $this->dic->ui()->mainTemplate();
+        $tpl->setTitle($this->plugin->txt('plugin_title'));
+        $tpl->setDescription($this->plugin->txt('plugin_description'));
+        $tpl->setTitleIcon(
+            $this->plugin->getDirectory() . '/templates/images/ai_chat.svg',
+            $this->plugin->txt('plugin_title')
+        );
+
         // General configuration
         if ($cmd === 'configure' || $cmd === 'showConfigurationForm') {
             $this->showConfigurationForm('general');
@@ -74,6 +82,42 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             }
         }
 
+        // Statistics tab
+        if ($cmd === 'showStatistics') {
+            $this->showStatistics();
+            return;
+        }
+
+        if ($cmd === 'gotoPage') {
+            $this->gotoPage();
+            return;
+        }
+
+        if ($cmd === 'setChatOnline') {
+            $this->setOnlineStatus(true);
+            return;
+        }
+
+        if ($cmd === 'setChatOffline') {
+            $this->setOnlineStatus(false);
+            return;
+        }
+
+        if ($cmd === 'clearChatHistory') {
+            $this->clearChatHistory();
+            return;
+        }
+
+        if ($cmd === 'deleteChat') {
+            $this->deleteChat();
+            return;
+        }
+
+        if ($cmd === 'runSessionCleanup') {
+            $this->runSessionCleanup();
+            return;
+        }
+
         // Fallback
         $this->showConfigurationForm('general');
     }
@@ -103,6 +147,13 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                     $this->ctrl->getLinkTargetByClass(get_class($this), "show{$serviceIdCap}Config")
                 );
             }
+
+            // Statistics tab (always last)
+            $tabs->addTab(
+                'statistics',
+                $this->plugin->txt('tab_statistics'),
+                $this->ctrl->getLinkTarget($this, 'showStatistics')
+            );
 
             // Set active tab
             $tabs->setTabActive($active_tab);
@@ -174,6 +225,13 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             $this->buildFileUploadRestrictionsInputs(),
             $this->plugin->txt('config_file_restrictions_title'),
             $this->plugin->txt('config_file_restrictions_info')
+        );
+
+        // Anonymous Access Section
+        $inputs[] = $ui_factory->input()->field()->section(
+            $this->buildAnonymousAccessInputs(),
+            $this->plugin->txt('config_anonymous_access_title'),
+            $this->plugin->txt('config_anonymous_access_info')
         );
 
         $form = $ui_factory->input()->container()->form()->standard(
@@ -266,6 +324,20 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             $this->plugin->txt('config_enable_streaming'),
             $this->plugin->txt('config_enable_streaming_info')
         )->withValue(($streaming_enabled ?? '1') === '1');
+
+        // Daily message limit per user per chat (0 = unlimited)
+        $max_msg_day = \platform\AIChatPageComponentConfig::get('max_messages_per_day');
+        $inputs['max_messages_per_day'] = $ui_factory->input()->field()->numeric(
+            $this->plugin->txt('config_max_messages_per_day'),
+            $this->plugin->txt('config_max_messages_per_day_info')
+        )->withValue($max_msg_day !== null ? (int)$max_msg_day : 50);
+
+        // Inactive session cleanup threshold in days (0 = disabled)
+        $cleanup_days = \platform\AIChatPageComponentConfig::get('session_cleanup_days');
+        $inputs['session_cleanup_days'] = $ui_factory->input()->field()->numeric(
+            $this->plugin->txt('config_session_cleanup_days'),
+            $this->plugin->txt('config_session_cleanup_days_info')
+        )->withValue($cleanup_days !== null ? (int)$cleanup_days : 90);
 
         return $inputs;
     }
@@ -367,6 +439,25 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             $this->plugin->txt('config_max_upload_size'),
             $this->plugin->txt('config_max_upload_size_info')
         )->withValue($max_upload_size ? (int)$max_upload_size : 25);
+
+        return $inputs;
+    }
+
+    /**
+     * Build anonymous access input fields
+     *
+     * @return array UI input components for anonymous access configuration
+     */
+    private function buildAnonymousAccessInputs(): array
+    {
+        $ui_factory = $this->dic->ui()->factory();
+        $inputs = [];
+
+        $allow_anonymous = \platform\AIChatPageComponentConfig::get('allow_anonymous_access');
+        $inputs['allow_anonymous_access'] = $ui_factory->input()->field()->checkbox(
+            $this->plugin->txt('config_allow_anonymous_access'),
+            $this->plugin->txt('config_allow_anonymous_access_info')
+        )->withValue(($allow_anonymous ?? '0') === '1');
 
         return $inputs;
     }
@@ -515,6 +606,12 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 $this->plugin->txt('config_file_restrictions_info')
             );
 
+            $inputs[] = $ui_factory->input()->field()->section(
+                $this->buildAnonymousAccessInputs(),
+                $this->plugin->txt('config_anonymous_access_title'),
+                $this->plugin->txt('config_anonymous_access_info')
+            );
+
             $form = $ui_factory->input()->container()->form()->standard(
                 $this->ctrl->getFormAction($this, 'saveConfiguration'),
                 $inputs
@@ -542,6 +639,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 $services_data = $data[2] ?? [];        // buildAiServiceSelectionInputs
                 $constraints_data = $data[3] ?? [];     // buildUploadConstraintsInputs
                 $restrictions_data = $data[4] ?? [];    // buildFileUploadRestrictionsInputs
+                $anonymous_data = $data[5] ?? [];       // buildAnonymousAccessInputs
 
                 // Save default values
                 if (isset($defaults_data['default_prompt'])) {
@@ -566,6 +664,12 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 }
                 if (isset($processing_data['enable_streaming'])) {
                     \platform\AIChatPageComponentConfig::set('enable_streaming', $processing_data['enable_streaming'] ? '1' : '0');
+                }
+                if (isset($processing_data['max_messages_per_day'])) {
+                    \platform\AIChatPageComponentConfig::set('max_messages_per_day', (int)$processing_data['max_messages_per_day']);
+                }
+                if (isset($processing_data['session_cleanup_days'])) {
+                    \platform\AIChatPageComponentConfig::set('session_cleanup_days', (int)$processing_data['session_cleanup_days']);
                 }
 
                 // RAMSES configuration is handled in separate RAMSES tab
@@ -609,6 +713,12 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                     \platform\AIChatPageComponentConfig::set('enable_file_handling', '0');
                     \platform\AIChatPageComponentConfig::set('file_upload_restrictions', ['enabled' => false]);
                 }
+
+                // Save anonymous access setting
+                \platform\AIChatPageComponentConfig::set(
+                    'allow_anonymous_access',
+                    ($anonymous_data['allow_anonymous_access'] ?? false) ? '1' : '0'
+                );
 
                 $this->dic->ui()->mainTemplate()->setOnScreenMessage('success', $this->plugin->txt('config_saved_success'));
 
@@ -838,5 +948,273 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         }
 
         $this->showConfigurationForm($serviceId);
+    }
+
+    /**
+     * Display the statistics tab with a table of all chat instances.
+     */
+    private function showStatistics(): void
+    {
+        $tabs = $this->dic->tabs();
+
+        // Build tabs (same structure as showConfigurationForm)
+        $tabs->addTab('general', $this->plugin->txt('tab_general_config'),
+                     $this->ctrl->getLinkTarget($this, 'showConfigurationForm'));
+
+        $services = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+        foreach ($services as $serviceId => $serviceClass) {
+            $serviceIdCap  = ucfirst($serviceId);
+            $tabs->addTab(
+                $serviceId,
+                $serviceClass::getServiceName(),
+                $this->ctrl->getLinkTargetByClass(get_class($this), "show{$serviceIdCap}Config")
+            );
+        }
+
+        $tabs->addTab(
+            'statistics',
+            $this->plugin->txt('tab_statistics'),
+            $this->ctrl->getLinkTarget($this, 'showStatistics')
+        );
+
+        $tabs->setTabActive('statistics');
+
+        require_once __DIR__ . '/Statistics/class.AIChatStatisticsDataRetrieval.php';
+        require_once __DIR__ . '/Statistics/class.AIChatStatisticsTableGUI.php';
+
+        // Build filter bar
+        $filter_service = $this->dic->uiService()->filter();
+        $ui_factory     = $this->dic->ui()->factory();
+        $filter_fields  = [
+            'title'  => $ui_factory->input()->field()->text($this->plugin->txt('stat_title')),
+            'obj_id' => $ui_factory->input()->field()->numeric($this->plugin->txt('stat_obj_id')),
+            'ref_id' => $ui_factory->input()->field()->numeric($this->plugin->txt('stat_ref_id')),
+        ];
+        $filter = $filter_service->standard(
+            'pcaic_stat_filter',
+            $this->ctrl->getLinkTarget($this, 'showStatistics'),
+            $filter_fields,
+            array_fill(0, count($filter_fields), true),
+            true,
+            false
+        );
+        $filter_data = $filter_service->getData($filter) ?? [];
+
+        $table = new AIChatStatisticsTableGUI($this);
+
+        $cleanup_days = (int)(\platform\AIChatPageComponentConfig::get('session_cleanup_days') ?? 90);
+        $cleanup_button_html = '';
+        if ($cleanup_days > 0) {
+            $cleanup_btn = $ui_factory->button()->standard(
+                $this->plugin->txt('stat_run_cleanup'),
+                $this->ctrl->getLinkTarget($this, 'runSessionCleanup')
+            );
+            $cleanup_button_html = '<div style="margin-bottom:16px">'
+                . $this->dic->ui()->renderer()->render($cleanup_btn)
+                . '</div>';
+        }
+
+        $this->dic->ui()->mainTemplate()->setContent(
+            $cleanup_button_html
+            . $this->dic->ui()->renderer()->render($filter)
+            . $table->getHTML($filter_data ?: null)
+        );
+    }
+
+    /**
+     * Redirect to the ILIAS page/object that hosts the requested chat instance.
+     */
+    private function gotoPage(): void
+    {
+        $query    = $this->dic->http()->wrapper()->query();
+        $refinery = $this->dic->refinery();
+
+        $chat_ids = $query->has('pcaic_stat_chat_id')
+            ? $query->retrieve('pcaic_stat_chat_id', $refinery->kindlyTo()->listOf($refinery->kindlyTo()->string()))
+            : [];
+        $chat_id  = $chat_ids[0] ?? '';
+
+        if ($chat_id === '') {
+            $this->showStatistics();
+            return;
+        }
+
+        $db     = $this->dic->database();
+        $result = $db->query(
+            "SELECT parent_id, parent_type FROM pcaic_chats WHERE chat_id = " . $db->quote($chat_id, 'text')
+        );
+        $row    = $db->fetchAssoc($result);
+
+        if (!$row || (int) $row['parent_id'] === 0) {
+            $this->showStatistics();
+            return;
+        }
+
+        $parent_id   = (int) $row['parent_id'];
+        $parent_type = (string) $row['parent_type'];
+
+        // parent_id is stored as obj_id via ilPageObject::getParentId().
+        // For container content pages the stored parent_type is "cont" – we need
+        // the actual repository object type (crs, grp, lm, …) for the link.
+        $repo_type = ilObject::_lookupType($parent_id);
+        if (empty($repo_type)) {
+            $repo_type = $parent_type;
+        }
+
+        $refs = ilObject::_getAllReferences($parent_id);
+        if (empty($refs)) {
+            $refs = [$parent_id]; // Fallback: treat as ref_id directly
+        }
+
+        $ref_id = (int) reset($refs);
+        $link   = ilLink::_getStaticLink($ref_id, $repo_type);
+
+        // Use a plain HTTP redirect to break out of the administration GUI context.
+        // ilUtil::redirect() stays within ILIAS routing and triggers an admin-context
+        // permission check that blocks the navigation.
+        header('Location: ' . $link, true, 302);
+        exit;
+    }
+
+    // ============================================
+    // Statistics Action Helpers
+    // ============================================
+
+    /**
+     * Read chat_id from the URL parameter written by the table URL builder.
+     */
+    private function getChatIdFromRequest(): string
+    {
+        $query    = $this->dic->http()->wrapper()->query();
+        $refinery = $this->dic->refinery();
+
+        $ids = $query->has('pcaic_stat_chat_id')
+            ? $query->retrieve('pcaic_stat_chat_id', $refinery->kindlyTo()->listOf($refinery->kindlyTo()->string()))
+            : [];
+
+        return $ids[0] ?? '';
+    }
+
+    /**
+     * Set a chat online or offline and redirect back to statistics.
+     */
+    private function setOnlineStatus(bool $online): void
+    {
+        $chat_id = $this->getChatIdFromRequest();
+
+        if ($chat_id === '') {
+            $this->showStatistics();
+            return;
+        }
+
+        $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+
+        if (!$chatConfig->exists()) {
+            $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                'failure',
+                $this->plugin->txt('stat_chat_not_found')
+            );
+            $this->showStatistics();
+            return;
+        }
+
+        $chatConfig->setIsOnline($online);
+        $chatConfig->save();
+
+        $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+            'success',
+            $this->plugin->txt($online ? 'stat_toggled_online' : 'stat_toggled_offline')
+        );
+
+        $this->showStatistics();
+    }
+
+    /**
+     * Delete all sessions and messages for a chat, keeping the config intact.
+     */
+    private function clearChatHistory(): void
+    {
+        $chat_id = $this->getChatIdFromRequest();
+
+        if ($chat_id === '') {
+            $this->showStatistics();
+            return;
+        }
+
+        try {
+            $this->plugin->clearChatHistory($chat_id);
+            $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                'success',
+                $this->plugin->txt('stat_history_cleared')
+            );
+        } catch (\Exception $e) {
+            $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                'failure',
+                $e->getMessage()
+            );
+        }
+
+        $this->showStatistics();
+    }
+
+    /**
+     * Trigger manual cleanup of inactive sessions and redirect back to statistics.
+     */
+    private function runSessionCleanup(): void
+    {
+        $cleanup_days = (int)(\platform\AIChatPageComponentConfig::get('session_cleanup_days') ?? 90);
+
+        if ($cleanup_days <= 0) {
+            $this->showStatistics();
+            return;
+        }
+
+        try {
+            $stats = $this->plugin->cleanupInactiveSessions($cleanup_days);
+
+            if ($stats['sessions'] > 0) {
+                $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                    'success',
+                    sprintf($this->plugin->txt('stat_cleanup_done'), $stats['sessions'], $stats['messages'])
+                );
+            } else {
+                $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                    'info',
+                    $this->plugin->txt('stat_cleanup_nothing')
+                );
+            }
+        } catch (\Exception $e) {
+            $this->dic->ui()->mainTemplate()->setOnScreenMessage('failure', $e->getMessage());
+        }
+
+        $this->showStatistics();
+    }
+
+    /**
+     * Completely delete a chat including config, sessions, messages, and files.
+     */
+    private function deleteChat(): void
+    {
+        $chat_id = $this->getChatIdFromRequest();
+
+        if ($chat_id === '') {
+            $this->showStatistics();
+            return;
+        }
+
+        try {
+            $this->plugin->deleteCompleteChat($chat_id);
+            $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                'success',
+                $this->plugin->txt('stat_chat_deleted')
+            );
+        } catch (\Exception $e) {
+            $this->dic->ui()->mainTemplate()->setOnScreenMessage(
+                'failure',
+                $e->getMessage()
+            );
+        }
+
+        $this->showStatistics();
     }
 }

@@ -1,5 +1,5 @@
-<!-- Skip Link for keyboard users -->
-<a href="#{CONTAINER_ID}-input" class="ai-chat-skip-link">{SKIP_TO_INPUT}</a>
+<!-- Skip Link for keyboard users – temporarily hidden, uncomment to restore -->
+<!-- <a href="#{CONTAINER_ID}-input" class="ai-chat-skip-link">{SKIP_TO_INPUT}</a> -->
 
 <div class="ai-chat-container"
      id="{CONTAINER_ID}"
@@ -19,6 +19,9 @@
      data-background-files="{BACKGROUND_FILES}"
      data-enable-chat-uploads="{ENABLE_CHAT_UPLOADS}"
      data-enable-streaming="{ENABLE_STREAMING}"
+     data-is-anonymous="{IS_ANONYMOUS}"
+     data-service-unavailable="{SERVICE_UNAVAILABLE}"
+     data-no-service-available="{NO_SERVICE_AVAILABLE}"
      data-clear-chat-confirm="{CLEAR_CHAT_CONFIRM}"
      data-copy-message-title="{COPY_MESSAGE_TITLE}"
      data-like-response-title="{LIKE_RESPONSE_TITLE}"
@@ -40,20 +43,38 @@
      data-error-file-type-not-allowed="{ERROR_FILE_TYPE_NOT_ALLOWED}"
      data-error-file-upload-failed="{ERROR_FILE_UPLOAD_FAILED}"
      data-loading-text="{LOADING_TEXT}"
-     data-new-message-aria="{NEW_MESSAGE_ARIA}">
+     data-new-message-aria="{NEW_MESSAGE_ARIA}"
+     data-sources-label="{SOURCES_LABEL}"
+     data-page-label="{PAGE_LABEL}"
+     data-pages-label="{PAGES_LABEL}">
 
     <!-- Chat Header -->
     <div class="ai-chat-header">
         <h3 id="{CONTAINER_ID}-title">{CHAT_TITLE}</h3>
-        <button class="ai-chat-clear-btn"
-                type="button"
-                title="{CLEAR_CHAT_TITLE}"
-                aria-label="{CLEAR_CHAT_LABEL}">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
-                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
-                <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
-            </svg>
-        </button>
+        <div class="ai-chat-header-actions">
+            <button class="ai-chat-theme-toggle"
+                    type="button"
+                    title="{THEME_TOGGLE_TITLE}"
+                    aria-label="{THEME_TOGGLE_LABEL}">
+            </button>
+            <!-- BEGIN chat_offline_badge -->
+            <div class="ai-chat-offline-badge">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+                </svg>
+                <span>{OFFLINE_BADGE_TEXT}</span>
+            </div>
+            <!-- END chat_offline_badge -->
+            <button class="ai-chat-clear-btn"
+                    type="button"
+                    title="{CLEAR_CHAT_TITLE}"
+                    aria-label="{CLEAR_CHAT_LABEL}">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                    <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                </svg>
+            </button>
+        </div>
     </div>
 
     <!-- Chat Messages Area with ARIA live region -->

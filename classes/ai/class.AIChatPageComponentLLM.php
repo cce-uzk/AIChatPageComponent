@@ -29,6 +29,11 @@ abstract class AIChatPageComponentLLM
     protected bool $streaming = false;
     protected \ilLogger $logger;
 
+    // Last response metadata (RAG sources, etc.)
+    protected ?array $lastResponseMetadata = null;
+    // Last response token usage
+    protected ?array $lastResponseUsage = null;
+
     public function __construct()
     {
         global $DIC;
@@ -157,6 +162,35 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
+     * Get last response metadata (RAG sources)
+     *
+     * @return array|null Array of source objects or null if not available
+     */
+    public function getLastResponseMetadata(): ?array
+    {
+        return $this->lastResponseMetadata;
+    }
+
+    /**
+     * Get last response token usage
+     *
+     * @return array|null Array with prompt_tokens, completion_tokens, total_tokens
+     */
+    public function getLastResponseUsage(): ?array
+    {
+        return $this->lastResponseUsage;
+    }
+
+    /**
+     * Clear last response data
+     */
+    protected function clearLastResponseData(): void
+    {
+        $this->lastResponseMetadata = null;
+        $this->lastResponseUsage = null;
+    }
+
+    /**
      * Check if file handling is enabled for this AI service (hierarchical check)
      *
      * @param string $aiService AI service identifier (ramses|openai)
@@ -278,6 +312,9 @@ abstract class AIChatPageComponentLLM
                 }
             }
 
+            // Clear previous response data
+            $this->clearLastResponseData();
+
             // Send to AI
             if ($useRAG) {
                 $this->logger->debug("Using RAG mode", ['collection_ids' => $collectionIds]);
@@ -287,13 +324,113 @@ abstract class AIChatPageComponentLLM
                 $aiResponse = $this->sendMessagesArray($aiMessages, $contextResources);
             }
 
-            // Add AI response to session
-            $session->addMessage('assistant', $aiResponse);
+            // Add AI response to session with metadata and usage
+            $assistantMessage = $session->addMessage('assistant', $aiResponse);
+
+            // Store metadata (RAG sources) if available
+            if ($this->lastResponseMetadata !== null) {
+                $assistantMessage->setMetadata($this->lastResponseMetadata);
+                $this->logger->debug("Storing RAG metadata", [
+                    'sources_count' => count($this->lastResponseMetadata)
+                ]);
+            }
+
+            // Store usage (token data) if available
+            if ($this->lastResponseUsage !== null) {
+                $assistantMessage->setUsage($this->lastResponseUsage);
+                $this->logger->debug("Storing token usage", $this->lastResponseUsage);
+            }
+
+            // Save updated message with metadata/usage
+            if ($this->lastResponseMetadata !== null || $this->lastResponseUsage !== null) {
+                $assistantMessage->save();
+            }
 
             return $aiResponse;
 
         } catch (\Exception $e) {
             $this->logger->error("handleSendMessage failed", [
+                'chat_id' => $chat_id,
+                'error' => $e->getMessage()
+            ]);
+            throw new AIChatPageComponentException('Failed to send message: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Handle message for anonymous stateless sessions (no DB persistence)
+     *
+     * Processes background files and page context identical to handleSendMessage,
+     * but uses the conversation history provided by the frontend instead of a DB
+     * session. Nothing is saved to the database.
+     *
+     * @param string $chat_id      Chat configuration ID
+     * @param array  $conversation_history Array of {role, message} pairs from frontend memory
+     * @param string $message      Current user message
+     * @return string AI response text
+     */
+    public function handleStatelessMessage(string $chat_id, array $conversation_history, string $message): string
+    {
+        try {
+            $chatConfig = new ChatConfig($chat_id);
+            if (!$chatConfig->exists()) {
+                throw new AIChatPageComponentException('Chat configuration not found');
+            }
+
+            $this->setPrompt($chatConfig->getSystemPrompt());
+            $this->setMaxMemoryMessages($chatConfig->getMaxMemory());
+
+            $ai_service = $chatConfig->getAiService();
+            $fileHandlingEnabled = $this->isFileHandlingEnabledForService($ai_service);
+
+            $collectionIds = [];
+            $useRAG = false;
+            if ($fileHandlingEnabled) {
+                // Only background RAG collections – anonymous users have no upload sessions
+                $collectionIds = $this->getAllRAGCollectionIds($chatConfig);
+                $useRAG = $this->isRagEnabledForChat($chatConfig) && !empty($collectionIds);
+            }
+
+            $contextResources = [];
+            if ($fileHandlingEnabled) {
+                $contextResources = $this->processBackgroundFiles($chatConfig, $useRAG);
+            }
+
+            if ($chatConfig->isIncludePageContext()) {
+                $pageContext = $this->getPageContext($chatConfig);
+                if (!empty($pageContext)) {
+                    $contextResources[] = [
+                        'kind' => 'page_context',
+                        'title' => 'Page Context',
+                        'content' => $pageContext,
+                        'mime_type' => 'text/plain'
+                    ];
+                }
+            }
+
+            // Build AI messages from in-memory history (bounded by max_memory)
+            $recentLimit = min($chatConfig->getMaxMemory(), 20);
+            $historySlice = array_slice($conversation_history, -$recentLimit);
+
+            $aiMessages = [];
+            foreach ($historySlice as $entry) {
+                $role = $entry['role'] ?? '';
+                $text = $entry['message'] ?? '';
+                if (!empty($text) && in_array($role, ['user', 'assistant'], true)) {
+                    $aiMessages[] = ['role' => $role, 'content' => $text];
+                }
+            }
+            $aiMessages[] = ['role' => 'user', 'content' => $message];
+
+            $this->clearLastResponseData();
+
+            if ($useRAG) {
+                return $this->sendRagChat($aiMessages, $collectionIds, $contextResources);
+            }
+            return $this->sendMessagesArray($aiMessages, $contextResources);
+
+        } catch (\Exception $e) {
+            $this->logger->error("handleStatelessMessage failed", [
                 'chat_id' => $chat_id,
                 'error' => $e->getMessage()
             ]);

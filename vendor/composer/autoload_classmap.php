@@ -6,6 +6,8 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'AIChatStatisticsDataRetrieval' => $baseDir . '/classes/Statistics/class.AIChatStatisticsDataRetrieval.php',
+    'AIChatStatisticsTableGUI' => $baseDir . '/classes/Statistics/class.AIChatStatisticsTableGUI.php',
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
     'ILIAS\\Plugin\\pcaic\\Exception\\PluginException' => $baseDir . '/src/Exception/PluginException.php',
     'ILIAS\\Plugin\\pcaic\\Model\\Attachment' => $baseDir . '/src/Model/Attachment.php',

@@ -17,6 +17,8 @@ class ChatMessage
     private string $role;
     private string $message;
     private ?\DateTime $timestamp = null;
+    private ?array $metadata = null;  // RAG source citations
+    private ?array $usage = null;     // Token usage data
 
     /**
      * Constructor
@@ -120,7 +122,17 @@ class ChatMessage
             $this->role = $row['role'];
             $this->message = $row['message'];
             $this->timestamp = $row['timestamp'] ? new \DateTime($row['timestamp']) : null;
-            
+
+            // Load metadata (RAG sources) if present
+            if (!empty($row['metadata'])) {
+                $this->metadata = json_decode($row['metadata'], true);
+            }
+
+            // Load usage (token data) if present
+            if (!empty($row['usage'])) {
+                $this->usage = json_decode($row['usage'], true);
+            }
+
             return true;
         }
         
@@ -147,7 +159,9 @@ class ChatMessage
             'session_id' => ['text', $this->sessionId],
             'role' => ['text', $this->role],
             'message' => ['clob', $this->message],
-            'timestamp' => ['timestamp', $this->timestamp->format('Y-m-d H:i:s')]
+            'timestamp' => ['timestamp', $this->timestamp->format('Y-m-d H:i:s')],
+            'metadata' => ['clob', $this->metadata ? json_encode($this->metadata) : null],
+            'usage' => ['clob', $this->usage ? json_encode($this->usage) : null]
         ];
 
         if ($this->messageId) {
@@ -197,7 +211,7 @@ class ChatMessage
 
         $query = "SELECT message_id FROM pcaic_messages WHERE message_id = " . $db->quote($this->messageId, 'integer');
         $result = $db->query($query);
-        return $db->fetchAssoc($result) !== false;
+        return $db->fetchAssoc($result) !== null;
     }
 
     /**
@@ -235,6 +249,60 @@ class ChatMessage
     public function setMessage(string $message): void { $this->message = $message; }
     public function getTimestamp(): ?\DateTime { return $this->timestamp; }
     public function setTimestamp(\DateTime $timestamp): void { $this->timestamp = $timestamp; }
+
+    /**
+     * Get RAG metadata (source citations)
+     * @return array|null Array of source objects with filename, page_numbers, text
+     */
+    public function getMetadata(): ?array { return $this->metadata; }
+
+    /**
+     * Set RAG metadata (source citations)
+     * @param array|null $metadata Array of source objects from RAG response
+     */
+    public function setMetadata(?array $metadata): void { $this->metadata = $metadata; }
+
+    /**
+     * Get token usage data
+     * @return array|null Array with prompt_tokens, completion_tokens, total_tokens
+     */
+    public function getUsage(): ?array { return $this->usage; }
+
+    /**
+     * Set token usage data
+     * @param array|null $usage Token usage from AI response
+     */
+    public function setUsage(?array $usage): void { $this->usage = $usage; }
+
+    /**
+     * Check if message has RAG sources
+     * @return bool True if metadata contains sources
+     */
+    public function hasSources(): bool
+    {
+        return !empty($this->metadata) && is_array($this->metadata);
+    }
+
+    /**
+     * Get formatted sources for display
+     * @return array Array of simplified source objects for frontend
+     */
+    public function getFormattedSources(): array
+    {
+        if (!$this->hasSources()) {
+            return [];
+        }
+
+        $sources = [];
+        foreach ($this->metadata as $source) {
+            $sources[] = [
+                'filename' => $source['filename'] ?? 'Unknown',
+                'pages' => $source['page_numbers'] ?? [],
+                'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null
+            ];
+        }
+        return $sources;
+    }
 
     /**
      * Bind attachment to message
@@ -278,7 +346,9 @@ class ChatMessage
             'content' => $this->message,
             'message' => $this->message,
             'timestamp' => $this->timestamp?->format('Y-m-d H:i:s'),
-            'attachments' => array_map(fn($att) => $att->toArray(), $this->getAttachments())
+            'attachments' => array_map(fn($att) => $att->toArray(), $this->getAttachments()),
+            'sources' => $this->getFormattedSources(),
+            'usage' => $this->usage
         ];
     }
 }

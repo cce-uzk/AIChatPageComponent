@@ -1,4 +1,6 @@
 <!-- language file start -->
+plugin_title#:#AI Chat Page Component
+plugin_description#:#Embed customizable AI chat interfaces directly into ILIAS learning pages
 cmd_insert#:#Insert AI Chat
 content_plugin_version#:#Content last edited with version
 edit_input_field#:#Edit AI Chat
@@ -21,6 +23,8 @@ copy_message_title#:#Copy message to clipboard
 copy_message_aria_label#:#Copy this message to clipboard
 message_copied#:#Message copied!
 message_copy_failed#:#Failed to copy message
+theme_toggle_title#:#Toggle light/dark mode
+theme_toggle_label#:#Toggle light/dark mode
 clear_chat_text#:#Clear
 clear_chat_title#:#Clear all chat messages
 clear_chat_label#:#Clear chat history
@@ -149,6 +153,26 @@ config_max_image_data#:#Maximum Total Image Data
 config_max_image_data_info#:#Maximum total Base64 image data per chat message (for AI processing)
 config_enable_streaming#:#Enable Streaming Responses
 config_enable_streaming_info#:#When enabled, AI responses are streamed in real-time as they are generated, providing immediate feedback to users
+config_max_messages_per_day#:#Max. messages per user/day/chat
+config_max_messages_per_day_info#:#Maximum number of messages a logged-in user may send per day per chat. 0 = unlimited.
+config_session_cleanup_days#:#Clean up inactive sessions after (days)
+config_session_cleanup_days_info#:#Sessions without activity for longer than this number of days are automatically deleted (including messages and attachments). 0 = cleanup disabled.
+error_rate_limit_exceeded#:#Daily limit reached. You have sent the maximum of %d messages for today in this chat. Please try again tomorrow.
+stat_run_cleanup#:#Clean Up Inactive Sessions
+stat_cleanup_done#:#Cleanup complete: %d sessions with %d messages deleted.
+stat_cleanup_nothing#:#No inactive sessions found.
+no_service_available#:#No AI service is currently available. Please contact your administrator.
+chat_online_label#:#Online
+chat_online_info#:#Content is published and can be used by all persons with the "Read access" permission.
+chat_offline_banner#:#This chat is currently offline and not visible to participants.
+chat_orphaned_title#:#Orphaned Chat
+chat_orphaned_hint#:#This chat has been deleted. The element is not visible to participants. Please remove it from this page.
+chat_offline_badge#:#Offline
+config_anonymous_access_title#:#Anonymous Access
+config_anonymous_access_info#:#Controls whether non-logged-in users can use the AI chat.
+config_allow_anonymous_access#:#Allow anonymous access
+config_allow_anonymous_access_info#:#When enabled, non-logged-in users can use the chat. Messages are not stored in the database (stateless) – the history only exists for the current browser session. File uploads are never available for anonymous users.
+anonymous_access_blocked#:#This chat is only available for logged-in users.
 config_saved_success#:#Configuration saved successfully
 config_saved_error#:#Error saving configuration
 config_ai_service_not_available#:#AI service configuration not available
@@ -201,3 +225,35 @@ attachments_aria_label#:#File attachments
 actions_aria_label#:#Message actions
 new_message_aria#:#New message received
 skip_to_input#:#Skip to chat input
+edit_mode_label#:#Editor Preview
+click_to_edit_hint#:#Click to edit configuration
+demo_user_message#:#Hello! How can you help me?
+demo_assistant_message#:#Hello! I'm an AI assistant embedded in this learning page. I'm here to help you with questions about the content, explain concepts, or assist with exercises. Feel free to ask me anything!
+demo_assistant_tutor#:#Hello! As your learning tutor, I'm here to guide you through the material step by step. Ask me about any concepts you'd like to explore.
+demo_assistant_coding#:#Hello! I can help you with programming questions, explain code concepts, or debug issues. What would you like to work on?
+demo_assistant_creative#:#Hello! Let's get creative together! Whether it's brainstorming ideas, writing stories, or exploring imaginative concepts - I'm here to help!
+sources_label#:#Sources
+page_label#:#Page
+pages_label#:#Pages
+tab_statistics#:#Statistics
+stat_title#:#Title
+stat_obj_id#:#Object ID
+stat_ref_id#:#Ref. ID
+stat_created_at#:#Created
+stat_session_count#:#No. of Sessions
+stat_rag#:#RAG?
+stat_background_files#:#Background Files
+stat_is_online#:#Online
+stat_goto_page#:#Go to Page
+stat_toggle_online#:#Set Online
+stat_toggle_offline#:#Set Offline
+stat_clear_history#:#Clear Chat History
+stat_delete_chat#:#Delete Chat
+stat_toggled_online#:#Chat has been set online.
+stat_toggled_offline#:#Chat has been set offline.
+stat_history_cleared#:#All chat histories and sessions have been deleted.
+stat_chat_deleted#:#Chat has been completely deleted.
+stat_chat_not_found#:#Chat not found.
+stat_yes#:#Yes
+stat_no#:#No
+stat_no_title#:#untitled

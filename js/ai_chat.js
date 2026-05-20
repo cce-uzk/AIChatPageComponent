@@ -154,7 +154,13 @@ class AIChatPageComponent {
         this.aiService = this.container.dataset.aiService || 'default';
         this.enableChatUploads = this.container.dataset.enableChatUploads === 'true';
         this.enableStreaming = this.container.dataset.enableStreaming === 'true';
-        
+        this.isAnonymous = this.container.dataset.isAnonymous === 'true';
+        this.serviceUnavailable = this.container.dataset.serviceUnavailable === 'true';
+
+        // In-memory conversation history for stateless anonymous sessions.
+        // Never persisted to DB or localStorage; resets on every page load by design.
+        this.anonymousHistory = [];
+
         // Initialize upload configuration (updated via API call)
         this.globalChatUploadsEnabled = true; // Default assumption until API check
         this.allowedFileTypes = []; // Populated from server configuration
@@ -162,9 +168,9 @@ class AIChatPageComponent {
         // Initialize localized UI text from data attributes
         this.lang = {
             copyMessageTitle: this.container.dataset.copyMessageTitle || 'Copy message',
-            likeResponseTitle: this.container.dataset.likeResponseTitle || 'Good response',
-            dislikeResponseTitle: this.container.dataset.dislikeResponseTitle || 'Poor response',
             regenerateResponseTitle: this.container.dataset.regenerateResponseTitle || 'Regenerate response',
+            // likeResponseTitle: this.container.dataset.likeResponseTitle || 'Good response',       // temporarily hidden
+            // dislikeResponseTitle: this.container.dataset.dislikeResponseTitle || 'Poor response', // temporarily hidden
             messageCopied: this.container.dataset.messageCopied || 'Copied!',
             messageCopyFailed: this.container.dataset.messageCopyFailed || 'Failed to copy',
             thinkingHeader: this.container.dataset.thinkingHeader || 'Thinking...',
@@ -172,7 +178,10 @@ class AIChatPageComponent {
             regenerateFailed: this.container.dataset.regenerateFailed || 'Failed to regenerate response. Please try again.',
             welcomeMessage: this.container.dataset.welcomeMessage || 'Start a conversation...',
             stopGeneration: this.container.dataset.stopGeneration || 'Stop generation',
-            newMessageAria: this.container.dataset.newMessageAria || 'New message received'
+            newMessageAria: this.container.dataset.newMessageAria || 'New message received',
+            sourcesLabel: this.container.dataset.sourcesLabel || 'Quellen',
+            pageLabel: this.container.dataset.pageLabel || 'Seite',
+            pagesLabel: this.container.dataset.pagesLabel || 'Seiten'
         };
         
         // Initialize ILIAS page context integration
@@ -197,8 +206,63 @@ class AIChatPageComponent {
         }
         
         this.bindEvents();
-        this.checkUploadConfiguration(); // Check global configuration and apply limits
+        this.initTheme();
+
+        if (this.serviceUnavailable) {
+            this.disableInputForUnavailableService();
+        } else {
+            this.checkUploadConfiguration();
+        }
+
         this.loadChatHistory();
+    }
+
+    // ── Theme switching ──────────────────────────────────────────────────────
+
+    static get THEME_STORAGE_KEY() { return 'ai_chat_theme'; }
+
+    static get ICON_MOON() {
+        return `<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/>
+        </svg>`;
+    }
+
+    static get ICON_SUN() {
+        return `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8zm10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0zm-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707zM4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707z"/>
+        </svg>`;
+    }
+
+    initTheme() {
+        const saved = localStorage.getItem(AIChatPageComponent.THEME_STORAGE_KEY);
+        let theme;
+        if (saved === 'light' || saved === 'dark') {
+            theme = saved;
+        } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+            theme = 'light';
+        } else {
+            theme = 'dark';
+        }
+        this.container.dataset.theme = theme;
+        this.updateThemeButton();
+    }
+
+    toggleTheme() {
+        const next = this.container.dataset.theme === 'light' ? 'dark' : 'light';
+        this.container.dataset.theme = next;
+        localStorage.setItem(AIChatPageComponent.THEME_STORAGE_KEY, next);
+        this.updateThemeButton();
+    }
+
+    updateThemeButton() {
+        const btn = this.container.querySelector('.ai-chat-theme-toggle');
+        if (!btn) return;
+        const isDark = this.container.dataset.theme === 'dark';
+        // Show sun when dark (clicking switches to light), moon when light (clicking switches to dark)
+        btn.innerHTML = isDark ? AIChatPageComponent.ICON_SUN : AIChatPageComponent.ICON_MOON;
+        btn.title = isDark
+            ? (btn.dataset.titleLight || btn.title)
+            : (btn.dataset.titleDark || btn.title);
     }
     
     /**
@@ -529,6 +593,14 @@ class AIChatPageComponent {
         } else {
             debug('AIChatPageComponent: Clear chat button not found with selector .ai-chat-clear-btn');
         }
+
+        const themeToggle = this.container.querySelector('.ai-chat-theme-toggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.toggleTheme();
+            });
+        }
     }
     
     /**
@@ -544,6 +616,10 @@ class AIChatPageComponent {
      * @throws {Error} When API request fails or response is invalid
      */
     sendMessage() {
+        if (this.serviceUnavailable) {
+            return;
+        }
+
         // Prevent multiple concurrent requests
         if (this.isLoading) {
             debug('AIChatPageComponent: Request already in progress, skipping');
@@ -652,7 +728,11 @@ class AIChatPageComponent {
                 chat_id: this.chatId,
                 message: message
             };
-            
+
+            if (this.isAnonymous) {
+                requestBody.conversation_history = this.anonymousHistory;
+            }
+
             // Send the message to AIChatPageComponent API v2.0
             debug('AIChatPageComponent: About to fetch:', this.apiUrl);
             const response = await fetch(this.apiUrl, {
@@ -674,26 +754,42 @@ class AIChatPageComponent {
                     this.handleSessionExpired();
                     return; // Don't throw error, already handled
                 }
-                
+
                 // Try to get user-friendly error from response body
                 const errorText = await response.text();
                 debugError('HTTP Error Response:', errorText);
                 let errorMessage = 'Communication with server failed';
+                let serverProvided = false;
                 try {
                     const errorData = JSON.parse(errorText);
                     if (errorData.error) {
                         errorMessage = errorData.error;
+                        serverProvided = true;
                     }
                 } catch (e) {
                     // Log technical details for debugging but don't expose to user
                     debugError('Response parsing failed:', e);
                 }
+                // Server-provided messages (rate limit, access denied, …) are shown as-is
+                if (serverProvided || response.status === 429) {
+                    this.currentRequest = null;
+                    this.setLoading(false);
+                    if (errorMessage === 'no_service_available') {
+                        const notice = this.container.dataset.noServiceAvailable
+                            || 'No AI service is currently available.';
+                        this.addMessageToDisplay('system', notice);
+                        this.disableInputForUnavailableService(false);
+                    } else {
+                        this.addMessageToDisplay('system', errorMessage);
+                    }
+                    return;
+                }
                 throw new Error(errorMessage);
             }
-            
+
             const responseText = await response.text();
             debug('API Response:', responseText);
-            
+
             let data;
             try {
                 data = JSON.parse(responseText);
@@ -701,25 +797,31 @@ class AIChatPageComponent {
                 debugError('Failed to parse JSON:', responseText);
                 throw new Error('Invalid JSON response: ' + responseText.substring(0, 100));
             }
-            
+
             if (!data.success) {
                 throw new Error(data.error || 'Request failed');
             }
-            
+
             // Extract AI response from ILIAS API format
             const aiResponse = data.message;
-            
+            const sources = data.sources || null;
+            const usage = data.usage || null;
+
             if (aiResponse) {
-                this.addMessageToDisplay('assistant', aiResponse);
+                if (this.isAnonymous) {
+                    this.anonymousHistory.push({role: 'user', message: message});
+                    this.anonymousHistory.push({role: 'assistant', message: aiResponse});
+                }
+                this.addMessageToDisplay('assistant', aiResponse, [], sources, usage);
             } else {
                 debugError('AIChatPageComponent: Unexpected response structure:', data);
                 throw new Error('No AI response received');
             }
-            
+
             this.currentRequest = null;
             this.setLoading(false);
             this.saveChatHistory();
-            
+
         } catch (error) {
             // Handle user-initiated request cancellation gracefully
             if (error.name === 'AbortError') {
@@ -775,6 +877,10 @@ class AIChatPageComponent {
                 message: message,
                 attachment_ids: (attachments || this.attachments).map(att => att.id)
             };
+
+            if (this.isAnonymous) {
+                requestBody.conversation_history = this.anonymousHistory;
+            }
             
             const response = await fetch(this.apiUrl, {
                 method: 'POST',
@@ -797,21 +903,35 @@ class AIChatPageComponent {
                 const errorText = await response.text();
                 debugError('HTTP Error Response:', errorText);
                 let errorMessage = 'Communication with server failed';
+                let serverProvided2 = false;
                 try {
                     const errorData = JSON.parse(errorText);
                     if (errorData.error) {
                         errorMessage = errorData.error;
+                        serverProvided2 = true;
                     }
                 } catch (e) {
-                    // Log technical details for debugging but don't expose to user
                     debugError('Response parsing failed:', e);
+                }
+                if (serverProvided2 || response.status === 429) {
+                    this.currentRequest = null;
+                    this.setLoading(false);
+                    if (errorMessage === 'no_service_available') {
+                        const notice = this.container.dataset.noServiceAvailable
+                            || 'No AI service is currently available.';
+                        this.addMessageToDisplay('system', notice);
+                        this.disableInputForUnavailableService(false);
+                    } else {
+                        this.addMessageToDisplay('system', errorMessage);
+                    }
+                    return;
                 }
                 throw new Error(errorMessage);
             }
-            
+
             const responseText = await response.text();
             debug('API Response:', responseText);
-            
+
             let data;
             try {
                 data = JSON.parse(responseText);
@@ -819,24 +939,28 @@ class AIChatPageComponent {
                 debugError('Failed to parse JSON:', responseText);
                 throw new Error('Invalid JSON response: ' + responseText.substring(0, 100));
             }
-            
+
             if (!data.success) {
                 throw new Error(data.error || 'Request failed');
             }
-            
+
             const aiResponse = data.message;
-            
+
             if (aiResponse) {
+                if (this.isAnonymous) {
+                    this.anonymousHistory.push({role: 'user', message: message});
+                    this.anonymousHistory.push({role: 'assistant', message: aiResponse});
+                }
                 this.addMessageToDisplay('assistant', aiResponse);
             } else {
                 debugError('AIChatPageComponent: Unexpected response structure:', data);
                 throw new Error('No AI response received');
             }
-            
+
             this.currentRequest = null;
             this.setLoading(false);
             this.saveChatHistory();
-            
+
         } catch (error) {
             // Handle user-initiated request cancellation gracefully
             if (error.name === 'AbortError') {
@@ -896,6 +1020,10 @@ class AIChatPageComponent {
                 requestBody.attachment_ids = attachments.map(att => att.id);
             }
             
+            if (this.isAnonymous) {
+                requestBody.conversation_history = this.anonymousHistory;
+            }
+
             // EventSource only supports GET, so we need to pass data as URL parameters
             const params = new URLSearchParams();
             params.append('action', requestBody.action);
@@ -903,6 +1031,9 @@ class AIChatPageComponent {
             params.append('message', requestBody.message);
             if (requestBody.attachment_ids) {
                 params.append('attachment_ids', JSON.stringify(requestBody.attachment_ids));
+            }
+            if (requestBody.conversation_history) {
+                params.append('conversation_history', JSON.stringify(requestBody.conversation_history));
             }
             
             const eventSource = new EventSource(this.apiUrl + '?' + params.toString());
@@ -925,14 +1056,33 @@ class AIChatPageComponent {
                     } else if (data.type === 'complete') {
                         // Stream completed
                         debug('AIChatPageComponent: Streaming completed');
-                        this.finalizeStreamedMessage(messageElement, data.message || streamedContent);
+                        const sources = data.sources || null;
+                        const usage = data.usage || null;
+                        const finalContent = data.message || streamedContent;
+                        if (this.isAnonymous && finalContent) {
+                            this.anonymousHistory.push({role: 'user', message: message});
+                            this.anonymousHistory.push({role: 'assistant', message: finalContent});
+                        }
+                        this.finalizeStreamedMessage(messageElement, finalContent, sources, usage);
                         eventSource.close();
                         this.currentEventSource = null;
                         this.setLoading(false);
                         this.saveChatHistory();
-                    } else if (data.error) {
-                        // Error occurred
-                        throw new Error(data.error);
+                    } else if (data.error || data.type === 'error') {
+                        // Server-provided error: let cleanupStreaming() handle everything
+                        // (close + null + setLoading + cursor/class removal) – do NOT
+                        // null out currentEventSource beforehand or the cleanup is skipped.
+                        const serverError = data.error || 'An error occurred.';
+                        this.cleanupStreaming(false);
+                        if (serverError === 'no_service_available') {
+                            const notice = this.container.dataset.noServiceAvailable
+                                || 'No AI service is currently available.';
+                            this.addMessageToDisplay('system', notice);
+                            this.disableInputForUnavailableService(false);
+                        } else {
+                            this.addMessageToDisplay('system', serverError);
+                        }
+                        return;
                     } else if (data.type === 'chunk' && data.content) {
                         // Streaming chunk
                         const chunk = data.content;
@@ -1045,37 +1195,54 @@ class AIChatPageComponent {
      * @private
      * @param {{messageEl: HTMLElement, contentEl: HTMLElement}} messageElement - Message element references
      * @param {string} finalContent - Complete message content for formatting
+     * @param {Array|null} sources - RAG source citations if available
+     * @param {Object|null} usage - Token usage data if available
      */
-    finalizeStreamedMessage(messageElement, finalContent) {
+    finalizeStreamedMessage(messageElement, finalContent, sources = null, usage = null) {
         const { messageEl, contentEl } = messageElement;
-        
+
         // Remove streaming class and cursor
         messageEl.classList.remove('streaming');
         const cursor = contentEl.querySelector('.streaming-cursor');
         if (cursor) {
             cursor.remove();
         }
-        
+
         // Use stored raw content if available, otherwise use finalContent
-        const contentToFormat = contentEl.dataset.rawContent || finalContent;
-        
+        let contentToFormat = contentEl.dataset.rawContent || finalContent;
+
+        // Strip inline sources if we have structured sources to display separately
+        if (sources && sources.length > 0) {
+            contentToFormat = this.stripInlineSources(contentToFormat);
+        }
+
         // Set final content with markdown formatting
         contentEl.innerHTML = this.formatMessage(contentToFormat);
-        
+
         // Clear the raw content data
         delete contentEl.dataset.rawContent;
-        
+
+        // Add sources row if sources are available
+        if (sources && sources.length > 0) {
+            const sourcesRow = this.renderSourcesRow(sources, messageEl);
+            messageEl.appendChild(sourcesRow);
+            // Convert footnotes to chips
+            this.convertFootnotesToChips(contentEl, sourcesRow, sources);
+        }
+
         // Add message action buttons
         const actionsEl = this.createMessageActions();
         messageEl.appendChild(actionsEl);
-        
-        // Add to message history
+
+        // Add to message history (include sources and usage for persistence)
         this.messageHistory.push({
             role: 'assistant',
             content: contentToFormat,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            sources: sources,
+            usage: usage
         });
-        
+
         this.scrollToBottom();
     }
     
@@ -1126,25 +1293,29 @@ class AIChatPageComponent {
     
     /**
      * Add a message to both the display and message history
-     * 
+     *
      * Creates a visible message element in the chat area and adds the message
      * to the internal history for context. Handles attachments if provided.
-     * 
+     *
      * @public
      * @param {string} role - Message role ('user', 'assistant', or 'system')
      * @param {string} content - Message content text
      * @param {Array<Object>} [attachments=[]] - Array of attachment objects to display
+     * @param {Array<Object>} [sources=null] - Array of RAG source citations
+     * @param {Object} [usage=null] - Token usage data
      */
-    addMessageToDisplay(role, content, attachments = []) {
-        this.displayMessageOnly(role, content, attachments);
-        
+    addMessageToDisplay(role, content, attachments = [], sources = null, usage = null) {
+        this.displayMessageOnly(role, content, attachments, sources, usage);
+
         // Add to history
         this.messageHistory.push({
             role: role,
             content: content,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            sources: sources,
+            usage: usage
         });
-        
+
         // Limit history size
         if (this.messageHistory.length > this.maxMemory * 2) {
             this.messageHistory = this.messageHistory.slice(-this.maxMemory * 2);
@@ -1162,24 +1333,28 @@ class AIChatPageComponent {
      * @param {string} role - Message role ('user', 'assistant', or 'system')
      * @param {string} content - Message content text
      * @param {Array<Object>} [attachments=[]] - Array of attachment objects to display
+     * @param {Array<Object>} [sources=null] - Array of RAG source citations
+     * @param {Object} [usage=null] - Token usage data
      */
-    displayMessageOnly(role, content, attachments = []) {
-        debug('AIChatPageComponent: displayMessageOnly called with attachments:', attachments);
-        
+    displayMessageOnly(role, content, attachments = [], sources = null, usage = null) {
+        debug('AIChatPageComponent: displayMessageOnly called with attachments:', attachments, 'sources:', sources);
+
         if (this.welcomeMsg && this.welcomeMsg.parentNode) {
             this.welcomeMsg.remove();
         }
-        
+
         const messageDiv = document.createElement('div');
         messageDiv.className = 'ai-chat-message ' + role;
-        
+
         // Create message content wrapper
         const contentWrapper = document.createElement('div');
         contentWrapper.className = 'ai-chat-message-content';
-        
+
         // For assistant messages, render markdown
         if (role === 'assistant') {
-            contentWrapper.innerHTML = this.renderMarkdown(content);
+            // Strip inline sources if we have structured sources to display separately
+            const displayContent = (sources && sources.length > 0) ? this.stripInlineSources(content) : content;
+            contentWrapper.innerHTML = this.renderMarkdown(displayContent);
         } else {
             contentWrapper.textContent = content;
         }
@@ -1221,11 +1396,22 @@ class AIChatPageComponent {
             messageDiv.appendChild(contentWrapper);
         }
         
-        // Add action buttons for assistant messages
+        // Add sources row and action buttons for assistant messages
         if (role === 'assistant') {
+            // Add sources row FIRST if sources are available
+            let sourcesRow = null;
+            if (sources && sources.length > 0) {
+                sourcesRow = this.renderSourcesRow(sources, messageDiv);
+                messageDiv.appendChild(sourcesRow);
+
+                // Convert footnotes to chips
+                this.convertFootnotesToChips(contentWrapper, sourcesRow, sources);
+            }
+
+            // Then add action buttons
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'ai-chat-message-actions';
-            
+
             // Copy button
             const copyBtn = document.createElement('button');
             copyBtn.className = 'ai-chat-message-action';
@@ -1240,31 +1426,7 @@ class AIChatPageComponent {
                 e.preventDefault();
                 this.copyMessageToClipboard(content, copyBtn);
             });
-            
-            // Like button - COMMENTED OUT (currently no functionality implemented)
-            /* 
-            const likeBtn = document.createElement('button');
-            likeBtn.className = 'ai-chat-message-action';
-            likeBtn.title = this.lang.likeResponseTitle;
-            likeBtn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8.864.046C7.908-.193 7.02.53 6.956 1.466c-.072 1.051-.23 2.016-.428 2.59-.125.36-.479 1.013-1.04 1.639-.557.623-1.282 1.178-2.131 1.41C2.685 7.288 2 7.87 2 8.72v4.001c0 .845.682 1.464 1.448 1.545 1.07.114 1.564.415 2.068.723l.048.03c.272.165.578.348.97.484.397.136.861.217 1.466.217h3.5c.937 0 1.599-.477 1.934-1.064a1.86 1.86 0 0 0 .254-.912c0-.152-.023-.312-.077-.464.201-.263.38-.578.488-.901.11-.33.172-.762.004-1.149.069-.13.12-.269.159-.403.077-.27.113-.568.113-.857 0-.288-.036-.585-.113-.856a2.144 2.144 0 0 0-.138-.362 1.9 1.9 0 0 0 .234-1.734c-.206-.592-.682-1.1-1.2-1.272-.847-.282-1.803-.276-2.516-.211a9.84 9.84 0 0 0-.443.05 9.365 9.365 0 0 0-.062-4.509A1.38 1.38 0 0 0 9.125.111L8.864.046zM11.5 14.721H8c-.51 0-.863-.069-1.14-.164-.281-.097-.506-.228-.776-.393l-.04-.024c-.555-.339-1.198-.731-2.49-.868-.333-.036-.554-.29-.554-.55V8.72c0-.254.226-.543.62-.65 1.095-.3 1.977-.996 2.614-1.708.635-.71 1.064-1.475 1.238-1.978.243-.7.407-1.768.482-2.85.025-.362.36-.594.667-.518l.262.066c.16.04.258.143.288.255a8.34 8.34 0 0 1-.145 4.725.5.5 0 0 0 .595.644l.003-.001.014-.003.058-.014a8.908 8.908 0 0 1 1.036-.157c.663-.06 1.457-.054 2.11.164.175.058.45.3.57.65.107.308.087.67-.266 1.022l-.353.353.353.354c.043.043.105.141.154.315.048.167.075.37.075.581 0 .212-.027.414-.075.582-.05.174-.111.272-.154.315l-.353.353.353.354c.047.047.109.177.005.488a2.224 2.224 0 0 1-.505.805l-.353.353.353.354c.006.005.041.05.041.17a.866.866 0 0 1-.121.416c-.165.288-.503.56-1.066.56z"/>
-                </svg>
-            `;
-            */
-            
-            // Dislike button - COMMENTED OUT (currently no functionality implemented)
-            /*
-            const dislikeBtn = document.createElement('button');
-            dislikeBtn.className = 'ai-chat-message-action';
-            dislikeBtn.title = this.lang.dislikeResponseTitle;
-            dislikeBtn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8.864 15.674c-.956.24-1.843-.484-1.908-1.42-.072-1.05-.23-2.015-.428-2.59-.125-.36-.479-1.012-1.04-1.638-.557-.624-1.282-1.179-2.131-1.41C2.685 8.432 2 7.85 2 7V3c0-.845.682-1.464 1.448-1.546 1.07-.113 1.564-.415 2.068-.723l.048-.029c.272-.166.578-.349.97-.484C6.931.08 7.395 0 8 0h3.5c.937 0 1.599.478 1.934 1.064.164.287.254.607.254.913 0 .152-.023.312-.077.464.201.262.38.577.488.9.11.33.172.762.004 1.150.069.129.12.268.159.403.077.27.113.567.113.856 0 .289-.036.586-.113.856-.035.12-.08.244-.138.363.394.571.418 1.2.234 1.733-.206.592-.682 1.1-1.2 1.272-.847.283-1.803.276-2.516.211a9.877 9.877 0 0 1-.443-.05 9.364 9.364 0 0 1-.062 4.51c-.138.508-.55.848-1.012.964l-.261.065zM11.5 1H8c-.51 0-.863.068-1.14.163-.281.097-.506.229-.776.393l-.04.025c-.555.338-1.198.73-2.49.868-.333.035-.554.29-.554.55V7c0 .255.226.543.62.65 1.095.3 1.977.997 2.614 1.709.635.71 1.064 1.475 1.238 1.977.243.7.407 1.768.482 2.85.025.362.36.595.667.518l.262-.065c.16-.04.258-.144.288-.255a8.34 8.34 0 0 0-.145-4.726.5.5 0 0 1 .595-.643h.003l.014.004.058.013a8.912 8.912 0 0 0 1.036.157c.663.06 1.457.054 2.11-.163.175-.059.45-.301.57-.651.107-.308.087-.67-.266-1.021L12.793 7l.353-.354c.043-.042.105-.14.154-.315.048-.167.075-.37.075-.581 0-.211-.027-.414-.075-.581-.05-.174-.111-.273-.154-.315L12.793 4.5l.353-.354c.047-.047.109-.176.005-.488a2.224 2.224 0 0 0-.505-.804l-.353-.354.353-.354c.006-.005.041-.05.041-.17a.866.866 0 0 0-.121-.415C12.4 1.272 12.063 1 11.5 1z"/>
-                </svg>
-            `;
-            */
-            
+
             // Regenerate button
             const regenBtn = document.createElement('button');
             regenBtn.className = 'ai-chat-message-action';
@@ -1279,14 +1441,45 @@ class AIChatPageComponent {
                 e.preventDefault();
                 this.regenerateResponse(messageDiv);
             });
-            
+
+            // Like button – temporarily hidden, uncomment to restore
+            // const likeBtn = document.createElement('button');
+            // likeBtn.className = 'ai-chat-message-action';
+            // likeBtn.title = this.lang.likeResponseTitle;
+            // likeBtn.innerHTML = `
+            //     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+            //         <path d="M8.864.046C7.908-.193 7.02.53 6.956 1.466c-.072 1.051-.23 2.016-.428 2.59-.125.36-.479 1.013-1.04 1.639-.557.623-1.282 1.178-2.131 1.41C2.685 7.288 2 7.87 2 8.72v4.001c0 .845.682 1.464 1.448 1.545 1.07.114 1.564.415 2.068.723l.048.03c.272.165.578.348.97.484.397.136.861.217 1.466.217h3.5c.937 0 1.599-.477 1.934-1.064a1.86 1.86 0 0 0 .254-.912c0-.152-.023-.312-.077-.464.201-.263.38-.578.488-.901.11-.33.172-.762.004-1.149.069-.13.12-.269.159-.403.077-.27.113-.568.113-.857 0-.288-.036-.585-.113-.856a2.144 2.144 0 0 0-.138-.362 1.9 1.9 0 0 0 .234-1.734c-.206-.592-.682-1.1-1.2-1.272-.847-.282-1.803-.276-2.516-.211a9.84 9.84 0 0 0-.443.05 9.365 9.365 0 0 0-.062-4.509A1.38 1.38 0 0 0 9.125.111L8.864.046z"/>
+            //     </svg>
+            // `;
+            // likeBtn.addEventListener('click', (e) => {
+            //     e.preventDefault();
+            //     likeBtn.classList.toggle('ai-chat-message-action--active');
+            //     dislikeBtn.classList.remove('ai-chat-message-action--active');
+            // });
+
+            // Dislike button – temporarily hidden, uncomment to restore
+            // const dislikeBtn = document.createElement('button');
+            // dislikeBtn.className = 'ai-chat-message-action';
+            // dislikeBtn.title = this.lang.dislikeResponseTitle;
+            // dislikeBtn.innerHTML = `
+            //     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+            //         <path d="M8.864 15.674c-.956.24-1.843-.484-1.908-1.42-.072-1.05-.23-2.015-.428-2.59-.125-.36-.479-1.012-1.04-1.638-.557-.624-1.282-1.179-2.131-1.41C2.685 8.432 2 7.85 2 7V3c0-.845.682-1.464 1.448-1.546 1.07-.113 1.564-.415 2.068-.723l.048-.029c.272-.166.578-.349.97-.484C6.931.08 7.395 0 8 0h3.5c.937 0 1.599.478 1.934 1.064.164.287.254.607.254.913 0 .152-.023.312-.077.464.201.262.38.577.488.9.11.33.172.762.004 1.15.069.13.12.268.159.403.077.27.113.567.113.856 0 .289-.036.586-.113.856-.035.12-.076.237-.138.362.133.358.197.714.197 1.03 0 .292-.073.582-.21.857a2.9 2.9 0 0 1-.024.047c-.205.592-.682 1.1-1.2 1.272-.847.283-1.803.276-2.516.211a9.877 9.877 0 0 1-.443-.05 9.364 9.364 0 0 1-.062 4.509c-.138.508-.55.848-1.012.964l-.261.065z"/>
+            //     </svg>
+            // `;
+            // dislikeBtn.addEventListener('click', (e) => {
+            //     e.preventDefault();
+            //     dislikeBtn.classList.toggle('ai-chat-message-action--active');
+            //     likeBtn.classList.remove('ai-chat-message-action--active');
+            // });
+
             actionsDiv.appendChild(copyBtn);
-            // likeBtn and dislikeBtn commented out above
+            // actionsDiv.appendChild(likeBtn);
+            // actionsDiv.appendChild(dislikeBtn);
             actionsDiv.appendChild(regenBtn);
-            
+
             messageDiv.appendChild(actionsDiv);
         }
-        
+
         this.messagesArea.appendChild(messageDiv);
         this.messagesArea.scrollTop = this.messagesArea.scrollHeight;
 
@@ -1556,7 +1749,290 @@ class AIChatPageComponent {
         
         return html;
     }
-    
+
+    /**
+     * Render RAG source citations as a collapsible list
+     *
+     * Creates an expandable section showing document sources that the AI
+     * used to generate its response. Each source shows filename and page numbers.
+     * Sources have IDs for linking from footnote markers in the text.
+     *
+     * @param {Array} sources - Array of source objects with filename, pages, excerpt
+     * @param {string} messageId - Unique ID for this message to namespace source IDs
+     * @returns {HTMLElement} Container element with rendered sources
+     */
+    renderSourcesCitation(sources, messageId = null) {
+        const container = document.createElement('div');
+        container.className = 'ai-chat-sources';
+
+        // Generate unique ID for this sources section
+        const sourcesId = messageId || 'src-' + Date.now();
+        container.dataset.sourcesId = sourcesId;
+
+        // Create collapsible header
+        const header = document.createElement('button');
+        header.className = 'ai-chat-sources-header';
+        header.setAttribute('aria-expanded', 'false');
+        header.innerHTML = `
+            <span class="ai-chat-sources-icon" style="display:inline-flex;width:16px;height:16px;flex-shrink:0;">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="display:block;">
+                    <path d="M4.5 0A2.5 2.5 0 0 0 2 2.5V14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0h-5zM9.5 3A1.5 1.5 0 0 0 11 4.5H14V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.5A1.5 1.5 0 0 1 4.5 1H9v2.5z"/>
+                    <path d="M4.5 12.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0-2a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0-2a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5z"/>
+                </svg>
+            </span>
+            <span class="ai-chat-sources-label">${this.lang.sourcesLabel || 'Quellen'} (${sources.length})</span>
+            <svg class="ai-chat-sources-chevron" width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
+            </svg>
+        `;
+
+        // Create sources list
+        const list = document.createElement('div');
+        list.className = 'ai-chat-sources-list';
+        list.style.display = 'none';
+
+        sources.forEach((source, index) => {
+            const item = document.createElement('div');
+            item.className = 'ai-chat-source-item';
+            item.id = `${sourcesId}-source-${index + 1}`;
+            item.dataset.sourceIndex = index + 1;
+
+            // Build page info string
+            let pageInfo = '';
+            if (source.pages && source.pages.length > 0) {
+                const pageLabel = source.pages.length === 1 ?
+                    (this.lang.pageLabel || 'Seite') :
+                    (this.lang.pagesLabel || 'Seiten');
+                pageInfo = `, ${pageLabel} ${source.pages.join(', ')}`;
+            }
+
+            item.innerHTML = `
+                <span class="ai-chat-source-number">[${index + 1}]</span>
+                <span class="ai-chat-source-filename">${this.escapeHtml(source.filename)}${pageInfo}</span>
+            `;
+
+            // Add excerpt tooltip if available
+            if (source.excerpt) {
+                item.dataset.excerpt = source.excerpt;
+                this.addExcerptTooltip(item, source.excerpt);
+            }
+
+            list.appendChild(item);
+        });
+
+        // Toggle functionality
+        header.addEventListener('click', () => {
+            const isExpanded = header.getAttribute('aria-expanded') === 'true';
+            header.setAttribute('aria-expanded', !isExpanded);
+            list.style.display = isExpanded ? 'none' : 'block';
+            container.classList.toggle('expanded', !isExpanded);
+        });
+
+        container.appendChild(header);
+        container.appendChild(list);
+
+        // Store sources data for footnote linking
+        container.sourcesData = sources;
+
+        return container;
+    }
+
+    /**
+     * Add hover tooltip with excerpt to an element
+     *
+     * @param {HTMLElement} element - Element to add tooltip to
+     * @param {string} excerpt - Text excerpt to show in tooltip
+     */
+    addExcerptTooltip(element, excerpt) {
+        let tooltip = null;
+
+        element.addEventListener('mouseenter', (e) => {
+            tooltip = document.createElement('div');
+            tooltip.className = 'ai-chat-source-tooltip';
+
+            // Render markdown in excerpt for proper formatting
+            tooltip.innerHTML = this.renderMarkdown(excerpt);
+            document.body.appendChild(tooltip);
+
+            // Position tooltip
+            const rect = element.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+
+            // Position below element, but flip above if near bottom of viewport
+            let top = rect.bottom + 5;
+            if (top + tooltipRect.height > window.innerHeight - 20) {
+                top = rect.top - tooltipRect.height - 5;
+            }
+
+            // Ensure tooltip stays within viewport horizontally
+            let left = rect.left;
+            const maxWidth = Math.min(400, window.innerWidth - 40);
+            if (left + maxWidth > window.innerWidth - 20) {
+                left = window.innerWidth - maxWidth - 20;
+            }
+
+            tooltip.style.left = `${Math.max(10, left)}px`;
+            tooltip.style.top = `${top}px`;
+            tooltip.style.maxWidth = `${maxWidth}px`;
+        });
+
+        element.addEventListener('mouseleave', () => {
+            if (tooltip) {
+                tooltip.remove();
+                tooltip = null;
+            }
+        });
+    }
+
+    /**
+     * Convert footnote markers in text to clickable links
+     *
+     * Finds superscript numbers (¹²³) in the content and converts them to
+     * clickable links that expand the sources section and highlight the source.
+     *
+     * @param {HTMLElement} contentEl - Content element containing the rendered text
+     * @param {HTMLElement} sourcesContainer - Sources container element
+     * @param {Array} sources - Array of source objects with excerpts
+     */
+    linkFootnotesToSources(contentEl, sourcesContainer, sources) {
+        if (!contentEl || !sourcesContainer || !sources || sources.length === 0) return;
+
+        const sourcesId = sourcesContainer.dataset.sourcesId;
+
+        // Map superscript numbers to regular numbers
+        const superscriptMap = {
+            '¹': 1, '²': 2, '³': 3, '⁴': 4, '⁵': 5,
+            '⁶': 6, '⁷': 7, '⁸': 8, '⁹': 9, '⁰': 0
+        };
+
+        // Walk through text nodes and replace footnote markers
+        const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null, false);
+        const nodesToProcess = [];
+
+        while (walker.nextNode()) {
+            if (/[¹²³⁴⁵⁶⁷⁸⁹⁰]+/.test(walker.currentNode.textContent)) {
+                nodesToProcess.push(walker.currentNode);
+            }
+        }
+
+        nodesToProcess.forEach(textNode => {
+            const fragment = document.createDocumentFragment();
+            const text = textNode.textContent;
+            let lastIndex = 0;
+
+            // Match one or more superscript digits
+            const regex = /[¹²³⁴⁵⁶⁷⁸⁹⁰]+/g;
+            let match;
+
+            while ((match = regex.exec(text)) !== null) {
+                // Add text before match
+                if (match.index > lastIndex) {
+                    fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+                }
+
+                // Parse the superscript number
+                let num = 0;
+                for (const char of match[0]) {
+                    num = num * 10 + (superscriptMap[char] || 0);
+                }
+
+                // Create clickable footnote link
+                const link = document.createElement('a');
+                link.href = '#' + sourcesId + '-source-' + num;
+                link.className = 'ai-chat-footnote-link';
+                link.style.cssText = 'color: #19c37d !important; text-decoration: none !important; cursor: pointer; font-weight: 600;';
+                link.textContent = match[0];
+                link.dataset.sourceIndex = num;
+
+                // Get excerpt for this source
+                const sourceData = sources[num - 1];
+                if (sourceData && sourceData.excerpt) {
+                    this.addExcerptTooltip(link, sourceData.excerpt);
+                }
+
+                // Click handler to open sources section and highlight item
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+
+                    // Open sources section
+                    sourcesContainer.style.display = 'block';
+                    // Also activate the button in action bar
+                    const messageEl = sourcesContainer.closest('.ai-chat-message');
+                    const btn = messageEl?.querySelector('.ai-chat-sources-btn');
+                    if (btn) {
+                        btn.classList.add('active');
+                    }
+
+                    // Find and highlight the source item
+                    const targetId = sourcesId + '-source-' + num;
+                    const targetItem = document.getElementById(targetId);
+                    if (targetItem) {
+                        targetItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        targetItem.classList.add('highlighted');
+                        setTimeout(() => targetItem.classList.remove('highlighted'), 2000);
+                    }
+                });
+
+                fragment.appendChild(link);
+                lastIndex = regex.lastIndex;
+            }
+
+            // Add remaining text
+            if (lastIndex < text.length) {
+                fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
+
+            textNode.parentNode.replaceChild(fragment, textNode);
+        });
+    }
+
+    /**
+     * Strip the "Quellen:"/"Sources:" section from message text
+     *
+     * Removes only the sources list at the end of the message since we display
+     * sources separately. Keeps footnote markers (¹²³) in the text for reference.
+     *
+     * @param {string} text - Message text potentially containing inline sources
+     * @returns {string} Cleaned text without the sources section at the end
+     */
+    stripInlineSources(text) {
+        if (!text) return '';
+
+        // Match various formats of "Quellen" headers:
+        // - Markdown headers: ### Quellen, ## Quellen:, # Quellen
+        // - Bold: **Quellen:** or __Quellen:__
+        // - Plain: Quellen:
+        // Pattern matches newline, optional whitespace, optional markdown header (#), optional bold (**), the word, optional bold, colon
+        const patterns = [
+            /\n#{1,6}\s*(Quellen|Sources|Referenzen|References)\s*:?[\s\S]*$/i,  // Markdown headers
+            /\n\s*\*{1,2}(Quellen|Sources|Referenzen|References)\*{1,2}\s*:?[\s\S]*$/i,  // Bold
+            /\n\s*_{1,2}(Quellen|Sources|Referenzen|References)_{1,2}\s*:?[\s\S]*$/i,  // Underline bold
+            /\n\s*(Quellen|Sources|Referenzen|References)\s*:[\s\S]*$/i,  // Plain with colon
+        ];
+
+        for (const pattern of patterns) {
+            const match = text.match(pattern);
+            if (match && match.index > text.length * 0.5) {
+                text = text.substring(0, match.index);
+                break;
+            }
+        }
+
+        // Also handle bullet-point source lists without header at the end
+        text = text.replace(/\n\n\s*(-\s+[^\n]+\.(pdf|doc|docx|txt|md|csv)[^\n]*\n?)+$/i, '');
+
+        // Also handle numbered source lists without the header
+        text = text.replace(/\n\n\s*(\d+\.\s+[^\n]+\.(pdf|doc|docx|txt|md|csv)[^\n]*\n?)+$/i, '');
+
+        // Handle indented source lists with page references
+        text = text.replace(/\n\n?\s*([\t ]*[^\n]+,\s*(page|pages|Seite|Seiten)\s+[\d,\s]+\n?)+$/i, '');
+
+        // Clean up any trailing whitespace
+        text = text.trimEnd();
+
+        return text;
+    }
+
     // Attachment rendering methods for different file types
     createImageAttachment(attachment, container) {
         const imgDiv = document.createElement('div');
@@ -2690,7 +3166,31 @@ class AIChatPageComponent {
         });
     }
     
+    /**
+     * Disable input and show a notice when no AI service is configured.
+     * History (if persistent) is still loaded and readable.
+     */
+    disableInputForUnavailableService(showMessage = true) {
+        this.serviceUnavailable = true;
+
+        if (this.inputArea) this.inputArea.disabled = true;
+
+        const sendBtn = this.container.querySelector('.ai-chat-send');
+        if (sendBtn) sendBtn.disabled = true;
+
+        const attachBtn = this.container.querySelector('.ai-chat-attach-btn');
+        if (attachBtn) attachBtn.disabled = true;
+
+        if (showMessage) {
+            const notice = this.container.dataset.noServiceAvailable
+                || 'No AI service is currently available.';
+            setTimeout(() => this.addMessageToDisplay('system', notice), 100);
+        }
+    }
+
     saveChatHistory() {
+        // Anonymous sessions are ephemeral – nothing to persist
+        if (this.isAnonymous) return;
         localStorage.setItem(`ai_chat_${this.chatId}`, JSON.stringify(this.messageHistory));
     }
     
@@ -2718,9 +3218,11 @@ class AIChatPageComponent {
                             role: msg.role,
                             content: msg.content || msg.message || '',
                             timestamp: msg.timestamp || Date.now(),
-                            attachments: msg.attachments || []
+                            attachments: msg.attachments || [],
+                            sources: msg.sources || null,
+                            usage: msg.usage || null
                         }));
-                        
+
                         debug('AIChatPageComponent: Processed message history:', this.messageHistory);
                         this.messageHistory.forEach(msg => {
                             if (msg.role !== 'system') {
@@ -2730,7 +3232,7 @@ class AIChatPageComponent {
                                     debug('AIChatPageComponent: Skipping empty message');
                                     return;
                                 }
-                                this.displayMessageOnly(msg.role, msg.content, msg.attachments || []);
+                                this.displayMessageOnly(msg.role, msg.content, msg.attachments || [], msg.sources, msg.usage);
                             }
                         });
                     }
@@ -3588,6 +4090,11 @@ class AIChatPageComponent {
      * @returns {string} User-friendly error message
      */
     getErrorMessage(error) {
+        // Server-provided sentinel for disabled services
+        if (error.message === 'no_service_available') {
+            return this.container.dataset.noServiceAvailable
+                || 'No AI service is currently available. Please contact your administrator.';
+        }
         // Session expired (302 redirect) - most common cause
         if (error.message.includes('302') || error.message.includes('redirect')) {
             return 'Your session has expired. Please refresh the page to log in again.';
@@ -3665,12 +4172,13 @@ class AIChatPageComponent {
     }
     
     /**
-     * Create message action buttons (copy, regenerate, etc.)
+     * Create message action buttons (copy, regenerate)
+     * Sources are now handled separately via renderSourcesRow
      */
     createMessageActions() {
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'ai-chat-message-actions';
-        
+
         // Copy button
         const copyBtn = document.createElement('button');
         copyBtn.className = 'ai-chat-message-action';
@@ -3683,13 +4191,12 @@ class AIChatPageComponent {
         `;
         copyBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            // Find the message content to copy
             const messageDiv = e.target.closest('.ai-chat-message');
             const contentDiv = messageDiv.querySelector('.ai-chat-message-content');
             const content = contentDiv ? contentDiv.textContent : '';
             this.copyMessageToClipboard(content, copyBtn);
         });
-        
+
         // Regenerate button
         const regenBtn = document.createElement('button');
         regenBtn.className = 'ai-chat-message-action';
@@ -3706,10 +4213,362 @@ class AIChatPageComponent {
             this.regenerateResponse(messageDiv);
         });
 
+        // Like button
+        const likeBtn2 = document.createElement('button');
+        likeBtn2.className = 'ai-chat-message-action';
+        likeBtn2.title = this.lang.likeResponseTitle;
+        likeBtn2.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+                <path d="M8.864.046C7.908-.193 7.02.53 6.956 1.466c-.072 1.051-.23 2.016-.428 2.59-.125.36-.479 1.013-1.04 1.639-.557.623-1.282 1.178-2.131 1.41C2.685 7.288 2 7.87 2 8.72v4.001c0 .845.682 1.464 1.448 1.545 1.07.114 1.564.415 2.068.723l.048.03c.272.165.578.348.97.484.397.136.861.217 1.466.217h3.5c.937 0 1.599-.477 1.934-1.064a1.86 1.86 0 0 0 .254-.912c0-.152-.023-.312-.077-.464.201-.263.38-.578.488-.901.11-.33.172-.762.004-1.149.069-.13.12-.269.159-.403.077-.27.113-.568.113-.857 0-.288-.036-.585-.113-.856a2.144 2.144 0 0 0-.138-.362 1.9 1.9 0 0 0 .234-1.734c-.206-.592-.682-1.1-1.2-1.272-.847-.282-1.803-.276-2.516-.211a9.84 9.84 0 0 0-.443.05 9.365 9.365 0 0 0-.062-4.509A1.38 1.38 0 0 0 9.125.111L8.864.046z"/>
+            </svg>
+        `;
+        likeBtn2.addEventListener('click', (e) => {
+            e.preventDefault();
+            likeBtn2.classList.toggle('ai-chat-message-action--active');
+            dislikeBtn2.classList.remove('ai-chat-message-action--active');
+        });
+
+        // Dislike button
+        const dislikeBtn2 = document.createElement('button');
+        dislikeBtn2.className = 'ai-chat-message-action';
+        dislikeBtn2.title = this.lang.dislikeResponseTitle;
+        dislikeBtn2.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+                <path d="M8.864 15.674c-.956.24-1.843-.484-1.908-1.42-.072-1.05-.23-2.015-.428-2.59-.125-.36-.479-1.012-1.04-1.638-.557-.624-1.282-1.179-2.131-1.41C2.685 8.432 2 7.85 2 7V3c0-.845.682-1.464 1.448-1.546 1.07-.113 1.564-.415 2.068-.723l.048-.029c.272-.166.578-.349.97-.484C6.931.08 7.395 0 8 0h3.5c.937 0 1.599.478 1.934 1.064.164.287.254.607.254.913 0 .152-.023.312-.077.464.201.262.38.577.488.9.11.33.172.762.004 1.15.069.13.12.268.159.403.077.27.113.567.113.856 0 .289-.036.586-.113.856-.035.12-.076.237-.138.362.133.358.197.714.197 1.03 0 .292-.073.582-.21.857a2.9 2.9 0 0 1-.024.047c-.205.592-.682 1.1-1.2 1.272-.847.283-1.803.276-2.516.211a9.877 9.877 0 0 1-.443-.05 9.364 9.364 0 0 1-.062 4.509c-.138.508-.55.848-1.012.964l-.261.065z"/>
+            </svg>
+        `;
+        dislikeBtn2.addEventListener('click', (e) => {
+            e.preventDefault();
+            dislikeBtn2.classList.toggle('ai-chat-message-action--active');
+            likeBtn2.classList.remove('ai-chat-message-action--active');
+        });
+
         actionsDiv.appendChild(copyBtn);
+        actionsDiv.appendChild(likeBtn2);
+        actionsDiv.appendChild(dislikeBtn2);
         actionsDiv.appendChild(regenBtn);
 
         return actionsDiv;
+    }
+
+    /**
+     * Detect source type from filename
+     * @param {string} filename - Source filename
+     * @returns {string} Source type: 'pdf', 'web', 'wiki', 'doc', 'image', 'other'
+     */
+    detectSourceType(filename) {
+        if (!filename) return 'other';
+        const lower = filename.toLowerCase();
+
+        if (lower.endsWith('.pdf')) return 'pdf';
+        if (lower.includes('wiki') || lower.includes('wikipedia')) return 'wiki';
+        if (lower.startsWith('http') || lower.includes('www.') || lower.endsWith('.html') || lower.endsWith('.htm')) return 'web';
+        if (lower.endsWith('.doc') || lower.endsWith('.docx') || lower.endsWith('.odt')) return 'doc';
+        if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp')) return 'image';
+        if (lower.endsWith('.txt') || lower.endsWith('.md') || lower.endsWith('.csv')) return 'text';
+
+        return 'other';
+    }
+
+    /**
+     * Get icon SVG for source type
+     * @param {string} type - Source type
+     * @returns {string} SVG HTML
+     */
+    getSourceTypeIcon(type) {
+        const icons = {
+            pdf: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0H4zm0 1h5v3.5A1.5 1.5 0 0 0 10.5 6H13v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/><path d="M4.5 11.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1H5v1h1a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5v-2zm3 0a.5.5 0 0 1 .5-.5h1a1 1 0 0 1 0 2H8.5v.5a.5.5 0 0 1-1 0v-2z"/></svg>`,
+            web: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.5-6.923c-.67.204-1.335.82-1.887 1.855A7.97 7.97 0 0 0 5.145 4H7.5V1.077zM4.09 4a9.267 9.267 0 0 1 .64-1.539 6.7 6.7 0 0 1 .597-.933A7.025 7.025 0 0 0 2.255 4H4.09zm-.582 3.5c.03-.877.138-1.718.312-2.5H1.674a6.958 6.958 0 0 0-.656 2.5h2.49zM4.847 5a12.5 12.5 0 0 0-.338 2.5H7.5V5H4.847zM8.5 5v2.5h2.99a12.495 12.495 0 0 0-.337-2.5H8.5zM4.51 8.5a12.5 12.5 0 0 0 .337 2.5H7.5V8.5H4.51zm3.99 0V11h2.653c.187-.765.306-1.608.338-2.5H8.5zM5.145 12c.138.386.295.744.468 1.068.552 1.035 1.218 1.65 1.887 1.855V12H5.145zm.182 2.472a6.696 6.696 0 0 1-.597-.933A9.268 9.268 0 0 1 4.09 12H2.255a7.024 7.024 0 0 0 3.072 2.472zM3.82 11a13.652 13.652 0 0 1-.312-2.5h-2.49c.062.89.291 1.733.656 2.5H3.82zm6.853 3.472A7.024 7.024 0 0 0 13.745 12H11.91a9.27 9.27 0 0 1-.64 1.539 6.688 6.688 0 0 1-.597.933zM8.5 12v2.923c.67-.204 1.335-.82 1.887-1.855.173-.324.33-.682.468-1.068H8.5zm3.68-1h2.146c.365-.767.594-1.61.656-2.5h-2.49a13.65 13.65 0 0 1-.312 2.5zm2.802-3.5a6.959 6.959 0 0 0-.656-2.5H12.18c.174.782.282 1.623.312 2.5h2.49zM11.27 2.461c.247.464.462.98.64 1.539h1.835a7.024 7.024 0 0 0-3.072-2.472c.218.284.418.598.597.933zM10.855 4a7.966 7.966 0 0 0-.468-1.068C9.835 1.897 9.17 1.282 8.5 1.077V4h2.355z"/></svg>`,
+            wiki: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8z"/><path d="M6.5 4.5a.5.5 0 0 1 .5.5v2.5h2V5a.5.5 0 0 1 1 0v6a.5.5 0 0 1-1 0V8h-2v3a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5z"/></svg>`,
+            doc: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0H4zm0 1h5v3.5A1.5 1.5 0 0 0 10.5 6H13v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/><path d="M4.5 8a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5z"/></svg>`,
+            image: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/><path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/></svg>`,
+            text: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 11a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1h-7zm0-2a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1h-7zm0-2a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1h-7zm0-2a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1h-7z"/><path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2zm10-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z"/></svg>`,
+            other: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0H4zm0 1h5v3.5A1.5 1.5 0 0 0 10.5 6H13v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/></svg>`
+        };
+        return icons[type] || icons.other;
+    }
+
+    /**
+     * Get label for source type
+     * @param {string} type - Source type
+     * @returns {string} Label
+     */
+    getSourceTypeLabel(type) {
+        const labels = {
+            pdf: 'PDF',
+            web: 'Web',
+            wiki: 'Wiki',
+            doc: 'Doc',
+            image: 'Bild',
+            text: 'Text',
+            other: 'Datei'
+        };
+        return labels[type] || labels.other;
+    }
+
+    /**
+     * Render sources row with type bubbles and collapsible section
+     * @param {Array} sources - Array of source objects
+     * @param {HTMLElement} messageEl - Message element
+     * @returns {HTMLElement} Sources row element
+     */
+    renderSourcesRow(sources, messageEl) {
+        const sourcesId = 'src-' + Date.now();
+
+        // Detect unique source types
+        const typeCount = {};
+        sources.forEach(source => {
+            const type = this.detectSourceType(source.filename);
+            typeCount[type] = (typeCount[type] || 0) + 1;
+        });
+        const uniqueTypes = Object.keys(typeCount).slice(0, 3);
+
+        // Create sources row container
+        const row = document.createElement('div');
+        row.className = 'ai-chat-sources-row';
+
+        // Create toggle button with type bubbles
+        const btn = document.createElement('button');
+        btn.className = 'ai-chat-sources-toggle';
+        btn.dataset.sourcesId = sourcesId;
+
+        // Build bubbles HTML
+        let bubblesHtml = '<div class="ai-chat-sources-bubbles">';
+        uniqueTypes.forEach((type, i) => {
+            bubblesHtml += `<span class="ai-chat-source-bubble" data-type="${type}" style="z-index: ${10 - i};">${this.getSourceTypeIcon(type)}</span>`;
+        });
+        bubblesHtml += '</div>';
+
+        // Build type labels
+        const typeLabels = uniqueTypes.map(t => `<span class="ai-chat-source-type-label">${this.getSourceTypeLabel(t)}</span>`).join('');
+
+        btn.innerHTML = `
+            ${bubblesHtml}
+            <div class="ai-chat-sources-info">
+                <div class="ai-chat-sources-types">${typeLabels}</div>
+                <span class="ai-chat-sources-count">${sources.length} ${sources.length === 1 ? 'Quelle' : 'Quellen'}</span>
+            </div>
+            <svg class="ai-chat-sources-chevron" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/></svg>
+        `;
+
+        // Collapsible sources section
+        const sourcesSection = document.createElement('div');
+        sourcesSection.className = 'ai-chat-sources-section';
+        sourcesSection.dataset.sourcesId = sourcesId;
+
+        const sourcesList = document.createElement('div');
+        sourcesList.className = 'ai-chat-sources-list';
+
+        sources.forEach((source, index) => {
+            const type = this.detectSourceType(source.filename);
+            const item = document.createElement('div');
+            item.className = 'ai-chat-source-item';
+            item.id = `${sourcesId}-source-${index + 1}`;
+            item.dataset.sourceIndex = index + 1;
+            item.dataset.type = type;
+
+            let pageInfo = '';
+            if (source.pages && source.pages.length > 0) {
+                const pageLabel = source.pages.length === 1 ? 'S.' : 'S.';
+                pageInfo = `<span class="ai-chat-source-pages">${pageLabel} ${source.pages.join(', ')}</span>`;
+            }
+
+            // Get short filename
+            const shortName = source.filename.length > 40
+                ? source.filename.substring(0, 37) + '...'
+                : source.filename;
+
+            item.innerHTML = `
+                <span class="ai-chat-source-icon" data-type="${type}">${this.getSourceTypeIcon(type)}</span>
+                <span class="ai-chat-source-name">${this.escapeHtml(shortName)}</span>
+                ${pageInfo}
+            `;
+
+            if (source.excerpt) {
+                item.dataset.excerpt = source.excerpt;
+                this.addExcerptTooltip(item, source.excerpt);
+            }
+
+            sourcesList.appendChild(item);
+        });
+
+        sourcesSection.appendChild(sourcesList);
+
+        // Toggle animation
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const isOpen = sourcesSection.classList.contains('open');
+            sourcesSection.classList.toggle('open', !isOpen);
+            btn.classList.toggle('active', !isOpen);
+        });
+
+        row.appendChild(btn);
+        row.appendChild(sourcesSection);
+
+        // Store data for linking
+        row.sourcesData = sources;
+        row.dataset.sourcesId = sourcesId;
+
+        return row;
+    }
+
+    /**
+     * Convert footnote markers to clickable source chips
+     * Supports multiple formats:
+     * - Unicode superscripts: ¹²³⁴⁵⁶⁷⁸⁹⁰ (including multi-digit like ¹⁰, ¹¹)
+     * - Bracket notation: [1], [10], [11]
+     * - Caret notation: ^1, ^10, ^11
+     *
+     * @param {HTMLElement} contentEl - Content element
+     * @param {HTMLElement} sourcesRow - Sources row element
+     * @param {Array} sources - Sources array
+     */
+    convertFootnotesToChips(contentEl, sourcesRow, sources) {
+        if (!contentEl || !sourcesRow || !sources || sources.length === 0) return;
+
+        const sourcesId = sourcesRow.dataset.sourcesId;
+        const self = this;
+
+        // Map superscript numbers to regular numbers
+        const superscriptMap = {
+            '¹': 1, '²': 2, '³': 3, '⁴': 4, '⁵': 5,
+            '⁶': 6, '⁷': 7, '⁸': 8, '⁹': 9, '⁰': 0
+        };
+
+        /**
+         * Parse footnote number from different formats
+         * @param {string} matchStr - The matched string
+         * @param {string} format - 'superscript', 'bracket', or 'caret'
+         * @returns {number} The footnote number
+         */
+        function parseFootnoteNumber(matchStr, format) {
+            if (format === 'superscript') {
+                let num = 0;
+                for (const char of matchStr) {
+                    num = num * 10 + (superscriptMap[char] || 0);
+                }
+                return num;
+            } else if (format === 'bracket') {
+                // Extract number from [N]
+                return parseInt(matchStr.slice(1, -1), 10);
+            } else if (format === 'caret') {
+                // Extract number from ^N
+                return parseInt(matchStr.slice(1), 10);
+            }
+            return 0;
+        }
+
+        /**
+         * Create a source chip element
+         * @param {number} num - Source index (1-based)
+         * @returns {HTMLElement|null} The chip element or null if source not found
+         */
+        function createSourceChip(num) {
+            const sourceData = sources[num - 1];
+            if (!sourceData) return null;
+
+            const chip = document.createElement('span');
+            chip.className = 'ai-chat-source-chip';
+            chip.dataset.sourceIndex = num;
+
+            const type = self.detectSourceType(sourceData.filename);
+            const shortName = sourceData.filename.length > 20
+                ? sourceData.filename.substring(0, 17) + '...'
+                : sourceData.filename;
+
+            chip.innerHTML = `<span class="ai-chat-chip-icon">${self.getSourceTypeIcon(type)}</span><span class="ai-chat-chip-name">${self.escapeHtml(shortName)}</span>`;
+
+            // Tooltip
+            if (sourceData.excerpt) {
+                self.addExcerptTooltip(chip, sourceData.excerpt);
+            }
+
+            // Click to expand and highlight
+            chip.addEventListener('click', (e) => {
+                e.preventDefault();
+                const section = sourcesRow.querySelector('.ai-chat-sources-section');
+                const btn = sourcesRow.querySelector('.ai-chat-sources-toggle');
+                if (section && btn) {
+                    section.classList.add('open');
+                    btn.classList.add('active');
+                }
+                const targetItem = document.getElementById(`${sourcesId}-source-${num}`);
+                if (targetItem) {
+                    targetItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    targetItem.classList.add('highlighted');
+                    setTimeout(() => targetItem.classList.remove('highlighted'), 2000);
+                }
+            });
+
+            return chip;
+        }
+
+        // Combined regex for all footnote formats:
+        // - Unicode superscripts: [¹²³⁴⁵⁶⁷⁸⁹⁰]+
+        // - Bracket notation: \[\d+\]
+        // - Caret notation: \^\d+
+        const combinedRegex = /([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\[\d+\]|\^\d+)/g;
+
+        // Walk through text nodes
+        const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, null, false);
+        const nodesToProcess = [];
+
+        while (walker.nextNode()) {
+            if (combinedRegex.test(walker.currentNode.textContent)) {
+                nodesToProcess.push(walker.currentNode);
+                // Reset regex lastIndex after test
+                combinedRegex.lastIndex = 0;
+            }
+        }
+
+        nodesToProcess.forEach(textNode => {
+            const fragment = document.createDocumentFragment();
+            const text = textNode.textContent;
+            let lastIndex = 0;
+            let match;
+
+            // Reset regex for each node
+            combinedRegex.lastIndex = 0;
+
+            while ((match = combinedRegex.exec(text)) !== null) {
+                // Add text before match
+                if (match.index > lastIndex) {
+                    fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+                }
+
+                const matchStr = match[0];
+                let format, num;
+
+                // Determine format and parse number
+                if (/^[¹²³⁴⁵⁶⁷⁸⁹⁰]+$/.test(matchStr)) {
+                    format = 'superscript';
+                    num = parseFootnoteNumber(matchStr, format);
+                } else if (/^\[\d+\]$/.test(matchStr)) {
+                    format = 'bracket';
+                    num = parseFootnoteNumber(matchStr, format);
+                } else if (/^\^\d+$/.test(matchStr)) {
+                    format = 'caret';
+                    num = parseFootnoteNumber(matchStr, format);
+                }
+
+                // Create chip if valid source exists
+                const chip = num > 0 ? createSourceChip(num) : null;
+                if (chip) {
+                    fragment.appendChild(chip);
+                } else {
+                    // Keep original text if source not found
+                    fragment.appendChild(document.createTextNode(matchStr));
+                }
+
+                lastIndex = combinedRegex.lastIndex;
+            }
+
+            if (lastIndex < text.length) {
+                fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
+
+            textNode.parentNode.replaceChild(fragment, textNode);
+        });
     }
 }
 

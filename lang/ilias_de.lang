@@ -1,4 +1,6 @@
 <!-- language file start -->
+plugin_title#:#KI-Chat Seitenkomponente
+plugin_description#:#Einbettung anpassbarer KI-Chatbots direkt in ILIAS-Lernseiten
 cmd_insert#:#KI-Chat einfügen
 content_plugin_version#:#Inhalt zuletzt bearbeitet mit Version
 edit_input_field#:#KI-Chat bearbeiten
@@ -21,6 +23,8 @@ copy_message_title#:#Nachricht in Zwischenablage kopieren
 copy_message_aria_label#:#Diese Nachricht in Zwischenablage kopieren
 message_copied#:#Nachricht kopiert!
 message_copy_failed#:#Kopieren fehlgeschlagen
+theme_toggle_title#:#Hell-/Dunkel-Design wechseln
+theme_toggle_label#:#Hell-/Dunkel-Design wechseln
 clear_chat_text#:#Löschen
 clear_chat_title#:#Alle Chat-Nachrichten löschen
 clear_chat_label#:#Chat-Verlauf löschen
@@ -150,6 +154,26 @@ config_max_image_data#:#Maximale Gesamt-Bilddaten
 config_max_image_data_info#:#Maximale Gesamt-Base64-Bilddaten pro Chat-Nachricht (für AI-Verarbeitung)
 config_enable_streaming#:#Streaming-Antworten aktivieren
 config_enable_streaming_info#:#Wenn aktiviert, werden AI-Antworten in Echtzeit übertragen, während sie generiert werden, für sofortiges Benutzerfeedback
+config_max_messages_per_day#:#Max. Nachrichten pro Nutzer/Tag/Chat
+config_max_messages_per_day_info#:#Maximale Anzahl Nachrichten, die ein eingeloggter Nutzer pro Tag und pro Chat senden darf. 0 = unbegrenzt.
+config_session_cleanup_days#:#Inaktive Sessions bereinigen nach (Tage)
+config_session_cleanup_days_info#:#Sessions ohne Aktivität länger als diese Anzahl Tage werden automatisch gelöscht (inkl. Nachrichten und Anhänge). 0 = Bereinigung deaktiviert.
+error_rate_limit_exceeded#:#Tageslimit erreicht. Du hast das Maximum von %d Nachrichten für heute in diesem Chat erreicht. Versuche es morgen erneut.
+stat_run_cleanup#:#Inaktive Sessions bereinigen
+stat_cleanup_done#:#Bereinigung abgeschlossen: %d Sessions mit %d Nachrichten gelöscht.
+stat_cleanup_nothing#:#Keine inaktiven Sessions gefunden.
+no_service_available#:#Aktuell steht kein KI-Dienst zur Verfügung. Bitte wende dich an den Administrator.
+chat_online_label#:#Online
+chat_online_info#:#Inhalt ist veröffentlicht und kann von allen Personen mit dem Recht „Lesezugriff" genutzt werden.
+chat_offline_banner#:#Dieser Chat ist derzeit offline und für Teilnehmende nicht sichtbar.
+chat_orphaned_title#:#Verwaister Chat
+chat_orphaned_hint#:#Dieser Chat wurde gelöscht. Das Element ist für Teilnehmende nicht sichtbar. Bitte entfernen Sie es von dieser Seite.
+chat_offline_badge#:#Offline
+config_anonymous_access_title#:#Anonymer Zugang
+config_anonymous_access_info#:#Steuert, ob nicht eingeloggte Benutzer den AI-Chat nutzen können.
+config_allow_anonymous_access#:#Anonymen Zugang erlauben
+config_allow_anonymous_access_info#:#Wenn aktiviert, können nicht eingeloggte Benutzer den Chat verwenden. Nachrichten werden nicht in der Datenbank gespeichert (stateless) – der Verlauf existiert nur für die aktuelle Browser-Sitzung. Datei-Uploads sind für anonyme Benutzer grundsätzlich nicht verfügbar.
+anonymous_access_blocked#:#Dieser Chat ist nur für angemeldete Benutzer verfügbar.
 config_saved_success#:#Konfiguration erfolgreich gespeichert
 config_saved_error#:#Fehler beim Speichern der Konfiguration
 config_ai_service_not_available#:#KI-Dienst-Konfiguration nicht verfügbar
@@ -202,3 +226,35 @@ attachments_aria_label#:#Dateianhänge
 actions_aria_label#:#Nachrichtenaktionen
 new_message_aria#:#Neue Nachricht erhalten
 skip_to_input#:#Zum Eingabefeld springen
+edit_mode_label#:#Editor-Vorschau
+click_to_edit_hint#:#Klicken Sie hier, um die Konfiguration zu bearbeiten
+demo_user_message#:#Hallo! Wie kannst du mir helfen?
+demo_assistant_message#:#Hallo! Ich bin ein KI-Assistent, der in diese Lernseite eingebettet ist. Ich bin hier, um Ihnen bei Fragen zum Inhalt zu helfen, Konzepte zu erklären oder bei Übungen zu unterstützen. Fragen Sie mich gerne alles!
+demo_assistant_tutor#:#Hallo! Als Ihr Lern-Tutor bin ich hier, um Sie Schritt für Schritt durch das Material zu führen. Fragen Sie mich zu allen Konzepten, die Sie erkunden möchten.
+demo_assistant_coding#:#Hallo! Ich kann Ihnen bei Programmier-Fragen helfen, Code-Konzepte erklären oder bei der Fehlersuche unterstützen. Woran möchten Sie arbeiten?
+demo_assistant_creative#:#Hallo! Lassen Sie uns gemeinsam kreativ werden! Ob Brainstorming, Geschichten schreiben oder fantasievolle Konzepte erkunden - ich bin hier, um zu helfen!
+sources_label#:#Quellen
+page_label#:#Seite
+pages_label#:#Seiten
+tab_statistics#:#Statistik
+stat_title#:#Titel
+stat_obj_id#:#Objekt-ID
+stat_ref_id#:#Ref.-ID
+stat_created_at#:#Erstellung
+stat_session_count#:#Anzahl Sitzungen
+stat_rag#:#RAG?
+stat_background_files#:#Hintergrunddateien
+stat_is_online#:#Online
+stat_goto_page#:#Zur Seite springen
+stat_toggle_online#:#Online schalten
+stat_toggle_offline#:#Offline schalten
+stat_clear_history#:#Chatverläufe löschen
+stat_delete_chat#:#Chat löschen
+stat_toggled_online#:#Chat wurde online geschaltet.
+stat_toggled_offline#:#Chat wurde offline geschaltet.
+stat_history_cleared#:#Alle Chatverläufe und Sitzungen wurden gelöscht.
+stat_chat_deleted#:#Chat wurde vollständig gelöscht.
+stat_chat_not_found#:#Chat nicht gefunden.
+stat_yes#:#Ja
+stat_no#:#Nein
+stat_no_title#:#ohne Titel

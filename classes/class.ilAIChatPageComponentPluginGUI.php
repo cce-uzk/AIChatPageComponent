@@ -303,6 +303,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                             'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
                             'enable_streaming' => $chatConfig->isEnableStreaming(),
                             'enable_rag' => $chatConfig->isEnableRag(),
+                            'is_online' => $chatConfig->isOnline(),
                             'disclaimer' => $chatConfig->getDisclaimer(),
                             'background_files' => json_encode($chatConfig->getBackgroundFiles())
                         ];
@@ -337,6 +338,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('chat_title_label'),
             $this->plugin->txt('chat_title_info')
         )->withDedicatedName('chat_title')->withRequired(true)->withValue($prop['chat_title'] ?? $defaults['title']);
+
+        // Online/offline toggle
+        $is_online = $ui_factory->input()->field()->checkbox(
+            $this->plugin->txt('chat_online_label'),
+            $this->plugin->txt('chat_online_info')
+        )->withDedicatedName('is_online')->withValue($this->toBool($prop['is_online'] ?? true));
 
         // System prompt
         $system_prompt = $ui_factory->input()->field()->textarea(
@@ -519,6 +526,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Build form fields array, conditionally including fields based on global settings
         $form_fields = [
             'chat_title' => $chat_title,
+            'is_online' => $is_online,
             'system_prompt' => $system_prompt
         ];
 
@@ -629,6 +637,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             // Save background files in pcaic_attachments table
             $this->saveBackgroundFilesToAttachments($chat_id, $file_ids, $chatConfig, $a_create);
 
+            $chatConfig->setIsOnline((bool) ($form_data['is_online'] ?? true));
             $chatConfig->setPersistent((bool) ($form_data['persistent'] ?? true));
             $chatConfig->setIncludePageContext((bool) ($form_data['include_page_context'] ?? true));
             // Only set chat uploads if file handling is enabled AND chat uploads are globally enabled
@@ -741,17 +750,129 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
      */
     public function getElementHTML(string $a_mode, array $a_properties, string $a_plugin_version) : string
     {
-        // In edit mode, show placeholder
+        // In edit mode, always show placeholder (editors have write permission already)
         if ($a_mode === 'edit') {
             return $this->renderEditPlaceholder($a_properties);
         }
 
-        // Presentation mode: show full interface
+        // Presentation mode: enforce read access
+        if (!$this->currentUserCanReadParent()) {
+            return '';
+        }
+
+        // If the chat config no longer exists (e.g. deleted via statistics), render nothing
+        $chat_id = $a_properties['chat_id'] ?? '';
+        if (!empty($chat_id)) {
+            try {
+                $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+                if (!$chatConfig->exists()) {
+                    return '';
+                }
+            } catch (\Exception $e) {
+                return '';
+            }
+        }
+
+        // Check online status
+        $is_online = $this->isChatOnline($chat_id);
+
+        if (!$is_online) {
+            // Editors always see the chat – but with an offline banner
+            if ($this->currentUserCanWriteParent()) {
+                $a_properties['show_offline_banner'] = true;
+                return $this->renderChatInterface($a_properties);
+            }
+            // Participants see nothing
+            return '';
+        }
+
         return $this->renderChatInterface($a_properties);
     }
 
     /**
+     * Return true if the chat is set to online, false if offline.
+     * Defaults to true when the chat doesn't exist yet (new / not yet saved).
+     */
+    private function isChatOnline(string $chat_id): bool
+    {
+        if (empty($chat_id)) {
+            return true;
+        }
+        try {
+            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            // Non-existing chats are handled before this call; default to online for safety
+            return !$chatConfig->exists() || $chatConfig->isOnline();
+        } catch (\Exception $e) {
+            return true;
+        }
+    }
+
+    /**
+     * Check whether the current user has write access to the parent ILIAS object.
+     */
+    private function currentUserCanWriteParent(): bool
+    {
+        global $DIC;
+
+        $parent_id = (int) ($this->plugin->getParentId() ?? 0);
+        if ($parent_id <= 0) {
+            return false;
+        }
+
+        $refs = ilObject::_getAllReferences($parent_id);
+        if (empty($refs)) {
+            $refs = [$parent_id];
+        }
+
+        foreach ($refs as $ref_id) {
+            if ($DIC->access()->checkAccess('write', '', (int) $ref_id)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check whether the current user has read access to the parent ILIAS object.
+     *
+     * parent_id from the plugin is an obj_id (ilPageObject::getParentId()).
+     * All matching ref_ids are checked; access is granted if any passes.
+     */
+    private function currentUserCanReadParent(): bool
+    {
+        global $DIC;
+
+        // Anonymous users: respect the global allow_anonymous_access setting
+        if ($DIC->user()->isAnonymous()) {
+            $allow_anonymous = (\platform\AIChatPageComponentConfig::get('allow_anonymous_access') === '1');
+            if (!$allow_anonymous) {
+                return false;
+            }
+        }
+
+        $parent_id = (int) ($this->plugin->getParentId() ?? 0);
+        if ($parent_id <= 0) {
+            return true; // Page not yet placed in an object – allow rendering
+        }
+
+        $refs = ilObject::_getAllReferences($parent_id);
+        if (empty($refs)) {
+            $refs = [$parent_id]; // Fallback: treat as ref_id directly
+        }
+
+        foreach ($refs as $ref_id) {
+            if ($DIC->access()->checkAccess('read', '', (int) $ref_id)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Render edit mode placeholder
+     * Shows a preview of the chat interface with demo messages
      */
     private function renderEditPlaceholder(array $properties) : string
     {
@@ -762,13 +883,125 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->getDirectory()
         );
 
-        $tpl->setVariable("CHAT_TITLE", htmlspecialchars($properties['chat_title'] ?? $this->plugin->txt('default_chat_title')));
-        $tpl->setVariable("PLACEHOLDER_TEXT", 'AI Chat Component (Click to edit configuration)');
+        // Load chat configuration if available
+        $chat_id = $properties['chat_id'] ?? '';
+        $config_properties = $properties;
+
+        $is_orphaned = false;
+        if (!empty($chat_id)) {
+            try {
+                $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+                if ($chatConfig->exists()) {
+                    $config_properties = [
+                        'chat_title' => $chatConfig->getTitle(),
+                        'system_prompt' => $chatConfig->getSystemPrompt(),
+                        'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
+                        'disclaimer' => $chatConfig->getDisclaimer()
+                    ];
+                } else {
+                    $is_orphaned = true;
+                }
+            } catch (\Exception $e) {
+                $is_orphaned = true;
+            }
+        }
+
+        // Chat title
+        $chat_title = htmlspecialchars($config_properties['chat_title'] ?? $this->plugin->txt('default_chat_title'));
+        $tpl->setVariable("CHAT_TITLE", $chat_title);
+        $tpl->setVariable("CHAT_ARIA_LABEL", sprintf($this->plugin->txt('chat_aria_label'), $chat_title));
+
+        // Edit mode labels
+        $tpl->setVariable("EDIT_MODE_LABEL", $this->plugin->txt('edit_mode_label'));
+        $tpl->setVariable("CLICK_TO_EDIT_HINT", $this->plugin->txt('click_to_edit_hint'));
+
+        // Orphaned badge – chat config was deleted, shown so editors know to remove the element
+        if ($is_orphaned) {
+            $tpl->setCurrentBlock("placeholder_orphaned_badge");
+            $tpl->setVariable("ORPHANED_BADGE_LABEL", $this->plugin->txt('chat_orphaned_title'));
+            $tpl->parseCurrentBlock();
+        }
+
+        // Offline badge – shown in edit mode when the chat is currently set offline
+        $chat_id_for_status = $properties['chat_id'] ?? '';
+        if (!$is_orphaned && !$this->isChatOnline($chat_id_for_status)) {
+            $tpl->setCurrentBlock("placeholder_offline_badge");
+            $tpl->setVariable("OFFLINE_BADGE_LABEL", $this->plugin->txt('chat_offline_badge'));
+            $tpl->parseCurrentBlock();
+        }
+
+        // Demo messages - use system prompt context if available
+        $system_prompt = $config_properties['system_prompt'] ?? '';
+        $demo_user_message = $this->plugin->txt('demo_user_message');
+        $demo_assistant_message = $this->getDemoAssistantMessage($system_prompt);
+
+        $tpl->setVariable("DEMO_USER_MESSAGE", htmlspecialchars($demo_user_message));
+        $tpl->setVariable("DEMO_ASSISTANT_MESSAGE", htmlspecialchars($demo_assistant_message));
+
+        // Input and button labels
+        $tpl->setVariable("INPUT_PLACEHOLDER", $this->plugin->txt('input_aria_label'));
+        $tpl->setVariable("CLEAR_CHAT_LABEL", $this->plugin->txt('clear_chat_label'));
+        $tpl->setVariable("THEME_TOGGLE_TITLE", htmlspecialchars($this->plugin->txt('theme_toggle_title')));
+        $tpl->setVariable("THEME_TOGGLE_LABEL", htmlspecialchars($this->plugin->txt('theme_toggle_label')));
+        $tpl->setVariable("ATTACH_FILE_TITLE", $this->plugin->txt('attach_file_title'));
+
+        // Action button titles
+        $tpl->setVariable("COPY_MESSAGE_TITLE", htmlspecialchars($this->plugin->txt('copy_message_title')));
+        $tpl->setVariable("LIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('like_response_title')));
+        $tpl->setVariable("DISLIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('dislike_response_title')));
+
+        // Handle optional disclaimer
+        if (!empty($config_properties['disclaimer'])) {
+            $tpl->setCurrentBlock("disclaimer");
+            $tpl->setVariable("DISCLAIMER", htmlspecialchars($config_properties['disclaimer']));
+            $tpl->parseCurrentBlock();
+        }
+
+        // Show attach button if chat uploads enabled
+        $enable_chat_uploads = ($config_properties['enable_chat_uploads'] ?? false);
+        $is_chat_uploads_enabled = ($enable_chat_uploads === true || $enable_chat_uploads === '1' || $enable_chat_uploads === 1);
+
+        if ($is_chat_uploads_enabled) {
+            $tpl->setCurrentBlock("chat_attach_button_preview");
+            $tpl->parseCurrentBlock();
+        }
 
         // Add CSS for edit mode
         $this->addChatAssets();
 
         return $tpl->get();
+    }
+
+    /**
+     * Generate a contextual demo assistant message based on system prompt
+     */
+    private function getDemoAssistantMessage(string $system_prompt) : string
+    {
+        // Default demo message
+        $default = $this->plugin->txt('demo_assistant_message');
+
+        // If there's a system prompt, we could analyze it to generate a more contextual demo
+        // For now, use the default translated message
+        if (empty($system_prompt)) {
+            return $default;
+        }
+
+        // Check for common keywords in system prompt to provide context-aware demos
+        $system_lower = strtolower($system_prompt);
+
+        if (strpos($system_lower, 'tutor') !== false || strpos($system_lower, 'lehrer') !== false || strpos($system_lower, 'teacher') !== false) {
+            return $this->plugin->txt('demo_assistant_tutor') ?: $default;
+        }
+
+        if (strpos($system_lower, 'code') !== false || strpos($system_lower, 'programming') !== false || strpos($system_lower, 'programmier') !== false) {
+            return $this->plugin->txt('demo_assistant_coding') ?: $default;
+        }
+
+        if (strpos($system_lower, 'creative') !== false || strpos($system_lower, 'kreativ') !== false || strpos($system_lower, 'story') !== false) {
+            return $this->plugin->txt('demo_assistant_creative') ?: $default;
+        }
+
+        return $default;
     }
 
     /**
@@ -806,13 +1039,17 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
                     'enable_streaming' => $chatConfig->isEnableStreaming(),
                     'disclaimer' => $chatConfig->getDisclaimer(),
-                    'background_files' => json_encode($chatConfig->getBackgroundFiles())
+                    'background_files' => json_encode($chatConfig->getBackgroundFiles()),
+                    // Preserve runtime flags passed by the caller
+                    'show_offline_banner' => $properties['show_offline_banner'] ?? false,
                 ];
             } else {
             }
         } catch (\Exception $e) {
             $this->logger->warning("Error loading ChatConfig for rendering", ['error' => $e->getMessage()]);
         }
+
+        $service_unavailable = empty(\ai\AIChatPageComponentLLMRegistry::getEnabledServices());
 
         $container_id = 'ai-chat-' . md5($chat_id);
         $messages_id = $container_id . '-messages';
@@ -852,6 +1089,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("CLEAR_CHAT_TEXT", $this->plugin->txt('clear_chat_text'));
         $tpl->setVariable("CLEAR_CHAT_TITLE", $this->plugin->txt('clear_chat_title'));
         $tpl->setVariable("CLEAR_CHAT_LABEL", $this->plugin->txt('clear_chat_label'));
+        $tpl->setVariable("THEME_TOGGLE_TITLE", htmlspecialchars($this->plugin->txt('theme_toggle_title')));
+        $tpl->setVariable("THEME_TOGGLE_LABEL", htmlspecialchars($this->plugin->txt('theme_toggle_label')));
         // Clear chat confirmation text
         $tpl->setVariable("CLEAR_CHAT_CONFIRM", htmlspecialchars($this->plugin->txt('clear_chat_confirm')));
 
@@ -868,6 +1107,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Attachment actions
         $tpl->setVariable("REMOVE_ATTACHMENT", htmlspecialchars($this->plugin->txt('remove_attachment')));
         $tpl->setVariable("THINKING_HEADER", htmlspecialchars($this->plugin->txt('thinking_header')));
+
+        // RAG source citation labels
+        $tpl->setVariable("SOURCES_LABEL", htmlspecialchars($this->plugin->txt('sources_label')));
+        $tpl->setVariable("PAGE_LABEL", htmlspecialchars($this->plugin->txt('page_label')));
+        $tpl->setVariable("PAGES_LABEL", htmlspecialchars($this->plugin->txt('pages_label')));
 
         // Configuration limits
         $max_size_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
@@ -950,9 +1194,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $is_chat_uploads_enabled = ($enable_chat_uploads === true || $enable_chat_uploads === '1' || $enable_chat_uploads === 1);
         $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
 
-        // Both page component setting AND global setting must be enabled
-        $effective_chat_uploads_enabled = $is_chat_uploads_enabled && $chat_uploads_globally_enabled;
+        // Anonymous users must never see or use upload functionality
+        $is_anonymous = $DIC->user()->isAnonymous();
+
+        // Page setting, global setting, and authenticated user all required
+        $effective_chat_uploads_enabled = $is_chat_uploads_enabled && $chat_uploads_globally_enabled && !$is_anonymous;
         $tpl->setVariable("ENABLE_CHAT_UPLOADS", $effective_chat_uploads_enabled ? 'true' : 'false');
+        $tpl->setVariable("IS_ANONYMOUS", $is_anonymous ? 'true' : 'false');
+        $tpl->setVariable("SERVICE_UNAVAILABLE", $service_unavailable ? 'true' : 'false');
+        $tpl->setVariable("NO_SERVICE_AVAILABLE", htmlspecialchars($this->plugin->txt('no_service_available')));
 
         // Streaming setting - respect global restrictions
         $enable_streaming = ($config_properties['enable_streaming'] ?? true);
@@ -976,6 +1226,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $background_files = json_encode($background_files);
         }
         $tpl->setVariable("BACKGROUND_FILES", htmlspecialchars($background_files));
+
+        // Offline badge for editors when chat is set offline
+        if (!empty($config_properties['show_offline_banner'])) {
+            $tpl->setCurrentBlock("chat_offline_badge");
+            $tpl->setVariable("OFFLINE_BADGE_TEXT", $this->plugin->txt('chat_offline_badge'));
+            $tpl->parseCurrentBlock();
+        }
 
         // Handle optional disclaimer
         if (!empty($config_properties['disclaimer'])) {

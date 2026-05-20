@@ -1,4 +1,217 @@
-<div class="ai-chat-placeholder">
-    <h3>{CHAT_TITLE}</h3>
-    <p>{PLACEHOLDER_TEXT}</p>
+<!-- AI Chat Editor Preview - Shows how the chat will look -->
+<div class="ai-chat-container ai-chat-preview-mode"
+     role="region"
+     aria-label="{CHAT_ARIA_LABEL}">
+
+    <!-- Chat Header -->
+    <div class="ai-chat-header">
+        <h3>{CHAT_TITLE}</h3>
+        <div class="ai-chat-header-actions">
+            <!-- Edit Mode Indicator (same height as clear button) -->
+            <div class="ai-chat-preview-badge">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+                </svg>
+                <span>{EDIT_MODE_LABEL}</span>
+            </div>
+            <!-- BEGIN placeholder_orphaned_badge -->
+            <div class="ai-chat-orphaned-badge">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+                </svg>
+                <span>{ORPHANED_BADGE_LABEL}</span>
+            </div>
+            <!-- END placeholder_orphaned_badge -->
+            <!-- BEGIN placeholder_offline_badge -->
+            <div class="ai-chat-offline-badge">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+                </svg>
+                <span>{OFFLINE_BADGE_LABEL}</span>
+            </div>
+            <!-- END placeholder_offline_badge -->
+            <button class="ai-chat-clear-btn" type="button" disabled aria-label="{CLEAR_CHAT_LABEL}">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                    <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Chat Messages Area with Demo Messages -->
+    <div class="ai-chat-messages ai-chat-messages-preview">
+        <!-- Demo User Message -->
+        <div class="ai-chat-message user" data-role="user">
+            <div class="ai-chat-message-content">
+                {DEMO_USER_MESSAGE}
+            </div>
+        </div>
+
+        <!-- Demo Assistant Message -->
+        <div class="ai-chat-message assistant" data-role="assistant">
+            <div class="ai-chat-message-content">
+                <p>{DEMO_ASSISTANT_MESSAGE}</p>
+            </div>
+            <!-- Action buttons (disabled in preview) -->
+            <div class="ai-chat-message-actions" style="opacity: 0.5;">
+                <button class="ai-chat-message-action" type="button" disabled title="{COPY_MESSAGE_TITLE}">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                    </svg>
+                </button>
+                <button class="ai-chat-message-action" type="button" disabled title="{LIKE_RESPONSE_TITLE}">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <path d="M8.864.046C7.908-.193 7.02.53 6.956 1.466c-.072 1.051-.23 2.016-.428 2.59-.125.36-.479 1.013-1.04 1.639-.557.623-1.282 1.178-2.131 1.41C2.685 7.288 2 7.87 2 8.72v4.001c0 .845.682 1.464 1.448 1.545 1.07.114 1.564.415 2.068.723l.048.03c.272.165.578.348.97.484.397.136.861.217 1.466.217h3.5c.937 0 1.599-.477 1.934-1.064a1.86 1.86 0 0 0 .254-.912c0-.152-.023-.312-.077-.464.201-.263.38-.578.488-.901.11-.33.172-.762.004-1.149.069-.13.12-.269.159-.403.077-.27.113-.568.113-.857 0-.288-.036-.585-.113-.856a2.144 2.144 0 0 0-.138-.362 1.9 1.9 0 0 0 .234-1.734c-.206-.592-.682-1.1-1.2-1.272-.847-.282-1.803-.276-2.516-.211a9.84 9.84 0 0 0-.443.05 9.365 9.365 0 0 0-.062-4.509A1.38 1.38 0 0 0 9.125.111L8.864.046z"/>
+                    </svg>
+                </button>
+                <button class="ai-chat-message-action" type="button" disabled title="{DISLIKE_RESPONSE_TITLE}">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <path d="M8.864 15.674c-.956.24-1.843-.484-1.908-1.42-.072-1.05-.23-2.015-.428-2.59-.125-.36-.479-1.012-1.04-1.638-.557-.624-1.282-1.179-2.131-1.41C2.685 8.432 2 7.85 2 7V3c0-.845.682-1.464 1.448-1.546 1.07-.113 1.564-.415 2.068-.723l.048-.029c.272-.166.578-.349.97-.484C6.931.08 7.395 0 8 0h3.5c.937 0 1.599.478 1.934 1.064.164.287.254.607.254.913 0 .152-.023.312-.077.464.201.262.38.577.488.9.11.33.172.762.004 1.15.069.13.12.268.159.403.077.27.113.567.113.856 0 .289-.036.586-.113.856-.035.12-.076.237-.138.362.133.358.197.714.197 1.03 0 .292-.073.582-.21.857a2.9 2.9 0 0 1-.024.047c-.205.592-.682 1.1-1.2 1.272-.847.283-1.803.276-2.516.211a9.877 9.877 0 0 1-.443-.05 9.364 9.364 0 0 1-.062 4.509c-.138.508-.55.848-1.012.964l-.261.065z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area (Disabled in Preview) -->
+    <div class="ai-chat-composer ai-chat-composer-preview">
+        <div class="ai-chat-composer-inner">
+            <!-- Left Actions (Attach Button) -->
+            <!-- BEGIN chat_attach_button_preview -->
+            <div class="ai-chat-composer-leading">
+                <button class="ai-chat-composer-btn ai-chat-attach-btn" type="button" disabled title="{ATTACH_FILE_TITLE}">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" focusable="false">
+                        <path d="M9.33496 16.5V10.665H3.5C3.13273 10.665 2.83496 10.3673 2.83496 10C2.83496 9.63273 3.13273 9.33496 3.5 9.33496H9.33496V3.5C9.33496 3.13273 9.63273 2.83496 10 2.83496C10.3673 2.83496 10.665 3.13273 10.665 3.5V9.33496H16.5L16.6338 9.34863C16.9369 9.41057 17.165 9.67857 17.165 10C17.165 10.3214 16.9369 10.5894 16.6338 10.6514L16.5 10.665H10.665V16.5C10.665 16.8673 10.3673 17.165 10 17.165C9.63273 17.165 9.33496 16.8673 9.33496 16.5Z"></path>
+                    </svg>
+                </button>
+            </div>
+            <!-- END chat_attach_button_preview -->
+
+            <!-- Input Text Area -->
+            <div class="ai-chat-composer-content">
+                <div class="ai-chat-input-wrapper">
+                    <textarea class="ai-chat-input"
+                              placeholder="{INPUT_PLACEHOLDER}"
+                              disabled
+                              rows="1"></textarea>
+                </div>
+            </div>
+
+            <!-- Right Actions (Send Button) -->
+            <div class="ai-chat-composer-trailing">
+                <div class="ai-chat-actions">
+                    <button class="ai-chat-composer-btn ai-chat-send" type="button" disabled>
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" focusable="false">
+                            <path d="M8.99992 16V6.41407L5.70696 9.70704C5.31643 10.0976 4.68342 10.0976 4.29289 9.70704C3.90237 9.31652 3.90237 8.6835 4.29289 8.29298L9.29289 3.29298L9.36907 3.22462C9.76184 2.90427 10.3408 2.92686 10.707 3.29298L15.707 8.29298L15.7753 8.36915C16.0957 8.76192 16.0731 9.34092 15.707 9.70704C15.3408 10.0732 14.7618 10.0958 14.3691 9.7754L14.2929 9.70704L10.9999 6.41407V16C10.9999 16.5523 10.5522 17 9.99992 17C9.44764 17 8.99992 16.5523 8.99992 16Z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Legal Disclaimer -->
+    <!-- BEGIN disclaimer -->
+    <div class="ai-chat-disclaimer" role="contentinfo">
+        {DISCLAIMER}
+    </div>
+    <!-- END disclaimer -->
+
+    <!-- Click to Edit Hint -->
+    <div class="ai-chat-preview-hint">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+            <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533L8.93 6.588zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
+        </svg>
+        <span>{CLICK_TO_EDIT_HINT}</span>
+    </div>
 </div>
+
+<style>
+/* Preview-specific styles */
+.ai-chat-preview-mode {
+    position: relative;
+    pointer-events: none; /* Disable all interactions */
+}
+
+.ai-chat-preview-mode::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    z-index: 10;
+    cursor: pointer;
+    pointer-events: auto; /* Allow click on overlay */
+}
+
+/* Header actions container */
+.ai-chat-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Edit Mode Badge - same height as clear button */
+.ai-chat-preview-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 14px;
+    background: var(--chat-accent, #19c37d);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 18px;
+    white-space: nowrap;
+}
+
+.ai-chat-preview-badge svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+}
+
+/* Reduced height for preview messages area */
+.ai-chat-messages-preview {
+    min-height: 200px;
+    max-height: 200px;
+}
+
+/* Preview hint at bottom */
+.ai-chat-preview-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--chat-bg-secondary, #2f2f2f);
+    color: var(--chat-text-secondary, #b4b4b4);
+    font-size: 13px;
+    border-top: 1px solid var(--chat-border, #4d4d4f);
+}
+
+.ai-chat-preview-hint svg {
+    color: var(--chat-accent, #19c37d);
+}
+
+/* Disabled state for preview composer */
+.ai-chat-composer-preview .ai-chat-composer-inner {
+    opacity: 0.7;
+}
+
+.ai-chat-composer-preview .ai-chat-input {
+    cursor: not-allowed;
+}
+
+.ai-chat-composer-preview button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+</style>

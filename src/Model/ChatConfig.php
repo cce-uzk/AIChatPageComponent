@@ -26,6 +26,7 @@ class ChatConfig
     private bool $enableChatUploads = false;
     private bool $enableStreaming = true;
     private bool $enableRag = false;
+    private bool $isOnline = true;
     private string $disclaimer = '';
     private ?string $ragCollectionId = null;
     private ?\DateTime $createdAt = null;
@@ -76,6 +77,7 @@ class ChatConfig
             $this->enableChatUploads = (bool)$row['enable_chat_uploads'];
             $this->enableStreaming = (bool)($row['enable_streaming'] ?? true);
             $this->enableRag = (bool)($row['enable_rag'] ?? false);
+            $this->isOnline = (bool)($row['is_online'] ?? true);
             $this->disclaimer = $row['disclaimer'] ?? '';
             $this->ragCollectionId = $row['rag_collection_id'] ?? null;
 
@@ -164,6 +166,7 @@ class ChatConfig
             'enable_chat_uploads' => ['integer', $this->enableChatUploads ? 1 : 0],
             'enable_streaming' => ['integer', $this->enableStreaming ? 1 : 0],
             'enable_rag' => ['integer', $this->enableRag ? 1 : 0],
+            'is_online' => ['integer', $this->isOnline ? 1 : 0],
             'disclaimer' => ['clob', $this->disclaimer],
             'rag_collection_id' => ['text', $this->ragCollectionId],
             'updated_at' => ['timestamp', $this->updatedAt->format('Y-m-d H:i:s')]
@@ -213,7 +216,7 @@ class ChatConfig
 
         $query = "SELECT chat_id FROM pcaic_chats WHERE chat_id = " . $db->quote($this->chatId, 'text');
         $result = $db->query($query);
-        return $db->fetchAssoc($result) !== false;
+        return $db->fetchAssoc($result) !== null;
     }
 
     /**
@@ -266,6 +269,8 @@ class ChatConfig
 
     public function isEnableRag(): bool { return $this->enableRag; }
     public function setEnableRag(bool $enableRag): void { $this->enableRag = $enableRag; }
+    public function isOnline(): bool { return $this->isOnline; }
+    public function setIsOnline(bool $isOnline): void { $this->isOnline = $isOnline; }
     public function getDisclaimer(): string { return $this->disclaimer; }
     public function setDisclaimer(string $disclaimer): void { $this->disclaimer = $disclaimer; }
     public function getRAGCollectionId(): ?string { return $this->ragCollectionId; }
@@ -293,6 +298,7 @@ class ChatConfig
             'persistent' => $this->persistent,
             'include_page_context' => $this->includePageContext,
             'enable_chat_uploads' => $this->enableChatUploads,
+            'is_online' => $this->isOnline,
             'disclaimer' => $this->disclaimer,
             'rag_collection_id' => $this->ragCollectionId,
             'created_at' => $this->createdAt?->format('Y-m-d H:i:s'),

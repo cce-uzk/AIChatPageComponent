@@ -297,6 +297,8 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                         $newConfig->setIncludePageContext($oldConfig->isIncludePageContext());
                         $newConfig->setEnableChatUploads($oldConfig->isEnableChatUploads());
                         $newConfig->setEnableStreaming($oldConfig->isEnableStreaming());
+                        $newConfig->setEnableRag($oldConfig->isEnableRag());
+                        $newConfig->setIsOnline($oldConfig->isOnline());
                         $newConfig->setDisclaimer($oldConfig->getDisclaimer());
                         $newConfig->save();
 
@@ -320,7 +322,87 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                     'chat_id' => $old_chat_id,
                     'error' => $e->getMessage()
                 ]);
+                // Leave $a_properties['chat_id'] unchanged so the copy points to
+                // the original config rather than becoming an immediate orphan.
             }
+        }
+    }
+
+    /**
+     * Called after an entire repository object (course, group, …) has been copied.
+     * Works identically to onClone() for real copies: creates a new chat config
+     * so the copied object gets its own independent chat instances.
+     *
+     * @param array  $a_properties     page component properties (chat_id, chat_title, …)
+     * @param array  $mapping          ref_id mapping from old to new repository objects
+     * @param int    $source_ref_id    ref_id of the source object
+     * @param string $a_plugin_version plugin version string
+     */
+    public function afterRepositoryCopy(
+        array &$a_properties,
+        array $mapping,
+        int $source_ref_id,
+        string $a_plugin_version
+    ): void {
+        global $DIC;
+        $logger = $DIC->logger()->pcaic();
+
+        if (empty($a_properties['chat_id'])) {
+            return;
+        }
+
+        $old_chat_id = $a_properties['chat_id'];
+
+        try {
+            require_once(__DIR__ . '/../src/bootstrap.php');
+
+            $oldConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($old_chat_id);
+
+            if (!$oldConfig->exists()) {
+                $logger->warning("afterRepositoryCopy: source chat config not found", [
+                    'chat_id' => $old_chat_id
+                ]);
+                return;
+            }
+
+            $new_chat_id = uniqid('chat_', true);
+            $cloned_background_files = $this->cloneBackgroundFiles($oldConfig->getBackgroundFiles());
+
+            $newConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($new_chat_id);
+            // Page context will be updated on first render via updateChatConfigPageContext()
+            $newConfig->setPageId($oldConfig->getPageId());
+            $newConfig->setParentId($oldConfig->getParentId());
+            $newConfig->setParentType($oldConfig->getParentType());
+            $newConfig->setTitle($oldConfig->getTitle());
+            $newConfig->setSystemPrompt($oldConfig->getSystemPrompt());
+            $newConfig->setAiService($oldConfig->getAiService());
+            $newConfig->setMaxMemory($oldConfig->getMaxMemory());
+            $newConfig->setCharLimit($oldConfig->getCharLimit());
+            $newConfig->setBackgroundFiles($cloned_background_files);
+            $newConfig->setPersistent($oldConfig->isPersistent());
+            $newConfig->setIncludePageContext($oldConfig->isIncludePageContext());
+            $newConfig->setEnableChatUploads($oldConfig->isEnableChatUploads());
+            $newConfig->setEnableStreaming($oldConfig->isEnableStreaming());
+            $newConfig->setEnableRag($oldConfig->isEnableRag());
+            $newConfig->setIsOnline($oldConfig->isOnline());
+            $newConfig->setDisclaimer($oldConfig->getDisclaimer());
+            $newConfig->save();
+
+            $a_properties['chat_id'] = $new_chat_id;
+
+            $logger->info("afterRepositoryCopy: created new chat config for copied object", [
+                'source_chat' => $old_chat_id,
+                'new_chat'    => $new_chat_id,
+                'source_ref'  => $source_ref_id,
+            ]);
+
+        } catch (\Exception $e) {
+            $logger->error("afterRepositoryCopy: cloning failed – keeping original chat_id", [
+                'chat_id' => $old_chat_id,
+                'error'   => $e->getMessage()
+            ]);
+            // Do NOT update chat_id – the copy falls back to the original config
+            // rather than pointing to a non-existent one.
         }
     }
 
@@ -554,6 +636,131 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                 'error' => $e->getMessage()
             ]);
             throw new ilException('Failed to delete chat: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Delete sessions that have had no activity for more than $days days.
+     * Cascades to messages and user-uploaded attachments (with RAG cleanup).
+     * Background files (message_id IS NULL) are NOT touched.
+     *
+     * @param int $days Inactivity threshold in days
+     * @return array{sessions: int, messages: int, attachments: int} Deletion counts
+     */
+    public function cleanupInactiveSessions(int $days): array
+    {
+        global $DIC;
+        $logger = $DIC->logger()->pcaic();
+        $db     = $DIC->database();
+
+        $stats = ['sessions' => 0, 'messages' => 0, 'attachments' => 0];
+
+        try {
+            // Find stale session IDs
+            $cutoff = date('Y-m-d H:i:s', strtotime("-{$days} days"));
+            $result = $db->query(
+                "SELECT session_id FROM pcaic_sessions " .
+                "WHERE last_activity < " . $db->quote($cutoff, 'timestamp')
+            );
+
+            $sessionIds = [];
+            while ($row = $db->fetchAssoc($result)) {
+                $sessionIds[] = $row['session_id'];
+            }
+
+            if (empty($sessionIds)) {
+                return $stats;
+            }
+
+            $quoted = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $sessionIds));
+
+            // Delete message attachments (user uploads only)
+            $attResult = $db->query(
+                "SELECT a.id FROM pcaic_attachments a " .
+                "INNER JOIN pcaic_messages m ON a.message_id = m.message_id " .
+                "WHERE m.session_id IN ($quoted)"
+            );
+            while ($row = $db->fetchAssoc($attResult)) {
+                try {
+                    $att = new \ILIAS\Plugin\pcaic\Model\Attachment((int) $row['id']);
+                    $att->delete();
+                    $stats['attachments']++;
+                } catch (\Exception $e) {
+                    $logger->warning('cleanupInactiveSessions: attachment delete failed', ['id' => $row['id']]);
+                }
+            }
+
+            // Count messages before deleting
+            $countResult = $db->query(
+                "SELECT COUNT(*) AS cnt FROM pcaic_messages WHERE session_id IN ($quoted)"
+            );
+            $countRow = $db->fetchAssoc($countResult);
+            $stats['messages'] = (int) ($countRow['cnt'] ?? 0);
+
+            $db->manipulate("DELETE FROM pcaic_messages WHERE session_id IN ($quoted)");
+            $db->manipulate("DELETE FROM pcaic_sessions WHERE session_id IN ($quoted)");
+
+            $stats['sessions'] = count($sessionIds);
+
+            $logger->info('cleanupInactiveSessions: done', $stats + ['threshold_days' => $days]);
+
+        } catch (\Exception $e) {
+            $logger->error('cleanupInactiveSessions failed', ['error' => $e->getMessage()]);
+            throw new ilException('Session cleanup failed: ' . $e->getMessage());
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Clear all sessions, messages, and user-uploaded attachments for a chat.
+     * Keeps the chat configuration and background files intact.
+     */
+    public function clearChatHistory(string $chat_id): void
+    {
+        global $DIC;
+        $logger = $DIC->logger()->pcaic();
+        $db     = $DIC->database();
+
+        try {
+            // Collect session IDs
+            $sessionIds = [];
+            $result = $db->query(
+                "SELECT session_id FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text')
+            );
+            while ($row = $db->fetchAssoc($result)) {
+                $sessionIds[] = $row['session_id'];
+            }
+
+            if (!empty($sessionIds)) {
+                $quotedSessionIds = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $sessionIds));
+
+                // Delete message attachments (user uploads only, not background files)
+                $result = $db->query(
+                    "SELECT a.id FROM pcaic_attachments a
+                     INNER JOIN pcaic_messages m ON a.message_id = m.message_id
+                     WHERE m.session_id IN ($quotedSessionIds)"
+                );
+                while ($row = $db->fetchAssoc($result)) {
+                    try {
+                        $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int) $row['id']);
+                        $attachment->delete();
+                    } catch (\Exception $e) {
+                        $logger->warning('clearChatHistory: attachment delete failed', ['id' => $row['id']]);
+                    }
+                }
+
+                // Delete messages and sessions
+                $db->manipulate("DELETE FROM pcaic_messages WHERE session_id IN ($quotedSessionIds)");
+            }
+
+            $db->manipulate("DELETE FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text'));
+
+            $logger->info('clearChatHistory: done', ['chat_id' => $chat_id, 'sessions' => count($sessionIds)]);
+
+        } catch (\Exception $e) {
+            $logger->error('clearChatHistory failed', ['chat_id' => $chat_id, 'error' => $e->getMessage()]);
+            throw new ilException('Failed to clear chat history: ' . $e->getMessage());
         }
     }
 

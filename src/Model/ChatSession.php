@@ -219,7 +219,7 @@ class ChatSession
 
         $query = "SELECT session_id FROM pcaic_sessions WHERE session_id = " . $db->quote($this->sessionId, 'text');
         $result = $db->query($query);
-        return $db->fetchAssoc($result) !== false;
+        return $db->fetchAssoc($result) !== null;
     }
 
     /**
