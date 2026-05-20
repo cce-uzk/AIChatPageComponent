@@ -4412,39 +4412,29 @@ class AIChatPageComponent {
             this.regenerateResponse(messageDiv);
         });
 
-        // Like button
-        const likeBtn2 = document.createElement('button');
-        likeBtn2.className = 'ai-chat-message-action';
-        likeBtn2.title = this.lang.likeResponseTitle;
-        likeBtn2.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
-                <path d="M8.864.046C7.908-.193 7.02.53 6.956 1.466c-.072 1.051-.23 2.016-.428 2.59-.125.36-.479 1.013-1.04 1.639-.557.623-1.282 1.178-2.131 1.41C2.685 7.288 2 7.87 2 8.72v4.001c0 .845.682 1.464 1.448 1.545 1.07.114 1.564.415 2.068.723l.048.03c.272.165.578.348.97.484.397.136.861.217 1.466.217h3.5c.937 0 1.599-.477 1.934-1.064a1.86 1.86 0 0 0 .254-.912c0-.152-.023-.312-.077-.464.201-.263.38-.578.488-.901.11-.33.172-.762.004-1.149.069-.13.12-.269.159-.403.077-.27.113-.568.113-.857 0-.288-.036-.585-.113-.856a2.144 2.144 0 0 0-.138-.362 1.9 1.9 0 0 0 .234-1.734c-.206-.592-.682-1.1-1.2-1.272-.847-.282-1.803-.276-2.516-.211a9.84 9.84 0 0 0-.443.05 9.365 9.365 0 0 0-.062-4.509A1.38 1.38 0 0 0 9.125.111L8.864.046z"/>
-            </svg>
-        `;
-        likeBtn2.addEventListener('click', (e) => {
-            e.preventDefault();
-            likeBtn2.classList.toggle('ai-chat-message-action--active');
-            dislikeBtn2.classList.remove('ai-chat-message-action--active');
-        });
+        // // Like button – temporarily hidden
+        // const likeBtn2 = document.createElement('button');
+        // likeBtn2.className = 'ai-chat-message-action';
+        // likeBtn2.title = this.lang.likeResponseTitle;
+        // likeBtn2.addEventListener('click', (e) => {
+        //     e.preventDefault();
+        //     likeBtn2.classList.toggle('ai-chat-message-action--active');
+        //     dislikeBtn2.classList.remove('ai-chat-message-action--active');
+        // });
 
-        // Dislike button
-        const dislikeBtn2 = document.createElement('button');
-        dislikeBtn2.className = 'ai-chat-message-action';
-        dislikeBtn2.title = this.lang.dislikeResponseTitle;
-        dislikeBtn2.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
-                <path d="M8.864 15.674c-.956.24-1.843-.484-1.908-1.42-.072-1.05-.23-2.015-.428-2.59-.125-.36-.479-1.012-1.04-1.638-.557-.624-1.282-1.179-2.131-1.41C2.685 8.432 2 7.85 2 7V3c0-.845.682-1.464 1.448-1.546 1.07-.113 1.564-.415 2.068-.723l.048-.029c.272-.166.578-.349.97-.484C6.931.08 7.395 0 8 0h3.5c.937 0 1.599.478 1.934 1.064.164.287.254.607.254.913 0 .152-.023.312-.077.464.201.262.38.577.488.9.11.33.172.762.004 1.15.069.13.12.268.159.403.077.27.113.567.113.856 0 .289-.036.586-.113.856-.035.12-.076.237-.138.362.133.358.197.714.197 1.03 0 .292-.073.582-.21.857a2.9 2.9 0 0 1-.024.047c-.205.592-.682 1.1-1.2 1.272-.847.283-1.803.276-2.516.211a9.877 9.877 0 0 1-.443-.05 9.364 9.364 0 0 1-.062 4.509c-.138.508-.55.848-1.012.964l-.261.065z"/>
-            </svg>
-        `;
-        dislikeBtn2.addEventListener('click', (e) => {
-            e.preventDefault();
-            dislikeBtn2.classList.toggle('ai-chat-message-action--active');
-            likeBtn2.classList.remove('ai-chat-message-action--active');
-        });
+        // // Dislike button – temporarily hidden
+        // const dislikeBtn2 = document.createElement('button');
+        // dislikeBtn2.className = 'ai-chat-message-action';
+        // dislikeBtn2.title = this.lang.dislikeResponseTitle;
+        // dislikeBtn2.addEventListener('click', (e) => {
+        //     e.preventDefault();
+        //     dislikeBtn2.classList.toggle('ai-chat-message-action--active');
+        //     likeBtn2.classList.remove('ai-chat-message-action--active');
+        // });
 
         actionsDiv.appendChild(copyBtn);
-        actionsDiv.appendChild(likeBtn2);
-        actionsDiv.appendChild(dislikeBtn2);
+        // actionsDiv.appendChild(likeBtn2);
+        // actionsDiv.appendChild(dislikeBtn2);
         actionsDiv.appendChild(regenBtn);
 
         return actionsDiv;
