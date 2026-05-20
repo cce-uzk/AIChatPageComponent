@@ -53,6 +53,10 @@
     --chat-accent:         #0096c7;
     --chat-accent-hover:   #007aaa;
 
+    /* ── Secondary color (editor UI, badges, info areas) ── */
+    --chat-secondary:      #ea564f;
+    --chat-secondary-hover: #d94541;
+
     /* Accent-tinted overlays – derived from the accent hue */
     --chat-accent-glow:      rgba(0, 150, 199, 0.12);   /* focus ring, composer glow */
     --chat-accent-highlight: rgba(0, 150, 199, 0.15);   /* active / selected states  */
@@ -79,11 +83,11 @@
     --chat-chip-hover-bg:   rgba(255, 255, 255, 0.92);
     --chat-chip-hover-text: #1a1a1a;
 
-    /* ── Status badges ── */
-    --chat-badge-offline-bg:   #7a4f00;
-    --chat-badge-offline-text: #ffe8a0;
-    --chat-badge-orphan-bg:    #6b1a1a;
-    --chat-badge-orphan-text:  #ffb3b3;
+    /* ── Status badges (derived from --chat-secondary #ea564f) ── */
+    --chat-badge-offline-bg:   #5c1f1c;
+    --chat-badge-offline-text: #f5a09c;
+    --chat-badge-orphan-bg:    #3d1412;
+    --chat-badge-orphan-text:  #f5a09c;
 }
 
 
@@ -113,6 +117,10 @@
     --chat-accent:         #005176;
     --chat-accent-hover:   #003d5a;
 
+    /* ── Secondary color (editor UI, badges, info areas) ── */
+    --chat-secondary:      #ea564f;
+    --chat-secondary-hover: #d94541;
+
     --chat-accent-glow:      rgba(0, 81, 118, 0.10);
     --chat-accent-highlight: rgba(0, 81, 118, 0.12);
     --chat-accent-pulse:     rgba(0, 81, 118, 0.25);
@@ -139,10 +147,10 @@
     --chat-chip-hover-text: #ffffff;
 
     /* ── Status badges ── */
-    --chat-badge-offline-bg:   #fff3cd;
-    --chat-badge-offline-text: #856404;
-    --chat-badge-orphan-bg:    #fce8e8;
-    --chat-badge-orphan-text:  #842029;
+    --chat-badge-offline-bg:   #fde8e7;
+    --chat-badge-offline-text: #b02a25;
+    --chat-badge-orphan-bg:    #fad4d3;
+    --chat-badge-orphan-text:  #8c1f1b;
 }
 
 
@@ -177,10 +185,12 @@
         --chat-chip-text:       #005176;
         --chat-chip-hover-bg:   #005176;
         --chat-chip-hover-text: #ffffff;
-        --chat-badge-offline-bg:   #fff3cd;
-        --chat-badge-offline-text: #856404;
-        --chat-badge-orphan-bg:    #fce8e8;
-        --chat-badge-orphan-text:  #842029;
+        --chat-badge-offline-bg:   #fde8e7;
+        --chat-badge-offline-text: #b02a25;
+        --chat-badge-orphan-bg:    #fad4d3;
+        --chat-badge-orphan-text:  #8c1f1b;
+        --chat-secondary:          #ea564f;
+        --chat-secondary-hover:    #d94541;
     }
 }
 
