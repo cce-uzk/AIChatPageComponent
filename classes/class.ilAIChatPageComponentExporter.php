@@ -135,6 +135,8 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
         $configElement->appendChild($xml->createElement('enable_chat_uploads', $chatConfig->isEnableChatUploads() ? '1' : '0'));
         $configElement->appendChild($xml->createElement('enable_streaming', $chatConfig->isEnableStreaming() ? '1' : '0'));
         $configElement->appendChild($xml->createElement('enable_rag', $chatConfig->isEnableRag() ? '1' : '0'));
+        $configElement->appendChild($xml->createElement('show_sources', $chatConfig->isShowSources() ? '1' : '0'));
+        $configElement->appendChild($xml->createElement('allow_source_downloads', $chatConfig->isAllowSourceDownloads() ? '1' : '0'));
 
         // Optional disclaimer
         if ($chatConfig->getDisclaimer()) {

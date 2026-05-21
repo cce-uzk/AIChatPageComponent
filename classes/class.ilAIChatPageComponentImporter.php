@@ -209,6 +209,8 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
         $newChat->setEnableChatUploads(isset($cfg->enable_chat_uploads) ? (string)$cfg->enable_chat_uploads === '1' : false);
         $newChat->setEnableStreaming(isset($cfg->enable_streaming) ? (string)$cfg->enable_streaming === '1' : true);
         $newChat->setEnableRag(isset($cfg->enable_rag) ? (string)$cfg->enable_rag === '1' : false);
+        $newChat->setShowSources(isset($cfg->show_sources) ? (string)$cfg->show_sources === '1' : true);
+        $newChat->setAllowSourceDownloads(isset($cfg->allow_source_downloads) ? (string)$cfg->allow_source_downloads === '1' : true);
 
         // Optional disclaimer
         if (isset($cfg->disclaimer)) {
