@@ -76,7 +76,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         $inputs['openai_api_url'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_api_url'),
             $plugin->txt('config_api_url_info')
-        )->withValue((string)($api_url ?: 'https://api.openai.com'))->withRequired(true);
+        )->withMaxLength(500)->withValue((string)($api_url ?: 'https://api.openai.com'))->withRequired(true);
 
         // API Token - ensure string
         $api_token = \platform\AIChatPageComponentConfig::get('openai_api_token');
@@ -153,7 +153,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         $inputs['openai_temperature'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_temperature'),
             $plugin->txt('config_temperature_info')
-        )->withValue($temp_value)
+        )->withMaxLength(10)->withValue($temp_value)
          ->withAdditionalTransformation($temp_constraint)
          ->withAdditionalTransformation($temp_trafo);
 

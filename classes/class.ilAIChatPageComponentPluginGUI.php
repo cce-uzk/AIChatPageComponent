@@ -339,7 +339,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $chat_title = $ui_factory->input()->field()->text(
             $this->plugin->txt('chat_title_label'),
             $this->plugin->txt('chat_title_info')
-        )->withDedicatedName('chat_title')->withRequired(true)->withValue($prop['chat_title'] ?? $defaults['title']);
+        )->withDedicatedName('chat_title')->withRequired(true)->withMaxLength(255)->withValue($prop['chat_title'] ?? $defaults['title']);
 
         // Online/offline toggle
         $is_online = $ui_factory->input()->field()->checkbox(
@@ -351,7 +351,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $system_prompt = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('system_prompt_label'),
             $this->plugin->txt('system_prompt_info')
-        )->withDedicatedName('system_prompt')->withValue($prop['system_prompt'] ?? $defaults['prompt']);
+        )->withDedicatedName('system_prompt')->withMaxLimit(4000)->withValue($prop['system_prompt'] ?? $defaults['prompt']);
 
         // AI Service Selection (DYNAMIC - using LLMRegistry)
         // Get default AI service from config
@@ -531,7 +531,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $disclaimer = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('legal_disclaimer_label'),
             $this->plugin->txt('legal_disclaimer_info')
-        )->withDedicatedName('disclaimer')->withValue($prop['disclaimer'] ?? $defaults['disclaimer']);
+        )->withDedicatedName('disclaimer')->withMaxLimit(4000)->withValue($prop['disclaimer'] ?? $defaults['disclaimer']);
 
         // Create the complete UI form with all fields
         $form_action = $a_create ? $this->ctrl->getFormAction($this, 'create') : $this->ctrl->getFormAction($this, 'update');

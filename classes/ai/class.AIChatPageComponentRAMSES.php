@@ -88,7 +88,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         $inputs['ramses_api_url'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_api_url'),
             $plugin->txt('config_api_url_info')
-        )->withValue((string)($api_url ?: 'https://ramses-oski.itcc.uni-koeln.de'))->withRequired(true);
+        )->withMaxLength(500)->withValue((string)($api_url ?: 'https://ramses-oski.itcc.uni-koeln.de'))->withRequired(true);
 
         // API Token - ensure string
         $api_token = \platform\AIChatPageComponentConfig::get('ramses_api_token');
@@ -157,7 +157,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         $inputs['ramses_temperature'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_temperature'),
             $plugin->txt('config_temperature_info')
-        )->withValue($temp_value)
+        )->withMaxLength(10)->withValue($temp_value)
          ->withAdditionalTransformation($temp_constraint)
          ->withAdditionalTransformation($temp_trafo);
 
@@ -185,13 +185,13 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         $rag_sub_inputs['ramses_application_id'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_rag_application_id'),
             $plugin->txt('config_rag_application_id_info')
-        )->withValue((string)($app_id ?: 'ILIAS'));
+        )->withMaxLength(100)->withValue((string)($app_id ?: 'ILIAS'));
 
         $instance_id = \platform\AIChatPageComponentConfig::get('ramses_instance_id');
         $rag_sub_inputs['ramses_instance_id'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_rag_instance_id'),
             $plugin->txt('config_rag_instance_id_info')
-        )->withValue((string)($instance_id ?: 'ilias9'));
+        )->withMaxLength(100)->withValue((string)($instance_id ?: 'ilias9'));
 
         // RAG allowed file types - ensure it's a string
         $rag_file_types = \platform\AIChatPageComponentConfig::get('ramses_rag_allowed_file_types');
@@ -201,7 +201,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         $rag_sub_inputs['ramses_rag_allowed_file_types'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_rag_allowed_file_types'),
             $plugin->txt('config_rag_allowed_file_types_info')
-        )->withValue($rag_file_types ?: 'txt,md,csv,pdf');
+        )->withMaxLength(500)->withValue($rag_file_types ?: 'txt,md,csv,pdf');
 
         // Create OptionalGroup
         $rag_optional_group = $ui_factory->input()->field()->optionalGroup(

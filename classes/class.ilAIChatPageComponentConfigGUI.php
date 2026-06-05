@@ -267,14 +267,14 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         $inputs['default_prompt'] = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('config_default_prompt'),
             $this->plugin->txt('config_default_prompt_info')
-        )->withValue($default_prompt ?: 'You are a helpful AI assistant. Please provide accurate and helpful responses.');
+        )->withMaxLimit(4000)->withValue($default_prompt ?: 'You are a helpful AI assistant. Please provide accurate and helpful responses.');
 
         // Default disclaimer text
         $disclaimer = \platform\AIChatPageComponentConfig::get('default_disclaimer');
         $inputs['default_disclaimer'] = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('config_default_disclaimer'),
             $this->plugin->txt('config_default_disclaimer_info')
-        )->withValue($disclaimer ?: '');
+        )->withMaxLimit(4000)->withValue($disclaimer ?: '');
 
         return $inputs;
     }
@@ -498,7 +498,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         $sub_inputs['allowed_file_types'] = $ui_factory->input()->field()->text(
             $this->plugin->txt('config_allowed_file_types'),
             $this->plugin->txt('config_allowed_file_types_info')
-        )->withValue($current_types_string);
+        )->withMaxLength(500)->withValue($current_types_string);
 
         $sub_inputs['allow_background_files'] = $ui_factory->input()->field()->checkbox(
             $this->plugin->txt('config_allow_background_files'),
