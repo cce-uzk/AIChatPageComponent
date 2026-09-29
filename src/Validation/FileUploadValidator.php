@@ -22,7 +22,7 @@ class FileUploadValidator
     private static function getDefaultAllowedExtensions(): array
     {
         $default_types = \platform\AIChatPageComponentConfig::get('default_allowed_file_types');
-        return is_array($default_types) ? $default_types : ['txt', 'md', 'pdf', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
+        return is_array($default_types) ? $default_types : ['txt', 'pdf', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif'];
     }
     
     /**
@@ -229,7 +229,7 @@ class FileUploadValidator
      * Some browsers don't recognize certain MIME types (e.g., text/markdown),
      * so we include both the MIME type and the extension.
      *
-     * @param array $extensions Array of file extensions (e.g., ['pdf', 'txt', 'md', 'png'])
+     * @param array $extensions Array of file extensions (e.g., ['pdf', 'txt', 'png'])
      * @return array Array of MIME types and extensions for HTML accept attribute
      */
     public static function extensionsToAcceptValues(array $extensions): array

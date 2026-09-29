@@ -44,24 +44,32 @@ class AIChatPageComponentConfig
             'global_max_char_limit' => null,
             'global_max_memory_limit' => null,
 
-            'default_allowed_file_types' => ['txt', 'md', 'pdf', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif'],
+            'default_allowed_file_types' => ['txt', 'pdf', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'gif'],
 
             // File handling (hierarchical: global → service)
             'enable_file_handling' => '1',
 
+            'selected_ai_service' => 'ramses',
+            'force_default_ai_service' => '0',
+
             'ramses_api_url' => 'https://ramses-oski.itcc.uni-koeln.de',
             'ramses_service_enabled' => '0',
-            'ramses_rag_allowed_file_types' => ['txt', 'md', 'csv', 'pdf'],
+            'ramses_selected_model' => '',
+            'ramses_force_model' => '0',
             'ramses_temperature' => 0.7,
+            'ramses_force_temperature' => '0',
             'ramses_streaming_enabled' => '1',
             'ramses_file_handling_enabled' => '1',
+            'ramses_enable_rag' => '1',
+            'ramses_rag_allowed_file_types' => ['txt', 'csv', 'pdf'],
 
             'openai_api_url' => 'https://api.openai.com',
             'openai_service_enabled' => '0',
+            'openai_selected_model' => 'gpt-4o',
+            'openai_force_model' => '0',
             'openai_temperature' => 0.7,
-            'openai_file_handling_enabled' => '1',
-
-            'force_default_ai_service' => '0'
+            'openai_force_temperature' => '0',
+            'openai_file_handling_enabled' => '1'
         ];
 
         try {

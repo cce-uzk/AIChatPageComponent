@@ -815,3 +815,46 @@ if ($db->tableExists('pcaic_chats')) {
     }
 }
 ?>
+
+<#11>
+<?php
+/**
+ * Step 11: Add per-chat temperature override (v1.7.0)
+ *
+ * temperature: nullable float; NULL = use global AI service default; a value
+ *              overrides the globally configured temperature for this chat only.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_chats')) {
+    if (!$db->tableColumnExists('pcaic_chats', 'temperature')) {
+        $db->addTableColumn('pcaic_chats', 'temperature', array(
+            'type'    => 'float',
+            'notnull' => false,
+        ));
+    }
+}
+?>
+
+<#12>
+<?php
+/**
+ * Step 12: Add per-chat model override (v1.8.0)
+ *
+ * model: nullable text; NULL = use global model configured for the AI service;
+ *        a value overrides the globally configured model for this chat only.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_chats')) {
+    if (!$db->tableColumnExists('pcaic_chats', 'model')) {
+        $db->addTableColumn('pcaic_chats', 'model', array(
+            'type'    => 'text',
+            'length'  => 255,
+            'notnull' => false,
+        ));
+    }
+}
+?>

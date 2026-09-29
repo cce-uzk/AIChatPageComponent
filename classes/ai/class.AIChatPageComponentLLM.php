@@ -28,6 +28,8 @@ abstract class AIChatPageComponentLLM
     protected ?string $prompt = null;
     protected bool $streaming = false;
     protected \ilLogger $logger;
+    protected ?float $temperatureOverride = null;
+    protected ?string $modelOverride = null;
 
     // Last response metadata (RAG sources, etc.)
     protected ?array $lastResponseMetadata = null;
@@ -38,6 +40,16 @@ abstract class AIChatPageComponentLLM
     {
         global $DIC;
         $this->logger = $DIC->logger()->pcaic();
+    }
+
+    public function setTemperatureOverride(?float $temperature): void
+    {
+        $this->temperatureOverride = $temperature;
+    }
+
+    public function setModelOverride(?string $model): void
+    {
+        $this->modelOverride = $model;
     }
 
     // ============================================
@@ -260,6 +272,12 @@ abstract class AIChatPageComponentLLM
             $this->setPrompt($chatConfig->getSystemPrompt());
             $this->setMaxMemoryMessages($chatConfig->getMaxMemory());
 
+            $ai_service_id = $chatConfig->getAiService();
+            $force_temperature = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_temperature') === '1';
+            $this->setTemperatureOverride($force_temperature ? null : $chatConfig->getTemperature());
+            $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
+            $this->setModelOverride($force_model ? null : $chatConfig->getModel());
+
             // Check hierarchical file handling (global → service)
             $ai_service = $chatConfig->getAiService();
             $fileHandlingEnabled = $this->isFileHandlingEnabledForService($ai_service);
@@ -380,7 +398,13 @@ abstract class AIChatPageComponentLLM
             $this->setPrompt($chatConfig->getSystemPrompt());
             $this->setMaxMemoryMessages($chatConfig->getMaxMemory());
 
-            $ai_service = $chatConfig->getAiService();
+            $ai_service_id = $chatConfig->getAiService();
+            $force_temperature = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_temperature') === '1';
+            $this->setTemperatureOverride($force_temperature ? null : $chatConfig->getTemperature());
+            $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
+            $this->setModelOverride($force_model ? null : $chatConfig->getModel());
+
+            $ai_service = $ai_service_id;
             $fileHandlingEnabled = $this->isFileHandlingEnabledForService($ai_service);
 
             $collectionIds = [];
@@ -482,7 +506,7 @@ abstract class AIChatPageComponentLLM
                     $mime_type = $revision->getInformation()->getMimeType();
 
                     // Process text files
-                    if (in_array($suffix, ['txt', 'md', 'csv'])) {
+                    if (in_array($suffix, ['txt', 'csv'])) {
                         $stream = $irss->consume()->stream($identification);
                         $content = $stream->getStream()->getContents();
 
@@ -1078,7 +1102,7 @@ abstract class AIChatPageComponentLLM
                     $suffix = strtolower($revision->getInformation()->getSuffix());
 
                     // Only upload RAG-compatible file types
-                    $ragCompatible = in_array($suffix, ['txt', 'md', 'csv', 'pdf'], true);
+                    $ragCompatible = in_array($suffix, ['txt', 'csv', 'pdf'], true);
                     if (!$ragCompatible) {
                         $this->logger->debug("Skipping non-RAG file type", [
                             'attachment_id' => $att_row['id'],
@@ -1217,7 +1241,7 @@ abstract class AIChatPageComponentLLM
                     $suffix = strtolower($revision->getInformation()->getSuffix());
 
                     // Only upload RAG-compatible file types
-                    $ragCompatible = in_array($suffix, ['txt', 'md', 'csv', 'pdf'], true);
+                    $ragCompatible = in_array($suffix, ['txt', 'csv', 'pdf'], true);
                     if (!$ragCompatible) {
                         $this->logger->debug("Skipping non-RAG file type", [
                             'attachment_id' => $att_row['id'],

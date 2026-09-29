@@ -51,7 +51,7 @@ config_file_restrictions_info#:#Enable AI file processing and control which file
 config_enable_file_handling#:#Enable File Handling for AI
 config_enable_file_handling_info#:#When enabled, the AI can process background files and chat uploads. Administrators can control which file types are allowed and restrict different upload contexts separately.
 config_allowed_file_types#:#Allowed File Types
-config_allowed_file_types_info#:#Comma-separated list of allowed file extensions (e.g., txt,md,pdf,csv,png,jpg). Leave empty to allow all types when restrictions are disabled.
+config_allowed_file_types_info#:#Comma-separated list of allowed file extensions (e.g., txt,pdf,csv,png,jpg). Leave empty to allow all types when restrictions are disabled.
 config_allow_background_files#:#Allow Background File Attachments
 config_allow_background_files_info#:#When checked, users can attach background files to page components for AI context.
 config_allow_chat_uploads#:#Allow Chat Upload Files
@@ -62,7 +62,7 @@ background_files_disabled#:#Background file uploads are disabled by administrato
 chat_uploads_disabled#:#Chat file uploads are disabled by administrator.
 stop_generation#:#Stop generation
 background_files_label#:#Background Files
-background_files_info#:#Upload files that provide context for AI conversations. Supported formats: PDF, images (JPG, PNG, GIF, WEBP), text files (TXT, MD), CSV data files.
+background_files_info#:#Upload files that provide context for AI conversations. Supported formats: PDF, images (JPG, PNG, GIF, WEBP), text files (TXT), CSV data files.
 existing_background_files_label#:#Currently Uploaded Files
 default_chat_title#:#AI Chat
 chat_title_label#:#Chat Title
@@ -75,16 +75,21 @@ max_memory_label#:#Max Memory Messages
 max_memory_info#:#Number of previous messages to keep in conversation context
 char_limit_label#:#Character Limit
 char_limit_info#:#Maximum characters allowed per user message
+temperature_override_label#:#Temperature
+temperature_override_info#:#Controls the creativity of AI responses: 0.0 = deterministic, 1.0 = creative, 2.0 = very creative. Use comma or dot as decimal separator.
+model_override_label#:#Model
+model_override_info#:#Select the AI model for this chat.
+default_label#:#Default
 persistent_chat_label#:#Persistent Chat
 persistent_chat_info#:#If enabled, chat messages will be saved and restored when users return. If disabled, each session starts fresh.
 include_page_context_label#:#Include Page Context
-include_page_context_info#:#If enabled, the AI will have access to the content of the page where this chat is embedded. This helps provide more relevant and contextual responses.
+include_page_context_info#:#If enabled, the AI will have access to the visible text content of the page where this chat is embedded – excluding embedded files, sub-objects, or deeper structural levels. This helps provide more relevant and contextual responses.
 enable_chat_uploads_label#:#Enable Chat File Uploads
 enable_chat_uploads_info#:#If enabled, users can upload files directly in the chat interface. If disabled, only background files (configured above) will be available to the AI.
 enable_streaming_label#:#Enable Streaming Responses
 enable_streaming_info#:#If enabled, AI responses will be streamed in real-time as they are generated. If disabled, full responses will be shown after completion.
-legal_disclaimer_label#:#Legal Disclaimer
-legal_disclaimer_info#:#Optional legal disclaimer shown to users
+legal_disclaimer_label#:#Disclaimer
+legal_disclaimer_info#:#Optional notice shown to users
 create_ai_chat_title#:#Create AI Chat
 edit_ai_chat_title#:#Edit AI Chat
 use_global_default#:#Use Global Default
@@ -117,7 +122,8 @@ config_default_disclaimer_info#:#Default disclaimer text shown to users
 config_services_title#:#AI Service Selection
 config_services_info#:#Choose which AI service to use and enable/disable available services
 config_selected_ai_service#:#Default AI Service
-config_selected_ai_service_info#:#Choose the default AI service for new chat instances
+config_selected_ai_service_info#:#Sets the default AI service. When enabled, the service can be overridden per chat (unless forced).
+config_ai_service_select#:#Service
 service_ramses_option#:#RAMSES (University of Cologne)
 service_openai_option#:#OpenAI GPT
 config_service_ramses_enabled#:#Enable RAMSES Service
@@ -137,8 +143,11 @@ config_api_url#:#API Base URL
 config_api_url_info#:#Base URL for API endpoints. Specific endpoints like /v1/chat/completions or /v1/models are automatically appended.
 config_api_token#:#API Token
 config_api_token_info#:#API token for authentication
-config_selected_model#:#Selected Model
-config_selected_model_info#:#Choose the AI model for new chat instances
+config_selected_model#:#Default Model
+config_selected_model_info#:#Sets the default AI model. When enabled, the model can be overridden per chat (unless forced).
+config_model_select#:#Model
+config_force_model#:#Force Default Model
+config_force_model_info#:#When enabled, all chat instances use this model. Instructors cannot select a different model per chat.
 config_files_title#:#File Upload Constraints
 config_files_info#:#Configure limits for file uploads and processing
 config_max_file_size#:#Maximum File Size (MB)
@@ -184,6 +193,9 @@ config_ramses_title#:#RAMSES API Configuration
 config_ramses_info#:#Configure RAMSES AI API connection and available models
 config_temperature#:#Temperature
 config_temperature_info#:#Controls randomness of AI responses (0.0 = deterministic, 1.0 = creative, 2.0 = very creative). Default: 0.7. You can use comma (1,0) or dot (1.0) as decimal separator.
+config_default_temperature#:#Default Temperature
+config_force_temperature#:#Force Default Temperature
+config_force_temperature_info#:#When enabled, all chat instances use this temperature. Instructors cannot set a different temperature per chat.
 config_streaming#:#Enable Streaming
 config_streaming_info#:#When enabled, AI responses are streamed in real-time as they are generated
 config_file_handling#:#Enable File Handling
@@ -195,7 +207,7 @@ config_rag_application_id_info#:#Application identifier for RAG file uploads (e.
 config_rag_instance_id#:#Instance ID
 config_rag_instance_id_info#:#Instance identifier for RAG file uploads (e.g., ilias9)
 config_rag_allowed_file_types#:#RAG Allowed File Types
-config_rag_allowed_file_types_info#:#File extensions accepted for RAG mode uploads (comma-separated, e.g., txt,md,csv,pdf)
+config_rag_allowed_file_types_info#:#File extensions accepted for RAG mode uploads (comma-separated, e.g., txt,csv,pdf)
 config_models_cache_info#:#Available Models
 config_models_cache_info_desc#:#Models are loaded from RAMSES API and cached
 config_refresh_models_button#:#Update Models from API
@@ -257,6 +269,23 @@ stat_chat_not_found#:#Chat not found.
 stat_yes#:#Yes
 stat_no#:#No
 stat_no_title#:#untitled
+tab_settings#:#Settings
+tab_advanced_settings#:#Advanced Settings
+tab_statistics#:#Statistics
+section_general_label#:#General Settings
+section_general_info#:#Title, visibility and system prompt of this chat
+section_ai_config_label#:#AI Service & Configuration
+section_ai_config_info#:#AI service, memory limit and character limit for this chat
+section_behavior_label#:#Chat Behaviour
+section_behavior_info#:#Persistence, page context, file uploads, streaming and RAG mode
+section_background_files_label#:#Background Files
+section_background_files_info#:#Files provided to the AI as additional context
+section_legal_label#:#Legal
+section_legal_info#:#Optional disclaimer for this chat instance
+stat_sessions#:#Sessions
+stat_messages#:#Messages
+stat_last_activity#:#Last Activity
+stat_no_sessions#:#No sessions yet.
 show_sources_label#:#Show Sources
 show_sources_info#:#If enabled, RAG citations are shown to users. If disabled, sources are stripped server-side and users see only the AI answer.
 allow_source_downloads_label#:#Allow Source Downloads

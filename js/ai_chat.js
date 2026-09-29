@@ -1209,8 +1209,10 @@ class AIChatPageComponent {
             cursor.remove();
         }
 
-        // Use stored raw content if available, otherwise use finalContent
-        let contentToFormat = contentEl.dataset.rawContent || finalContent;
+        // Prefer finalContent (server's complete, post-processed response) over raw chunks.
+        // Raw chunks may contain inline citations that the server already stripped.
+        let contentToFormat = finalContent || contentEl.dataset.rawContent;
+
 
         // Strip inline sources and collect any web links the AI embedded in them
         let effectiveSources = sources;
@@ -4670,10 +4672,8 @@ class AIChatPageComponent {
                 }
                 return num;
             } else if (format === 'bracket') {
-                // Extract number from [N]
                 return parseInt(matchStr.slice(1, -1), 10);
             } else if (format === 'caret') {
-                // Extract number from ^N
                 return parseInt(matchStr.slice(1), 10);
             }
             return 0;

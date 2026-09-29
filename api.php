@@ -142,6 +142,17 @@ try {
             $llm = createLLMInstance(getEffectiveAiService($chatConfig));
             $llm->setStreaming(false);
 
+            // Normalise or suppress inline source citations via system prompt
+            if (!$chatConfig->isShowSources()) {
+                $llm->setPrompt(($llm->getPrompt() ?? '') .
+                    "\n\n[SYSTEM INSTRUCTION: Answer directly and completely. Sources are managed separately.]"
+                );
+            } else {
+                $llm->setPrompt(($llm->getPrompt() ?? '') .
+                    "\n\n[SYSTEM INSTRUCTION: Cite sources inline as [1], [2], [3]. A sources panel is shown separately.]"
+                );
+            }
+
             if ($is_anonymous) {
                 // Stateless mode: no DB session, history comes from frontend
                 $conversation_history = $data['conversation_history'] ?? [];
@@ -258,6 +269,17 @@ try {
             // Create LLM instance and delegate
             $llm = createLLMInstance($aiService);
             $llm->setStreaming($streamingEnabled);
+
+            // Normalise or suppress inline source citations via system prompt
+            if (!$chatConfig->isShowSources()) {
+                $llm->setPrompt(($llm->getPrompt() ?? '') .
+                    "\n\n[SYSTEM INSTRUCTION: Answer directly and completely. Sources are managed separately.]"
+                );
+            } else {
+                $llm->setPrompt(($llm->getPrompt() ?? '') .
+                    "\n\n[SYSTEM INSTRUCTION: Cite sources inline as [1], [2], [3]. A sources panel is shown separately.]"
+                );
+            }
 
             if ($is_anonymous) {
                 // Stateless mode: no DB session, history comes from frontend
@@ -1141,10 +1163,41 @@ function isRagEnabledForChat(ChatConfig $chatConfig, \ai\AIChatPageComponentLLM 
  */
 function stripSourcesFromResponse(string $text): string
 {
-    // Remove trailing sources section (--- separator or heading variants)
-    // Matches from the first occurrence of a sources heading to end of string
-    $sectionPattern = '/\s*(?:---\s*)?#{1,4}\s*\*{0,2}(?:Quellen|Sources?|R[eé]f[eé]rences?|Literatur(?:verzeichnis)?|Bibliography)\*{0,2}\s*:?.*$/us';
+    // Remove trailing sources section (--- separator or heading variants, multilingual)
+    $sectionPattern = '/\s*(?:---\s*)?#{1,4}\s*\*{0,2}(?:'
+        . 'Quellen|Literatur(?:verzeichnis)?'                   // DE
+        . '|Sources?|R[eé]f[eé]rences?|Bibliography'           // EN / FR
+        . '|Fuentes?|Referencias?|Bibliograf[ií]a'             // ES
+        . '|Fonti|Riferimenti|Bibliograf[ií]a'                 // IT
+        . '|Fontes?|Refer[eê]ncias?'                           // PT
+        . ')\*{0,2}\s*:?.*$/us';
     $text = preg_replace($sectionPattern, '', $text);
+
+    // Remove bare citation headings without # marker (e.g. "\n\nQuellen:\n\n  file.pdf, pages [1]")
+    $text = preg_replace(
+        '/\n{1,2}(?:Quellen|Literatur(?:verzeichnis)?'
+        . '|Sources?|R[eé]f[eé]rences?|Bibliography'
+        . '|Fuentes?|Referencias?|Bibliograf[ií]a'
+        . '|Fonti|Riferimenti|Fontes?|Refer[eê]ncias?'
+        . ')\s*:?\s*\n[\s\S]*$/u',
+        '',
+        $text
+    );
+
+    // Remove bare --- horizontal rule followed by file citation lines (RAMSES RAG format)
+    // e.g. "---\n Filename.pdf, pages \n Filename.pdf, pages"
+    $text = preg_replace(
+        '/\n+---\s*\n(?:\s*[^\n]*\.(?:pdf|txt|csv|xlsx?|docx?|pptx?)[^\n]*\n?)+\s*$/ui',
+        '',
+        $text
+    );
+
+    // Remove trailing file citation lines without --- (e.g. "Filename.pdf, pages 1, 3" or "pages [1]")
+    $text = preg_replace(
+        '/(?:\n\s*[^\n]+\.(?:pdf|txt|csv|xlsx?|docx?|pptx?)\s*,\s*pages?[^\n]*)+\s*$/ui',
+        '',
+        $text
+    );
 
     // Remove numbered reference list at end (lines like "1. filename, S. 3")
     // Only if they appear to be a citation block (number + dot + text pattern, multiple lines)
@@ -1153,11 +1206,14 @@ function stripSourcesFromResponse(string $text): string
     // Remove inline Unicode superscript footnote markers (¹²³⁴⁵⁶⁷⁸⁹⁰ combinations)
     $text = preg_replace('/[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{2079}]+/u', '', $text);
 
-    // Remove ^N caret-style markers
-    $text = preg_replace('/\^[\d,\s]+/', '', $text);
+    // Remove [^N] footnote-style markers (e.g. [^2]) and bare ^N caret markers
+    $text = preg_replace('/\[\^[\d,\s]+\]|\^[\d,\s]+/', '', $text);
 
     // Remove [N] bracket-style markers
     $text = preg_replace('/\[\d+\]/', '', $text);
+
+    // Remove any leftover empty brackets []
+    $text = preg_replace('/\[\s*\]/', '', $text);
 
     // Convert markdown links [label](url) → label (keep readable text, drop URL)
     $text = preg_replace('/\[([^\]]+)\]\(https?:\/\/[^)]+\)/', '$1', $text);

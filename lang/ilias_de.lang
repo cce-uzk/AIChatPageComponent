@@ -51,7 +51,7 @@ config_file_restrictions_info#:#KI-Dateiverarbeitung aktivieren und kontrolliere
 config_enable_file_handling#:#Datei-Verarbeitung für KI aktivieren
 config_enable_file_handling_info#:#Wenn aktiviert, kann die KI Hintergrunddateien und Chat-Uploads verarbeiten. Administratoren können kontrollieren, welche Dateitypen erlaubt sind und verschiedene Upload-Kontexte separat einschränken.
 config_allowed_file_types#:#Erlaubte Dateitypen
-config_allowed_file_types_info#:#Komma-getrennte Liste erlaubter Dateiendungen (z.B. txt,md,pdf,csv,png,jpg). Leer lassen um alle Typen zu erlauben wenn Beschränkungen deaktiviert sind.
+config_allowed_file_types_info#:#Komma-getrennte Liste erlaubter Dateiendungen (z.B. txt,pdf,csv,png,jpg). Leer lassen um alle Typen zu erlauben wenn Beschränkungen deaktiviert sind.
 config_allow_background_files#:#Hintergrunddatei-Anhänge erlauben
 config_allow_background_files_info#:#Wenn aktiviert, können Benutzer Hintergrunddateien an Seitenkomponenten für KI-Kontext anhängen.
 config_allow_chat_uploads#:#Chat-Upload-Dateien erlauben
@@ -74,16 +74,21 @@ max_memory_label#:#Max. Nachrichten im Gedächtnis
 max_memory_info#:#Anzahl der vorherigen Nachrichten, die im Unterhaltungskontext behalten werden
 char_limit_label#:#Zeichenlimit
 char_limit_info#:#Maximale Anzahl Zeichen pro Benutzernachricht
+temperature_override_label#:#Temperatur
+temperature_override_info#:#Steuert die Kreativität der KI-Antworten: 0.0 = deterministisch, 1.0 = kreativ, 2.0 = sehr kreativ. Komma oder Punkt als Dezimaltrennzeichen möglich.
+model_override_label#:#Modell
+model_override_info#:#Wählen Sie das KI-Modell für diesen Chat.
+default_label#:#Standard
 persistent_chat_label#:#Persistenter Chat
 persistent_chat_info#:#Wenn aktiviert, werden Chat-Nachrichten gespeichert und bei der Rückkehr des Benutzers wiederhergestellt. Wenn deaktiviert, startet jede Sitzung neu.
 include_page_context_label#:#Seitenkontext einbeziehen
-include_page_context_info#:#Wenn aktiviert, hat die KI Zugriff auf den Inhalt der Seite, in die dieser Chat eingebettet ist. Dies hilft bei relevanteren und kontextbezogeneren Antworten.
+include_page_context_info#:#Wenn aktiviert, hat die KI Zugriff auf den sichtbaren Textinhalt der Seite, in die dieser Chat eingebettet ist – ohne eingebettete Dateien, Unterobjekte oder tiefere Strukturebenen. Dies hilft bei relevanteren und kontextbezogeneren Antworten.
 enable_chat_uploads_label#:#Chat-Dateiuploads aktivieren
 enable_chat_uploads_info#:#Wenn aktiviert, können Benutzer Dateien direkt in der Chat-Oberfläche hochladen. Wenn deaktiviert, stehen der KI nur die oben konfigurierten Hintergrunddateien zur Verfügung.
 enable_streaming_label#:#Streaming-Antworten aktivieren
 enable_streaming_info#:#Wenn aktiviert, werden KI-Antworten in Echtzeit während der Generierung gestreamt. Wenn deaktiviert, werden vollständige Antworten nach Abschluss angezeigt.
-legal_disclaimer_label#:#Rechtlicher Haftungsausschluss
-legal_disclaimer_info#:#Optionaler rechtlicher Haftungsausschluss, der den Benutzern angezeigt wird
+legal_disclaimer_label#:#Disclaimer
+legal_disclaimer_info#:#Optionaler Hinweistext, der den Benutzern angezeigt wird
 create_ai_chat_title#:#KI-Chat erstellen
 edit_ai_chat_title#:#KI-Chat bearbeiten
 use_global_default#:#Globale Standardeinstellung verwenden
@@ -111,12 +116,13 @@ config_default_char_limit#:#Standard Zeichenlimit
 config_default_char_limit_info#:#Standard maximale Zeichen pro Nachricht
 config_default_max_memory#:#Standard Gedächtnis-Nachrichten
 config_default_max_memory_info#:#Standard Anzahl vorheriger Nachrichten im AI-Kontext
-config_default_disclaimer#:#Standard Haftungsausschluss
-config_default_disclaimer_info#:#Standard Haftungsausschluss-Text für Benutzer
+config_default_disclaimer#:#Standard-Disclaimer
+config_default_disclaimer_info#:#Standard-Hinweistext für Benutzer
 config_services_title#:#AI Service Auswahl
 config_services_info#:#Wählen Sie den zu verwendenden AI Service und aktivieren/deaktivieren Sie verfügbare Services
 config_selected_ai_service#:#Standard AI Service
-config_selected_ai_service_info#:#Wählen Sie den Standard AI Service für neue Chat-Instanzen
+config_selected_ai_service_info#:#Legt den Standard AI-Service fest. Wenn aktiviert, kann der Service pro Chat überschrieben werden (sofern nicht erzwungen).
+config_ai_service_select#:#Dienst
 service_ramses_option#:#RAMSES (University of Cologne)
 service_openai_option#:#OpenAI GPT
 config_service_ramses_enabled#:#RAMSES Service aktivieren
@@ -136,8 +142,11 @@ config_api_url#:#API Basis-URL
 config_api_url_info#:#Basis-URL für API-Endpunkte. Spezifische Endpunkte wie /v1/chat/completions oder /v1/models werden automatisch angehängt.
 config_api_token#:#API Token
 config_api_token_info#:#API-Token für die Authentifizierung
-config_selected_model#:#Ausgewähltes Modell
-config_selected_model_info#:#Wählen Sie das KI-Modell für neue Chat-Instanzen
+config_selected_model#:#Standard-Modell
+config_selected_model_info#:#Legt das Standard-KI-Modell fest. Wenn aktiviert, kann das Modell pro Chat überschrieben werden (sofern nicht erzwungen).
+config_model_select#:#Modell
+config_force_model#:#Standard-Modell erzwingen
+config_force_model_info#:#Wenn aktiviert, verwenden alle Chat-Instanzen dieses Modell. Dozierende können kein abweichendes Modell pro Chat wählen.
 config_processing_title#:#Verarbeitungs-Limits
 config_processing_info#:#Limits für AI-Verarbeitung und Datenbearbeitung konfigurieren
 config_upload_title#:#Datei-Upload Beschränkungen
@@ -185,6 +194,9 @@ config_ramses_title#:#RAMSES API Konfiguration
 config_ramses_info#:#Konfiguration der RAMSES AI API-Verbindung und verfügbarer Modelle
 config_temperature#:#Temperatur
 config_temperature_info#:#Steuert die Zufälligkeit der AI-Antworten (0.0 = deterministisch, 1.0 = kreativ, 2.0 = sehr kreativ). Standard: 0.7. Sie können Komma (1,0) oder Punkt (1.0) als Dezimaltrennzeichen verwenden.
+config_default_temperature#:#Standard-Temperatur
+config_force_temperature#:#Standard-Temperatur erzwingen
+config_force_temperature_info#:#Wenn aktiviert, verwenden alle Chat-Instanzen diese Temperatur. Dozierende können keine abweichende Temperatur pro Chat einstellen.
 config_streaming#:#Streaming aktivieren
 config_streaming_info#:#Wenn aktiviert, werden AI-Antworten in Echtzeit während der Generierung gestreamt
 config_file_handling#:#Dateiverarbeitung aktivieren
@@ -196,7 +208,7 @@ config_rag_application_id_info#:#Anwendungskennung für RAG-Datei-Uploads (z.B. 
 config_rag_instance_id#:#Instanz-ID
 config_rag_instance_id_info#:#Instanzkennung für RAG-Datei-Uploads (z.B. ilias9)
 config_rag_allowed_file_types#:#Erlaubte RAG-Dateitypen
-config_rag_allowed_file_types_info#:#Dateierweiterungen für RAG-Modus-Uploads (kommagetrennt, z.B. txt,md,csv,pdf)
+config_rag_allowed_file_types_info#:#Dateierweiterungen für RAG-Modus-Uploads (kommagetrennt, z.B. txt,csv,pdf)
 config_models_cache_info#:#Verfügbare Modelle
 config_models_cache_info_desc#:#Modelle werden von der RAMSES API geladen und zwischengespeichert
 config_refresh_models_button#:#Modelle von API aktualisieren
@@ -258,6 +270,23 @@ stat_chat_not_found#:#Chat nicht gefunden.
 stat_yes#:#Ja
 stat_no#:#Nein
 stat_no_title#:#ohne Titel
+tab_settings#:#Einstellungen
+tab_advanced_settings#:#Erweiterte Einstellungen
+tab_statistics#:#Statistik
+section_general_label#:#Grundeinstellungen
+section_general_info#:#Titel, Sichtbarkeit und System-Prompt des Chats
+section_ai_config_label#:#KI-Dienst & Konfiguration
+section_ai_config_info#:#KI-Dienst, Gedächtnis und Zeichenlimit für diesen Chat
+section_behavior_label#:#Chat-Verhalten
+section_behavior_info#:#Persistenz, Seitenkontext, Datei-Uploads, Streaming und RAG-Modus
+section_background_files_label#:#Hintergrunddateien
+section_background_files_info#:#Dateien, die der KI als zusätzlicher Kontext zur Verfügung gestellt werden
+section_legal_label#:#Rechtliches
+section_legal_info#:#Optionaler Disclaimer für die Chat-Instanz
+stat_sessions#:#Sessions
+stat_messages#:#Nachrichten
+stat_last_activity#:#Letzte Aktivität
+stat_no_sessions#:#Noch keine Sessions vorhanden.
 show_sources_label#:#Quellen anzeigen
 show_sources_info#:#Wenn aktiviert, werden RAG-Quellenangaben für Nutzer angezeigt. Wenn deaktiviert, werden Quellen serverseitig herausgefiltert und Nutzer sehen nur die KI-Antwort.
 allow_source_downloads_label#:#Quellen-Download erlauben

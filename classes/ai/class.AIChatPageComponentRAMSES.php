@@ -101,50 +101,52 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         $selected_model = \platform\AIChatPageComponentConfig::get('ramses_selected_model');
         $cached_models = \platform\AIChatPageComponentConfig::get('cached_models');
 
+        $force_model = \platform\AIChatPageComponentConfig::get('ramses_force_model') === '1';
+
         if (is_array($cached_models) && !empty($cached_models)) {
-            // $cached_models is already in correct format: ['model-id' => 'Display Name']
             $model_options = $cached_models;
 
-            $select_field = $ui_factory->input()->field()->select(
-                $plugin->txt('config_selected_model'),
+            $model_select = $ui_factory->input()->field()->select(
+                $plugin->txt('config_model_select'),
                 $model_options,
                 $plugin->txt('config_selected_model_info')
             )->withRequired(true);
 
-            // Only set value if it exists in options
             if ($selected_model && isset($model_options[$selected_model])) {
-                $select_field = $select_field->withValue($selected_model);
+                $model_select = $model_select->withValue($selected_model);
             }
 
-            $inputs['ramses_selected_model'] = $select_field;
+            $inputs['ramses_selected_model'] = $model_select;
+
+            $inputs['ramses_force_model'] = $ui_factory->input()->field()->checkbox(
+                $plugin->txt('config_force_model'),
+                $plugin->txt('config_force_model_info')
+            )->withValue($force_model);
         } else {
+            // Models not yet loaded – flat disabled display, no optionalGroup
             $inputs['ramses_selected_model'] = $ui_factory->input()->field()->text(
                 $plugin->txt('config_selected_model'),
                 $plugin->txt('refresh_models_not_loaded')
             )->withValue((string)($selected_model ?: ''))->withDisabled(true);
+
+            $inputs['ramses_force_model'] = $ui_factory->input()->field()->checkbox(
+                $plugin->txt('config_force_model'),
+                $plugin->txt('config_force_model_info')
+            )->withValue($force_model);
         }
 
-        // Temperature - use text field with custom validation to support comma/dot
+        // Temperature – optionalGroup: "Standard-Temperatur" + nested force checkbox
         $temperature = \platform\AIChatPageComponentConfig::get('ramses_temperature');
-        $temp_value = '0.7'; // default as string
-        if ($temperature !== null && $temperature !== '') {
-            $temp_value = (string)$temperature;
-        }
+        $temp_value = ($temperature !== null && $temperature !== '') ? (string)$temperature : '0.7';
 
-        // Create constraint that accepts comma or dot as decimal separator
         $refinery = $DIC->refinery();
         $temp_constraint = $refinery->custom()->constraint(
             function ($value) {
-                if (is_string($value)) {
-                    $normalized = str_replace(',', '.', $value);
-                    return is_numeric($normalized);
-                }
-                return is_numeric($value);
+                $normalized = is_string($value) ? str_replace(',', '.', $value) : $value;
+                return is_numeric($normalized);
             },
             'Must be a number (use comma or dot as decimal separator)'
         );
-
-        // Create transformation to convert to float
         $temp_trafo = $refinery->custom()->transformation(
             function ($value) {
                 if (is_string($value)) {
@@ -155,11 +157,18 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         );
 
         $inputs['ramses_temperature'] = $ui_factory->input()->field()->text(
-            $plugin->txt('config_temperature'),
+            $plugin->txt('config_default_temperature'),
             $plugin->txt('config_temperature_info')
-        )->withMaxLength(10)->withValue($temp_value)
+        )->withMaxLength(10)
+         ->withValue($temp_value)
          ->withAdditionalTransformation($temp_constraint)
          ->withAdditionalTransformation($temp_trafo);
+
+        $force_temperature = \platform\AIChatPageComponentConfig::get('ramses_force_temperature') === '1';
+        $inputs['ramses_force_temperature'] = $ui_factory->input()->field()->checkbox(
+            $plugin->txt('config_force_temperature'),
+            $plugin->txt('config_force_temperature_info')
+        )->withValue($force_temperature);
 
         // Streaming enabled
         $streaming_enabled = \platform\AIChatPageComponentConfig::get('ramses_streaming_enabled') ?? '1';
@@ -270,7 +279,9 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             'ramses_api_url' => 'https://ramses-oski.itcc.uni-koeln.de',
             'ramses_api_token' => '',
             'ramses_selected_model' => '',
+            'ramses_force_model' => '0',
             'ramses_temperature' => 0.7,
+            'ramses_force_temperature' => '0',
             'ramses_streaming_enabled' => '1',
             'ramses_file_handling_enabled' => '1',
             'ramses_enable_rag' => '1',
@@ -291,8 +302,8 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             'streaming' => true,
             'rag' => true,
             'multimodal' => true,
-            'file_types' => ['txt', 'md', 'csv', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
-            'rag_file_types' => ['txt', 'md', 'csv', 'pdf'],
+            'file_types' => ['txt', 'csv', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
+            'rag_file_types' => ['txt', 'csv', 'pdf'],
             'max_tokens' => null, // No hard limit documented
         ];
     }
@@ -325,12 +336,24 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
      *
      * @return array Associative array of API parameters
      */
+    public function setModelOverride(?string $model): void
+    {
+        parent::setModelOverride($model);
+        if ($model !== null && $model !== '') {
+            $this->model = $model;
+        }
+    }
+
     protected function getModelParameters(): array
     {
-        $temperature = \platform\AIChatPageComponentConfig::get('ramses_temperature') ?: 0.7;
+        if ($this->temperatureOverride !== null) {
+            $temperature = $this->temperatureOverride;
+        } else {
+            $temperature = (float)(\platform\AIChatPageComponentConfig::get('ramses_temperature') ?: 0.7);
+        }
 
         return [
-            'temperature' => (float)$temperature
+            'temperature' => $temperature
         ];
     }
 
@@ -454,9 +477,9 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
 
             return is_array($configured_types) && !empty($configured_types)
                 ? array_values($configured_types)  // Re-index array
-                : ['txt', 'md', 'csv', 'pdf'];
+                : ['txt', 'csv', 'pdf'];
         } else {
-            return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'md', 'csv'];
+            return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'csv'];
         }
     }
 

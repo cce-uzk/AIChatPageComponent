@@ -30,6 +30,8 @@ class ChatConfig
     private bool $allowSourceDownloads = true;
     private bool $isOnline = true;
     private string $disclaimer = '';
+    private ?float $temperature = null;
+    private ?string $model = null;
     private ?string $ragCollectionId = null;
     private ?\DateTime $createdAt = null;
     private ?\DateTime $updatedAt = null;
@@ -83,6 +85,10 @@ class ChatConfig
             $this->allowSourceDownloads = (bool)($row['allow_source_downloads'] ?? true);
             $this->isOnline = (bool)($row['is_online'] ?? true);
             $this->disclaimer = $row['disclaimer'] ?? '';
+            $this->temperature = isset($row['temperature']) && $row['temperature'] !== null
+                ? (float)$row['temperature']
+                : null;
+            $this->model = !empty($row['model']) ? (string)$row['model'] : null;
             $this->ragCollectionId = $row['rag_collection_id'] ?? null;
 
             $this->createdAt = $row['created_at'] ? new \DateTime($row['created_at']) : null;
@@ -174,6 +180,8 @@ class ChatConfig
             'allow_source_downloads' => ['integer', $this->allowSourceDownloads ? 1 : 0],
             'is_online' => ['integer', $this->isOnline ? 1 : 0],
             'disclaimer' => ['clob', $this->disclaimer],
+            'temperature' => ['float', $this->temperature],
+            'model' => ['text', $this->model],
             'rag_collection_id' => ['text', $this->ragCollectionId],
             'updated_at' => ['timestamp', $this->updatedAt->format('Y-m-d H:i:s')]
         ];
@@ -283,6 +291,10 @@ class ChatConfig
     public function setIsOnline(bool $isOnline): void { $this->isOnline = $isOnline; }
     public function getDisclaimer(): string { return $this->disclaimer; }
     public function setDisclaimer(string $disclaimer): void { $this->disclaimer = $disclaimer; }
+    public function getTemperature(): ?float { return $this->temperature; }
+    public function setTemperature(?float $temperature): void { $this->temperature = $temperature; }
+    public function getModel(): ?string { return $this->model; }
+    public function setModel(?string $model): void { $this->model = empty($model) ? null : $model; }
     public function getRAGCollectionId(): ?string { return $this->ragCollectionId; }
     public function setRAGCollectionId(?string $ragCollectionId): void { $this->ragCollectionId = $ragCollectionId; }
     public function getCreatedAt(): ?\DateTime { return $this->createdAt; }

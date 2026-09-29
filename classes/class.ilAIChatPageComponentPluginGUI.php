@@ -109,7 +109,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             default:
                 // Execute standard PageComponent commands
                 $cmd = $this->ctrl->getCmd();
-                if (in_array($cmd, array("create", "save", "edit", "update", "cancel"))) {
+                $allowed = ["create", "save", "edit", "update", "cancel",
+                            "showBasicTab", "saveBasic",
+                            "showAdvancedTab", "saveAdvanced",
+                            "showStatisticsTab", "clearHistory"];
+                if (in_array($cmd, $allowed)) {
                     $this->$cmd();
                 } else {
                     $this->tpl->setOnScreenMessage("failure", $this->lng->txt("msg_invalid_cmd"), true);
@@ -160,7 +164,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
 
             if ($data !== null) {
-                if ($this->saveForm($data, true)) {
+                $flat_data = array_merge(...array_map(fn($s) => is_array($s) ? $s : [], $data));
+                if ($this->saveForm($flat_data, true)) {
                     $this->tpl->setOnScreenMessage("success", $this->lng->txt("saved_successfully"), true);
                     $this->returnToParent();
                     return;
@@ -176,47 +181,18 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
     public function edit() : void
     {
-        global $DIC;
-        $form = $this->initForm(false);
-        $renderer = $DIC->ui()->renderer();
-        $this->tpl->setContent($renderer->render($form));
+        $this->showBasicTab();
     }
 
     public function update() : void
     {
-        global $DIC;
-        $form = $this->initForm(false);
-        $request = $DIC->http()->request();
-
-        if ($request->getMethod() == "POST") {
-            $form = $form->withRequest($request);
-            $data = $form->getData();
-
-            if ($form->getError() != null) {
-                $renderer = $DIC->ui()->renderer();
-                $this->tpl->setContent($renderer->render($form));
-                return;
-            }
-
-            if ($data !== null) {
-                if ($this->saveForm($data, false)) {
-                    $this->tpl->setOnScreenMessage("success", $this->lng->txt("msg_obj_modified"), true);
-                    $this->returnToParent();
-                    return;
-                } else {
-                }
-            } else {
-            }
-        }
-
-        $renderer = $DIC->ui()->renderer();
-        $this->tpl->setContent($renderer->render($form));
+        $this->saveBasic();
     }
 
     /**
      * Init editing form
      */
-    protected function initForm(bool $a_create = false)
+    protected function initForm(bool $a_create = false, string $tab = 'all')
     {
         // Modern ILIAS 9 UI FileUpload component for background files
         global $DIC;
@@ -323,14 +299,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         }
 
-        // Set existing files for edit mode
-        if (!$a_create && isset($prop['background_files'])) {
+        // Set existing files for edit mode (only when $file_upload is a real file field, not a disabled text placeholder)
+        if (!$a_create && $file_handling_enabled && $background_files_enabled && isset($prop['background_files'])) {
             $existing_file_ids = is_string($prop['background_files']) ?
                 json_decode($prop['background_files'], true) :
                 $prop['background_files'];
 
             if (is_array($existing_file_ids) && !empty($existing_file_ids)) {
-                // File upload field expects array of string IDs - ensure we have that format
                 $file_upload = $file_upload->withValue($existing_file_ids);
             }
         }
@@ -351,7 +326,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $system_prompt = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('system_prompt_label'),
             $this->plugin->txt('system_prompt_info')
-        )->withDedicatedName('system_prompt')->withMaxLimit(4000)->withValue($prop['system_prompt'] ?? $defaults['prompt']);
+        )->withDedicatedName('system_prompt')->withMaxLimit(12000)->withValue($prop['system_prompt'] ?? $defaults['prompt']);
 
         // AI Service Selection (DYNAMIC - using LLMRegistry)
         // Get default AI service from config
@@ -509,23 +484,28 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $this->plugin->txt('setting_disabled_by_admin_info')
             )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('enable_rag_disabled');
         } else {
-            // RAG available - show checkbox
-            $enable_rag = $ui_factory->input()->field()->checkbox(
+            // RAG available – optionalGroup with source settings nested underneath
+            $rag_enabled_now = $this->toBool($prop['enable_rag'] ?? false);
+            $rag_sub_inputs = [
+                'show_sources' => $ui_factory->input()->field()->checkbox(
+                    $this->plugin->txt('show_sources_label'),
+                    $this->plugin->txt('show_sources_info')
+                )->withValue($this->toBool($prop['show_sources'] ?? false)),
+                'allow_source_downloads' => $ui_factory->input()->field()->checkbox(
+                    $this->plugin->txt('allow_source_downloads_label'),
+                    $this->plugin->txt('allow_source_downloads_info')
+                )->withValue($this->toBool($prop['allow_source_downloads'] ?? false)),
+            ];
+            $enable_rag = $ui_factory->input()->field()->optionalGroup(
+                $rag_sub_inputs,
                 $this->plugin->txt('enable_rag_label'),
                 $this->plugin->txt('enable_rag_info')
-            )->withDedicatedName('enable_rag')->withValue($this->toBool($prop['enable_rag'] ?? false));
+            );
+            $enable_rag = $enable_rag->withValue($rag_enabled_now ? [
+                'show_sources' => $this->toBool($prop['show_sources'] ?? false),
+                'allow_source_downloads' => $this->toBool($prop['allow_source_downloads'] ?? false),
+            ] : null);
         }
-
-        // Source visibility settings — only relevant when RAG is available
-        $show_sources = $ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('show_sources_label'),
-            $this->plugin->txt('show_sources_info')
-        )->withDedicatedName('show_sources')->withValue($this->toBool($prop['show_sources'] ?? true));
-
-        $allow_source_downloads = $ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('allow_source_downloads_label'),
-            $this->plugin->txt('allow_source_downloads_info')
-        )->withDedicatedName('allow_source_downloads')->withValue($this->toBool($prop['allow_source_downloads'] ?? true));
 
         // Disclaimer
         $disclaimer = $ui_factory->input()->field()->textarea(
@@ -533,51 +513,77 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('legal_disclaimer_info')
         )->withDedicatedName('disclaimer')->withMaxLimit(4000)->withValue($prop['disclaimer'] ?? $defaults['disclaimer']);
 
-        // Create the complete UI form with all fields
-        $form_action = $a_create ? $this->ctrl->getFormAction($this, 'create') : $this->ctrl->getFormAction($this, 'update');
+        // Determine form action based on context
+        if ($a_create) {
+            $form_action = $this->ctrl->getFormAction($this, 'create');
+        } elseif ($tab === 'basic') {
+            $form_action = $this->ctrl->getFormAction($this, 'saveBasic');
+        } else {
+            $form_action = $this->ctrl->getFormAction($this, 'update');
+        }
 
-        // Build form fields array, conditionally including fields based on global settings
-        $form_fields = [
-            'chat_title' => $chat_title,
-            'is_online' => $is_online,
-            'system_prompt' => $system_prompt
+        // ── Section 1: Grundeinstellungen ────────────────────────────────────────
+        $sections = [];
+        $sections[] = $ui_factory->input()->field()->section(
+            ['chat_title' => $chat_title, 'is_online' => $is_online, 'system_prompt' => $system_prompt],
+            $this->plugin->txt('section_general_label'),
+            $this->plugin->txt('section_general_info')
+        );
+
+        // ── Section 2: KI-Dienst & Konfiguration (create mode only) ─────────────
+        if ($tab !== 'basic') {
+            $ai_config_fields = [];
+            if ($force_default_service !== '1') {
+                $ai_config_fields['ai_service'] = $ai_service;
+            }
+            $ai_config_fields['max_memory'] = $max_memory;
+            $ai_config_fields['char_limit']  = $char_limit;
+            $sections[] = $ui_factory->input()->field()->section(
+                $ai_config_fields,
+                $this->plugin->txt('section_ai_config_label'),
+                $this->plugin->txt('section_ai_config_info')
+            );
+        }
+
+        // ── Section 3: Chat-Verhalten ─────────────────────────────────────────────
+        $behavior_fields = [
+            'persistent'         => $persistent,
+            'include_page_context' => $include_context,
         ];
-
-        // Only show AI service selector if not forced
-        if ($force_default_service !== '1') {
-            $form_fields['ai_service'] = $ai_service;
-        }
-
-        $form_fields['max_memory'] = $max_memory;
-        $form_fields['char_limit'] = $char_limit;
-        $form_fields['persistent'] = $persistent;
-        $form_fields['include_page_context'] = $include_context;
-
-        // Only show chat uploads field if file handling is enabled (hierarchical)
         if ($file_handling_enabled_for_service) {
-            $form_fields['enable_chat_uploads'] = $enable_chat_uploads;
+            $behavior_fields['enable_chat_uploads'] = $enable_chat_uploads;
         }
-
-        // Only show streaming field if globally enabled
         if ($streaming_globally_enabled) {
-            $form_fields['enable_streaming'] = $enable_streaming;
+            $behavior_fields['enable_streaming'] = $enable_streaming;
         }
-
-        // Only show RAG field if file handling enabled AND service supports it AND RAG globally enabled
         if ($file_handling_enabled_for_service && $service_supports_rag && $rag_globally_enabled) {
-            $form_fields['enable_rag'] = $enable_rag;
+            $behavior_fields['enable_rag'] = $enable_rag;
         }
+        $sections[] = $ui_factory->input()->field()->section(
+            $behavior_fields,
+            $this->plugin->txt('section_behavior_label'),
+            $this->plugin->txt('section_behavior_info')
+        );
 
-        $form_fields['show_sources'] = $show_sources;
-        $form_fields['allow_source_downloads'] = $allow_source_downloads;
-        $form_fields['disclaimer'] = $disclaimer;
-
-        // Only show background files field if file handling is enabled (hierarchical) AND background files are allowed
+        // ── Section 4: Hintergrunddateien (conditional) ──────────────────────────
         if ($file_handling_enabled_for_service && $background_files_enabled) {
-            $form_fields['background_files'] = $file_upload;
+            $sections[] = $ui_factory->input()->field()->section(
+                ['background_files' => $file_upload],
+                $this->plugin->txt('section_background_files_label'),
+                $this->plugin->txt('section_background_files_info')
+            );
         }
 
-        $form = $ui_factory->input()->container()->form()->standard($form_action, $form_fields);
+        // ── Section 5: Rechtliches (create mode only) ────────────────────────────
+        if ($tab !== 'basic') {
+            $sections[] = $ui_factory->input()->field()->section(
+                ['disclaimer' => $disclaimer],
+                $this->plugin->txt('section_legal_label'),
+                $this->plugin->txt('section_legal_info')
+            );
+        }
+
+        $form = $ui_factory->input()->container()->form()->standard($form_action, $sections);
 
 
         return $form;
@@ -696,14 +702,17 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $rag_now_enabled = false;
 
             if ($service_supports_rag && $rag_globally_enabled) {
-                $rag_now_enabled = (bool) ($form_data['enable_rag'] ?? false);
+                $rag_data = $form_data['enable_rag'] ?? null;
+                $rag_now_enabled = is_array($rag_data);
                 $chatConfig->setEnableRag($rag_now_enabled);
+                if ($rag_now_enabled) {
+                    $chatConfig->setShowSources((bool)($rag_data['show_sources'] ?? false));
+                    $chatConfig->setAllowSourceDownloads((bool)($rag_data['allow_source_downloads'] ?? false));
+                }
             } else {
                 $chatConfig->setEnableRag(false); // Force disabled when not supported or globally disabled
             }
 
-            $chatConfig->setShowSources((bool) ($form_data['show_sources'] ?? true));
-            $chatConfig->setAllowSourceDownloads((bool) ($form_data['allow_source_downloads'] ?? true));
             $chatConfig->setDisclaimer($form_data['disclaimer'] ?? '');
 
             // Save to database
@@ -758,6 +767,504 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     public function cancel()
     {
         $this->returnToParent();
+    }
+
+    // ============================================================
+    // Tab helpers
+    // ============================================================
+
+    private function getChatIdForEdit(): string
+    {
+        $properties = $this->getProperties();
+        return $properties['chat_id'] ?? '';
+    }
+
+    private function addEditTabs(string $active): void
+    {
+        global $DIC;
+        $tabs = $DIC->tabs();
+        $tabs->addTab('basic', $this->plugin->txt('tab_settings'),
+            $this->ctrl->getLinkTarget($this, 'showBasicTab'));
+        $tabs->addTab('advanced', $this->plugin->txt('tab_advanced_settings'),
+            $this->ctrl->getLinkTarget($this, 'showAdvancedTab'));
+        $tabs->addTab('statistics', $this->plugin->txt('tab_statistics'),
+            $this->ctrl->getLinkTarget($this, 'showStatisticsTab'));
+        $tabs->setTabActive($active);
+    }
+
+    // ============================================================
+    // Tab 1 – Einstellungen
+    // ============================================================
+
+    public function showBasicTab(): void
+    {
+        global $DIC;
+        $this->addEditTabs('basic');
+        $form = $this->initForm(false, 'basic');
+        $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+    }
+
+    public function saveBasic(): void
+    {
+        global $DIC;
+        $form = $this->initForm(false, 'basic');
+        if ($DIC->http()->request()->getMethod() === 'POST') {
+            $form = $form->withRequest($DIC->http()->request());
+            $data = $form->getData();
+            if ($form->getError() !== null) {
+                $this->addEditTabs('basic');
+                $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+                return;
+            }
+            if ($data !== null && $this->saveBasicFormData(array_merge(...array_map(fn($s) => is_array($s) ? $s : [], $data)))) {
+                $this->tpl->setOnScreenMessage('success', $this->lng->txt('msg_obj_modified'), true);
+                $this->ctrl->redirect($this, 'showBasicTab');
+                return;
+            }
+        }
+        $this->addEditTabs('basic');
+        $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+    }
+
+    private function saveBasicFormData(array $form_data): bool
+    {
+        $chat_id = $this->getChatIdForEdit();
+        if (empty($chat_id)) {
+            return false;
+        }
+
+        $file_handling_enabled = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
+        $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
+
+        $file_ids = [];
+        if ($file_handling_enabled && $background_files_enabled) {
+            $background_files = $form_data['background_files'] ?? [];
+            if (is_array($background_files)) {
+                foreach ($background_files as $file_data) {
+                    if (is_string($file_data)) {
+                        $file_ids[] = $file_data;
+                    } elseif (is_array($file_data) && isset($file_data['resource_id'])) {
+                        $file_ids[] = $file_data['resource_id'];
+                    }
+                }
+            }
+        }
+
+        $page_info = $this->getPageInfo();
+
+        try {
+            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            $chatConfig->setChatId($chat_id);
+            $chatConfig->setPageId((int)($page_info['page_id'] ?? 0));
+            $chatConfig->setParentId((int)($page_info['parent_id'] ?? 0));
+            $chatConfig->setParentType($page_info['parent_type'] ?? '');
+            $chatConfig->setTitle($form_data['chat_title'] ?? '');
+            $chatConfig->setSystemPrompt($form_data['system_prompt'] ?? '');
+
+            $this->saveBackgroundFilesToAttachments($chat_id, $file_ids, $chatConfig, false);
+
+            $chatConfig->setIsOnline((bool)($form_data['is_online'] ?? true));
+            $chatConfig->setPersistent((bool)($form_data['persistent'] ?? true));
+            $chatConfig->setIncludePageContext((bool)($form_data['include_page_context'] ?? true));
+
+            $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
+            if ($file_handling_enabled && $chat_uploads_globally_enabled) {
+                $chatConfig->setEnableChatUploads((bool)($form_data['enable_chat_uploads'] ?? false));
+            } else {
+                $chatConfig->setEnableChatUploads(false);
+            }
+
+            $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
+            if ($streaming_globally_enabled) {
+                $chatConfig->setEnableStreaming((bool)($form_data['enable_streaming'] ?? true));
+            } else {
+                $chatConfig->setEnableStreaming(false);
+            }
+
+            require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
+            require_once(__DIR__ . '/ai/class.AIChatPageComponentLLMRegistry.php');
+
+            $ai_service = $chatConfig->getAiService() ?: (\platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses');
+
+            $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
+            if ($llm === null) {
+                $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+                $firstService = !empty($availableServices) ? array_key_first($availableServices) : null;
+                $llm = $firstService ? \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService) : null;
+            }
+
+            $service_supports_rag = $llm ? $llm->supportsRAG() : false;
+            $rag_config_key = $ai_service . '_enable_rag';
+            $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
+            $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
+
+            $rag_was_enabled = $chatConfig->isEnableRag();
+            $rag_now_enabled = false;
+
+            if ($service_supports_rag && $rag_globally_enabled) {
+                $rag_data = $form_data['enable_rag'] ?? null;
+                $rag_now_enabled = is_array($rag_data);
+                $chatConfig->setEnableRag($rag_now_enabled);
+                if ($rag_now_enabled) {
+                    $chatConfig->setShowSources((bool)($rag_data['show_sources'] ?? false));
+                    $chatConfig->setAllowSourceDownloads((bool)($rag_data['allow_source_downloads'] ?? false));
+                }
+            } else {
+                $chatConfig->setEnableRag(false);
+            }
+
+            $result = $chatConfig->save();
+
+            if ($result && !$rag_was_enabled && $rag_now_enabled && $llm) {
+                $this->logger->info("RAG was activated, syncing background files", ['chat_id' => $chat_id]);
+                try {
+                    $sync_stats = $llm->syncBackgroundFilesToRAG($chatConfig);
+                    if ($sync_stats['uploaded'] > 0) {
+                        ilUtil::sendInfo(sprintf($this->plugin->txt('rag_sync_success'), $sync_stats['uploaded']), true);
+                    }
+                } catch (\Exception $e) {
+                    $this->logger->error("Background files RAG sync failed", ['error' => $e->getMessage()]);
+                    ilUtil::sendFailure($this->plugin->txt('rag_sync_error'), true);
+                }
+            }
+
+            if ($result) {
+                $properties = $this->getProperties();
+                $properties['chat_id'] = $chat_id;
+                $properties['chat_title'] = $form_data['chat_title'] ?? '';
+                return (bool)$this->updateElement($properties);
+            }
+
+            return false;
+
+        } catch (\Throwable $e) {
+            $this->logger->warning("Exception in saveBasicFormData", ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    // ============================================================
+    // Tab 2 – Erweiterte Einstellungen
+    // ============================================================
+
+    public function showAdvancedTab(): void
+    {
+        global $DIC;
+        $this->addEditTabs('advanced');
+        $form = $this->buildAdvancedForm();
+        $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+    }
+
+    public function saveAdvanced(): void
+    {
+        global $DIC;
+        $form = $this->buildAdvancedForm();
+        if ($DIC->http()->request()->getMethod() === 'POST') {
+            $form = $form->withRequest($DIC->http()->request());
+            $data = $form->getData();
+            if ($form->getError() !== null) {
+                $this->addEditTabs('advanced');
+                $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+                return;
+            }
+            if ($data !== null && $this->saveAdvancedFormData($data)) {
+                $this->tpl->setOnScreenMessage('success', $this->lng->txt('msg_obj_modified'), true);
+                $this->ctrl->redirect($this, 'showAdvancedTab');
+                return;
+            }
+        }
+        $this->addEditTabs('advanced');
+        $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+    }
+
+    private function buildAdvancedForm()
+    {
+        global $DIC;
+        $ui_factory = $DIC->ui()->factory();
+        $defaults = $this->getAIChatDefaults();
+
+        $prop = [];
+        $chat_id = $this->getChatIdForEdit();
+        if (!empty($chat_id)) {
+            try {
+                $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+                if ($chatConfig->exists()) {
+                    $prop = [
+                        'max_memory'  => $chatConfig->getMaxMemory(),
+                        'char_limit'  => $chatConfig->getCharLimit(),
+                        'disclaimer'  => $chatConfig->getDisclaimer(),
+                        'temperature' => $chatConfig->getTemperature(),
+                        'ai_service'  => $chatConfig->getAiService(),
+                        'model'       => $chatConfig->getModel(),
+                    ];
+                }
+            } catch (\Exception $e) {
+                $this->logger->warning("Error loading ChatConfig for advanced form", ['error' => $e->getMessage()]);
+            }
+        }
+
+        // ── AI Service ──────────────────────────────────────────────────────────
+        $default_ai_service  = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
+        $force_default_svc   = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
+        $service_options     = \ai\AIChatPageComponentLLMRegistry::getServiceOptions(true);
+
+        $current_ai_service = $prop['ai_service'] ?? $default_ai_service;
+        if (!isset($service_options[$current_ai_service])) {
+            $current_ai_service = array_key_first($service_options) ?: $default_ai_service;
+        }
+
+        if ($force_default_svc !== '1') {
+            $ai_service_field = $ui_factory->input()->field()->select(
+                $this->plugin->txt('ai_service_label'),
+                $service_options,
+                $this->plugin->txt('ai_service_info')
+            )->withDedicatedName('ai_service')->withValue($current_ai_service);
+        } else {
+            $ai_service_field = null;
+        }
+
+        // ── Model override ───────────────────────────────────────────────────────
+        $force_model_key = $current_ai_service . '_force_model';
+        $force_model     = \platform\AIChatPageComponentConfig::get($force_model_key) === '1';
+        $current_model   = $prop['model'] ?? null;
+
+        if ($force_model) {
+            $model_field = null;
+        } else {
+            $global_default_model = \platform\AIChatPageComponentConfig::get($current_ai_service . '_selected_model') ?: '';
+            $cached_models = \platform\AIChatPageComponentConfig::get('cached_models');
+            $model_value = $current_model ?? $global_default_model;
+            $model_info = $this->plugin->txt('model_override_info')
+                . ($global_default_model ? ' (' . $this->plugin->txt('default_label') . ': ' . ($cached_models[$global_default_model] ?? $global_default_model) . ')' : '');
+            if (is_array($cached_models) && !empty($cached_models)) {
+                $model_field = $ui_factory->input()->field()->select(
+                    $this->plugin->txt('model_override_label'),
+                    $cached_models,
+                    $model_info
+                )->withDedicatedName('model_override');
+                if ($model_value && isset($cached_models[$model_value])) {
+                    $model_field = $model_field->withValue($model_value);
+                }
+            } else {
+                $model_field = $ui_factory->input()->field()->text(
+                    $this->plugin->txt('model_override_label'),
+                    $model_info
+                )->withDedicatedName('model_override')->withValue((string)$model_value);
+            }
+        }
+
+        // ── Max memory / Char limit ──────────────────────────────────────────────
+        $max_memory = $ui_factory->input()->field()->numeric(
+            $this->plugin->txt('max_memory_label'),
+            $this->plugin->txt('max_memory_info')
+        )->withDedicatedName('max_memory')
+         ->withValue((int)($prop['max_memory'] ?? $defaults['max_memory_messages']));
+
+        $char_limit = $ui_factory->input()->field()->numeric(
+            $this->plugin->txt('char_limit_label'),
+            $this->plugin->txt('char_limit_info')
+        )->withDedicatedName('char_limit')
+         ->withValue((int)($prop['char_limit'] ?? $defaults['characters_limit']));
+
+        // ── Temperature override ─────────────────────────────────────────────────
+        $force_temp_key      = $current_ai_service . '_force_temperature';
+        $force_temperature   = \platform\AIChatPageComponentConfig::get($force_temp_key) === '1';
+        $temp_override_value = $prop['temperature'] ?? null;
+        $temp_display        = $temp_override_value !== null
+            ? rtrim(rtrim(number_format((float)$temp_override_value, 2, '.', ''), '0'), '.')
+            : '';
+
+        if ($force_temperature) {
+            $temperature_override = null;
+        } else {
+            $global_default_temp = \platform\AIChatPageComponentConfig::get($current_ai_service . '_temperature') ?: '0.7';
+            $temp_value = $temp_override_value !== null ? $temp_display : (string)$global_default_temp;
+            $temp_info = $this->plugin->txt('temperature_override_info')
+                . ' (' . $this->plugin->txt('default_label') . ': ' . $global_default_temp . ')';
+            $temperature_override = $ui_factory->input()->field()->text(
+                $this->plugin->txt('temperature_override_label'),
+                $temp_info
+            )->withDedicatedName('temperature_override')->withMaxLength(10)->withValue($temp_value);
+        }
+
+        // ── Disclaimer ───────────────────────────────────────────────────────────
+        $disclaimer = $ui_factory->input()->field()->textarea(
+            $this->plugin->txt('legal_disclaimer_label'),
+            $this->plugin->txt('legal_disclaimer_info')
+        )->withDedicatedName('disclaimer')
+         ->withMaxLimit(4000)
+         ->withValue($prop['disclaimer'] ?? $defaults['disclaimer']);
+
+        $form_fields_adv = [];
+        if ($ai_service_field !== null) {
+            $form_fields_adv['ai_service'] = $ai_service_field;
+        }
+        if ($model_field !== null) {
+            $form_fields_adv['model_override'] = $model_field;
+        }
+        $form_fields_adv['max_memory']  = $max_memory;
+        $form_fields_adv['char_limit']  = $char_limit;
+        if ($temperature_override !== null) {
+            $form_fields_adv['temperature_override'] = $temperature_override;
+        }
+        $form_fields_adv['disclaimer'] = $disclaimer;
+
+        return $ui_factory->input()->container()->form()->standard(
+            $this->ctrl->getFormAction($this, 'saveAdvanced'),
+            $form_fields_adv
+        );
+    }
+
+    private function saveAdvancedFormData(array $form_data): bool
+    {
+        $chat_id = $this->getChatIdForEdit();
+        if (empty($chat_id)) {
+            return false;
+        }
+
+        try {
+            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            if (!$chatConfig->exists()) {
+                return false;
+            }
+            // AI service
+            $force_default_svc = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
+            if ($force_default_svc === '1') {
+                $chatConfig->setAiService(\platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses');
+            } elseif (!empty($form_data['ai_service'])) {
+                $chatConfig->setAiService($form_data['ai_service']);
+            }
+
+            // Model override
+            $ai_service_id = $chatConfig->getAiService();
+            $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
+            if ($force_model) {
+                $chatConfig->setModel(null);
+            } else {
+                $model_value = $form_data['model_override'] ?? null;
+                $model_value = is_string($model_value) && $model_value !== '' ? $model_value : null;
+                // Save null when value matches global default so chat stays linked to global default
+                $global_default_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_selected_model') ?: '';
+                if ($model_value === $global_default_model) {
+                    $model_value = null;
+                }
+                $chatConfig->setModel($model_value);
+            }
+
+            $chatConfig->setMaxMemory((int)($form_data['max_memory'] ?? 10));
+            $chatConfig->setCharLimit((int)($form_data['char_limit'] ?? 2000));
+
+            $force_temperature = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_temperature') === '1';
+            if ($force_temperature) {
+                $chatConfig->setTemperature(null);
+            } else {
+                $raw = str_replace(',', '.', (string)($form_data['temperature_override'] ?? ''));
+                $temp_value = is_numeric($raw) ? max(0.0, min(2.0, (float)$raw)) : null;
+                // Save null when value matches global default so chat stays linked to global default
+                $global_default_temp = (float)(\platform\AIChatPageComponentConfig::get($ai_service_id . '_temperature') ?: 0.7);
+                if ($temp_value !== null && abs($temp_value - $global_default_temp) < 0.001) {
+                    $temp_value = null;
+                }
+                $chatConfig->setTemperature($temp_value);
+            }
+
+            $chatConfig->setDisclaimer($form_data['disclaimer'] ?? '');
+            return (bool)$chatConfig->save();
+        } catch (\Exception $e) {
+            $this->logger->warning("Exception in saveAdvancedFormData", ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    // ============================================================
+    // Tab 3 – Statistik
+    // ============================================================
+
+    public function showStatisticsTab(): void
+    {
+        global $DIC;
+        $this->addEditTabs('statistics');
+
+        $chat_id = $this->getChatIdForEdit();
+        $ui_factory = $DIC->ui()->factory();
+        $renderer   = $DIC->ui()->renderer();
+
+        if (empty($chat_id)) {
+            $this->tpl->setContent($renderer->render(
+                $ui_factory->messageBox()->info($this->plugin->txt('stat_no_sessions'))
+            ));
+            return;
+        }
+
+        $db = $DIC->database();
+
+        $res = $db->queryF(
+            "SELECT COUNT(*) AS session_count, MAX(last_activity) AS last_activity
+               FROM pcaic_sessions WHERE chat_id = %s",
+            ['text'], [$chat_id]
+        );
+        $row           = $db->fetchAssoc($res) ?? [];
+        $session_count = (int)($row['session_count'] ?? 0);
+        $last_activity = $row['last_activity'] ?? null;
+
+        $res = $db->queryF(
+            "SELECT COUNT(*) AS message_count
+               FROM pcaic_messages m
+               JOIN pcaic_sessions s ON m.session_id = s.session_id
+              WHERE s.chat_id = %s",
+            ['text'], [$chat_id]
+        );
+        $msg_row       = $db->fetchAssoc($res) ?? [];
+        $message_count = (int)($msg_row['message_count'] ?? 0);
+
+        try {
+            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            $bg_count   = $chatConfig->exists() ? count($chatConfig->getBackgroundFiles()) : 0;
+        } catch (\Exception $e) {
+            $bg_count = 0;
+        }
+
+        $last_activity_str = $last_activity
+            ? (new \DateTime($last_activity))->format('d.m.Y H:i')
+            : '–';
+
+        $listing = $ui_factory->listing()->descriptive([
+            $this->plugin->txt('stat_sessions')         => (string)$session_count,
+            $this->plugin->txt('stat_messages')         => (string)$message_count,
+            $this->plugin->txt('stat_last_activity')    => $last_activity_str,
+            $this->plugin->txt('stat_background_files') => (string)$bg_count,
+        ]);
+
+        $panel = $ui_factory->panel()->standard(
+            $this->plugin->txt('tab_statistics'),
+            $listing
+        );
+
+        $html = '';
+        if ($session_count > 0) {
+            $clear_btn = $ui_factory->button()->standard(
+                $this->plugin->txt('stat_clear_history'),
+                $this->ctrl->getLinkTarget($this, 'clearHistory')
+            );
+            $html .= '<div style="margin-bottom:1rem">' . $renderer->render($clear_btn) . '</div>';
+        }
+        $html .= $renderer->render($panel);
+
+        $this->tpl->setContent($html);
+    }
+
+    public function clearHistory(): void
+    {
+        $chat_id = $this->getChatIdForEdit();
+        if (!empty($chat_id)) {
+            try {
+                $this->plugin->clearChatHistory($chat_id);
+                $this->tpl->setOnScreenMessage('success', $this->plugin->txt('stat_history_cleared'), true);
+            } catch (\Exception $e) {
+                $this->tpl->setOnScreenMessage('failure', $e->getMessage(), true);
+            }
+        }
+        $this->ctrl->redirect($this, 'showStatisticsTab');
     }
 
     /**

@@ -120,6 +120,12 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             $inputs['openai_selected_model'] = $select_field;
         }
 
+        $force_model = \platform\AIChatPageComponentConfig::get('openai_force_model') === '1';
+        $inputs['openai_force_model'] = $ui_factory->input()->field()->checkbox(
+            $plugin->txt('config_force_model'),
+            $plugin->txt('config_force_model_info')
+        )->withValue($force_model);
+
         // Temperature - use text field with custom validation to support comma/dot
         $temperature = \platform\AIChatPageComponentConfig::get('openai_temperature');
         $temp_value = '0.7'; // default as string
@@ -151,11 +157,17 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         );
 
         $inputs['openai_temperature'] = $ui_factory->input()->field()->text(
-            $plugin->txt('config_temperature'),
+            $plugin->txt('config_default_temperature'),
             $plugin->txt('config_temperature_info')
         )->withMaxLength(10)->withValue($temp_value)
          ->withAdditionalTransformation($temp_constraint)
          ->withAdditionalTransformation($temp_trafo);
+
+        $force_temperature = \platform\AIChatPageComponentConfig::get('openai_force_temperature') === '1';
+        $inputs['openai_force_temperature'] = $ui_factory->input()->field()->checkbox(
+            $plugin->txt('config_force_temperature'),
+            $plugin->txt('config_force_temperature_info')
+        )->withValue($force_temperature);
 
         // File handling enabled
         $file_handling_enabled = \platform\AIChatPageComponentConfig::get('openai_file_handling_enabled') ?? '1';
@@ -196,7 +208,9 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             'openai_api_url' => 'https://api.openai.com',
             'openai_api_token' => '',
             'openai_selected_model' => 'gpt-4o',
+            'openai_force_model' => '0',
             'openai_temperature' => 0.7,
+            'openai_force_temperature' => '0',
             'openai_file_handling_enabled' => '1',
         ];
     }
@@ -211,7 +225,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             'streaming' => false, // OpenAI streaming not yet implemented
             'rag' => false, // OpenAI doesn't support RAG in this plugin
             'multimodal' => true,
-            'file_types' => ['txt', 'md', 'csv', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
+            'file_types' => ['txt', 'csv', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
             'rag_file_types' => [],
             'max_tokens' => 128000, // GPT-4o context window
         ];
@@ -311,10 +325,10 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
     {
         if ($ragEnabled) {
             // RAG Mode: Text-based files (would use Assistants API file search)
-            return ['txt', 'md', 'csv', 'pdf'];
+            return ['txt', 'csv', 'pdf'];
         } else {
             // Multimodal Mode: Images supported by GPT-4 Vision
-            return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'md', 'csv'];
+            return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'csv'];
         }
     }
 

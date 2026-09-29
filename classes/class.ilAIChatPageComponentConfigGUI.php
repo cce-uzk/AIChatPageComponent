@@ -380,14 +380,14 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
             $selected_service = array_key_first($service_options);
         }
 
+        $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
+
         $inputs['selected_ai_service'] = $ui_factory->input()->field()->select(
             $this->plugin->txt('config_selected_ai_service'),
             $service_options,
             $this->plugin->txt('config_selected_ai_service_info')
         )->withValue($selected_service);
 
-        // Force default AI service for all chats
-        $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
         $inputs['force_default_ai_service'] = $ui_factory->input()->field()->checkbox(
             $this->plugin->txt('config_force_default_ai_service'),
             $this->plugin->txt('config_force_default_ai_service_info')
@@ -675,14 +675,8 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 // RAMSES configuration is handled in separate RAMSES tab
 
                 // Save service selection
-                if (isset($services_data['selected_ai_service'])) {
-                    \platform\AIChatPageComponentConfig::set('selected_ai_service', $services_data['selected_ai_service']);
-                }
-
-                // Save force default service setting
-                if (isset($services_data['force_default_ai_service'])) {
-                    \platform\AIChatPageComponentConfig::set('force_default_ai_service', $services_data['force_default_ai_service'] ? '1' : '0');
-                }
+                \platform\AIChatPageComponentConfig::set('selected_ai_service', $services_data['selected_ai_service'] ?? 'ramses');
+                \platform\AIChatPageComponentConfig::set('force_default_ai_service', ($services_data['force_default_ai_service'] ?? false) ? '1' : '0');
 
                 // OpenAI configuration is handled in separate OpenAI tab
 
