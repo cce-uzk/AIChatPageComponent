@@ -190,20 +190,7 @@ try {
             if ($chat_config->isShowSources()) {
                 $metadata = $llm->getLastResponseMetadata();
                 if ($metadata !== null && !empty($metadata)) {
-                    $bg_urls = $chat_config->isAllowSourceDownloads()
-                        ? getBackgroundFileDownloadUrls($chat_id)
-                        : [];
-                    $json_response['sources'] = array_map(function ($source) use ($bg_urls, $chat_id) {
-                        $filename = $source['filename'] ?? 'Unknown';
-                        $attachment_id = $bg_urls[$filename] ?? null;
-                        return [
-                            'filename' => $filename,
-                            'pages' => $source['page_numbers'] ?? [],
-                            'url' => $source['url'] ?? null,
-                            'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
-                            'download_url' => $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null,
-                        ];
-                    }, $metadata);
+                    $json_response['sources'] = buildClientSources($chat_config, $chat_id, $metadata);
                 }
             }
 
@@ -223,6 +210,11 @@ try {
             header('Content-Type: text/event-stream');
             header('Cache-Control: no-cache');
             header('Connection: keep-alive');
+            // Events must reach the browser immediately: no PHP output buffer, no proxy buffering
+            header('X-Accel-Buffering: no');
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
 
             $message = $data['message'] ?? '';
             $attachment_ids = $data['attachment_ids'] ?? [];
@@ -285,6 +277,20 @@ try {
             $llm = createLLMInstance($ai_service);
             $llm->setStreaming($streaming_enabled);
 
+            // RAG sources are sent before the answer, so that citations can be shown while streaming
+            if ($chat_config->isShowSources()) {
+                $llm->setSourcesListener(function (array $metadata) use ($chat_config, $chat_id): void {
+                    if ($metadata === []) {
+                        return;
+                    }
+                    echo "data: " . json_encode([
+                        'type' => 'sources',
+                        'sources' => buildClientSources($chat_config, $chat_id, $metadata),
+                    ]) . "\n\n";
+                    flush();
+                });
+            }
+
             // Suppress inline citations if sources are hidden
             if (!$chat_config->isShowSources()) {
                 $llm->setPrompt(
@@ -321,20 +327,7 @@ try {
             if ($chat_config->isShowSources()) {
                 $metadata = $llm->getLastResponseMetadata();
                 if ($metadata !== null && !empty($metadata)) {
-                    $bg_urls = $chat_config->isAllowSourceDownloads()
-                        ? getBackgroundFileDownloadUrls($chat_id)
-                        : [];
-                    $complete_data['sources'] = array_map(function ($source) use ($bg_urls, $chat_id) {
-                        $filename = $source['filename'] ?? 'Unknown';
-                        $attachment_id = $bg_urls[$filename] ?? null;
-                        return [
-                            'filename' => $filename,
-                            'pages' => $source['page_numbers'] ?? [],
-                            'url' => $source['url'] ?? null,
-                            'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
-                            'download_url' => $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null,
-                        ];
-                    }, $metadata);
+                    $complete_data['sources'] = buildClientSources($chat_config, $chat_id, $metadata);
                 }
             }
 
@@ -817,7 +810,8 @@ try {
             break;
     }
 
-} catch (\Exception $e) {
+} catch (\Throwable $e) {
+    // Also PHP errors, so that a stream always ends with an error event
     $is_no_service = ($e->getMessage() === 'no_service_available');
     $is_rag_unavailable = ($e->getMessage() === \ai\AIChatPageComponentRAG::UNAVAILABLE);
     $is_service_busy = ($e->getMessage() === \ai\AIChatPageComponentLLM::SERVICE_BUSY);
@@ -1173,6 +1167,31 @@ function stripSourcesFromResponse(string $text): string
     $text = preg_replace('/https?:\/\/\S+/', '', $text);
 
     return rtrim($text);
+}
+
+/**
+ * Sources of an answer as sent to the browser
+ *
+ * @param array $metadata Sources from the AI service (see AIChatPageComponentLLM::getLastResponseMetadata())
+ * @return array<int, array{filename: string, pages: array, url: ?string, excerpt: ?string, download_url: ?string}>
+ */
+function buildClientSources(ChatConfig $chat_config, string $chat_id, array $metadata): array
+{
+    $bg_urls = $chat_config->isAllowSourceDownloads()
+        ? getBackgroundFileDownloadUrls($chat_id)
+        : [];
+
+    return array_map(static function ($source) use ($bg_urls, $chat_id): array {
+        $filename = $source['filename'] ?? 'Unknown';
+        $attachment_id = $bg_urls[$filename] ?? null;
+        return [
+            'filename' => $filename,
+            'pages' => $source['page_numbers'] ?? [],
+            'url' => $source['url'] ?? null,
+            'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
+            'download_url' => $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null,
+        ];
+    }, array_values($metadata));
 }
 
 /**

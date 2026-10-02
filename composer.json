@@ -8,7 +8,7 @@
     "ai chat page component"
   ],
   "minimum-stability": "stable",
-  "license": "proprietary",
+  "license": "GPL-3.0-only",
   "authors": [
     {
       "name": "Universitaet zu Koeln - CompetenceCenter E-Learning",

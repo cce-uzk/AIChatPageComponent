@@ -41,6 +41,32 @@ abstract class AIChatPageComponentLLM
     /** @var int[] HTTP status codes of the AI service that are reported as SERVICE_BUSY */
     public const SERVICE_BUSY_HTTP_CODES = [429, 502, 503, 504];
 
+    /**
+     * @var string Added to the system prompt in RAG mode. The RAG service requires a
+     *             citation for every statement and always returns the most similar
+     *             passages, also if none of them is relevant to the question.
+     */
+    public const RAG_CITATION_INSTRUCTION = 'Citation rules for the provided context: Cite a context item only where'
+        . ' the statement is actually based on that item, using the citation format specified in the context'
+        . ' instructions. Do not add citations to statements that are not derived from the context. If none of'
+        . ' the context items is relevant to the question, answer without citations and without referring to'
+        . ' the context.';
+
+    /** @var int Seconds to establish the connection to the AI service */
+    protected const CONNECT_TIMEOUT = 15;
+
+    /** @var int Seconds until the first data of a streamed answer */
+    protected const STREAM_FIRST_DATA_TIMEOUT = 120;
+
+    /** @var int Seconds without data in a streamed answer after which it is aborted */
+    protected const STREAM_IDLE_TIMEOUT = 60;
+
+    /** @var int Seconds to wait for further data after the service reported the end of the answer */
+    protected const STREAM_END_GRACE = 3;
+
+    /** @var int Maximum duration of a request to the AI service, in seconds */
+    protected const REQUEST_TIMEOUT = 600;
+
     protected ?int $max_memory_messages = null;
     protected ?string $prompt = null;
     protected bool $streaming = false;
@@ -58,6 +84,8 @@ abstract class AIChatPageComponentLLM
     protected array $omitted_images = [];
     // Background files of the chat are not (yet) usable in the RAG
     protected bool $rag_incomplete = false;
+    // Receives the sources of a streamed RAG answer before the answer is generated
+    protected ?\Closure $sources_listener = null;
 
     public function __construct()
     {
@@ -267,6 +295,151 @@ abstract class AIChatPageComponentLLM
     public function setStreaming(bool $streaming): void
     {
         $this->streaming = $streaming;
+    }
+
+    /**
+     * Listener for the sources of a streamed RAG answer
+     *
+     * The sources are known after the retrieval, before the answer is generated, so
+     * that they can be shown while the answer is streamed.
+     *
+     * @param callable|null $listener Receives the sources (see getLastResponseMetadata())
+     */
+    public function setSourcesListener(?callable $listener): void
+    {
+        $this->sources_listener = $listener === null ? null : \Closure::fromCallable($listener);
+    }
+
+    /**
+     * Set timeouts and, in streaming mode, forward the text fragments of a chat request
+     *
+     * AI services occasionally keep a stream open without sending the end marker or
+     * closing the connection. The transfer therefore ends
+     * - at the end marker [DONE],
+     * - STREAM_END_GRACE seconds after the service reported the end of the answer
+     *   (finish_reason), if nothing follows,
+     * - with an error after STREAM_FIRST_DATA_TIMEOUT seconds without any data or
+     *   STREAM_IDLE_TIMEOUT seconds without further data.
+     * Events may be split across several received chunks, so only complete lines are
+     * processed.
+     *
+     * @param string $response_content Receives the raw response in streaming mode
+     * @return \stdClass State of the stream, evaluated by resolveChatRequestError()
+     */
+    protected function configureChatRequest(\CurlHandle $curl, string &$response_content): \stdClass
+    {
+        $state = new \stdClass();
+        $state->done = false;           // end marker received
+        $state->finished = false;       // finish_reason received
+        $state->finished_at = null;
+        $state->ended_after_finish = false;
+        $state->idle = false;           // aborted for lack of data
+        $state->received = false;
+        $state->last_data_at = microtime(true);
+
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, static::CONNECT_TIMEOUT);
+        curl_setopt($curl, CURLOPT_TIMEOUT, static::REQUEST_TIMEOUT);
+
+        if (!$this->isStreaming()) {
+            return $state;
+        }
+
+        $buffer = '';
+        curl_setopt($curl, CURLOPT_WRITEFUNCTION, function ($curl, string $chunk) use (&$response_content, &$buffer, $state): int {
+            $response_content .= $chunk;
+            $buffer .= $chunk;
+            $state->received = true;
+            $state->last_data_at = microtime(true);
+
+            while (($position = strpos($buffer, "\n")) !== false) {
+                $line = trim(substr($buffer, 0, $position));
+                $buffer = substr($buffer, $position + 1);
+
+                if (strpos($line, 'data:') !== 0) {
+                    continue;
+                }
+                $json_data = trim(substr($line, strlen('data:')));
+                if ($json_data === '[DONE]') {
+                    $state->done = true;
+                    return 0; // Ends the transfer; handled as success in resolveChatRequestError()
+                }
+
+                $json = json_decode($json_data, true);
+                if (!is_array($json)) {
+                    continue;
+                }
+                if (!empty($json['choices'][0]['finish_reason']) && $state->finished_at === null) {
+                    $state->finished = true;
+                    $state->finished_at = microtime(true);
+                }
+                $content = $json['choices'][0]['delta']['content'] ?? '';
+                if (is_string($content) && $content !== '') {
+                    echo "data: " . json_encode(['type' => 'chunk', 'content' => $content]) . "\n\n";
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                }
+            }
+
+            return strlen($chunk);
+        });
+
+        // Called by cURL about once per second, also while no data arrives
+        curl_setopt($curl, CURLOPT_NOPROGRESS, false);
+        curl_setopt($curl, CURLOPT_XFERINFOFUNCTION, function () use ($state): int {
+            $now = microtime(true);
+            if ($state->finished_at !== null && $now - $state->finished_at > static::STREAM_END_GRACE) {
+                $state->ended_after_finish = true;
+                return 1;
+            }
+            $limit = $state->received ? static::STREAM_IDLE_TIMEOUT : static::STREAM_FIRST_DATA_TIMEOUT;
+            if ($now - $state->last_data_at > $limit) {
+                $state->idle = true;
+                return 1;
+            }
+            return 0;
+        });
+
+        return $state;
+    }
+
+    /**
+     * Evaluate the cURL error of a chat request
+     *
+     * Ending the transfer at the end marker or after the reported end of the answer is
+     * not an error. A timeout before the answer was complete is reported to the user as
+     * SERVICE_BUSY.
+     *
+     * @return int The cURL error number, 0 if the request succeeded
+     * @throws AIChatPageComponentException On a timeout before the answer was complete
+     */
+    protected function resolveChatRequestError(int $error_number, \stdClass $state, string $api_url): int
+    {
+        if ($error_number === CURLE_WRITE_ERROR && $state->done) {
+            return 0;
+        }
+
+        if ($error_number === CURLE_ABORTED_BY_CALLBACK && $state->ended_after_finish) {
+            $this->logger->info("AI service kept the stream open after the end of the answer", ['url' => $api_url]);
+            return 0;
+        }
+
+        $timed_out = $error_number === CURLE_OPERATION_TIMEDOUT
+            || ($error_number === CURLE_ABORTED_BY_CALLBACK && $state->idle);
+        if ($timed_out) {
+            if ($state->finished) {
+                return 0;
+            }
+            $this->logger->warning("AI service request timed out", [
+                'url' => $api_url,
+                'streaming' => $this->isStreaming(),
+                'data_received' => $state->received,
+            ]);
+            throw new AIChatPageComponentException(self::SERVICE_BUSY, 504);
+        }
+
+        return $error_number;
     }
 
     /**
@@ -1097,11 +1270,29 @@ abstract class AIChatPageComponentLLM
             return $this->sendMessagesArray($this->addNoSourcesNote($messages), $context_resources);
         }
 
-        $response = $this->sendMessagesArray($this->toTextMessages($retrieval['messages']), $context_resources);
-
         $this->last_response_metadata = AIChatPageComponentRAG::chunksToSources($retrieval['chunks']);
+        if ($this->isStreaming() && $this->sources_listener !== null) {
+            ($this->sources_listener)($this->last_response_metadata);
+        }
+
+        $prompt = $this->prompt;
+        $this->prompt = $this->getRagSystemPrompt();
+        try {
+            $response = $this->sendMessagesArray($this->toTextMessages($retrieval['messages']), $context_resources);
+        } finally {
+            $this->prompt = $prompt;
+        }
 
         return AIChatPageComponentRAG::convertCitationMarkers($response);
+    }
+
+    /**
+     * System prompt of the chat with the citation rules for RAG answers
+     */
+    protected function getRagSystemPrompt(): string
+    {
+        $prompt = trim((string) $this->prompt);
+        return ($prompt === '' ? '' : $prompt . "\n\n") . self::RAG_CITATION_INSTRUCTION;
     }
 
     /**

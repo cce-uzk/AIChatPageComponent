@@ -210,6 +210,19 @@ demo_assistant_creative#:#Hallo! Lassen Sie uns gemeinsam kreativ werden! Ob Bra
 sources_label#:#Quellen
 page_label#:#Seite
 pages_label#:#Seiten
+table_copy#:#Tabelle kopieren
+table_export_csv#:#Tabelle als CSV exportieren
+code_copy#:#Code kopieren
+citation_more_source#:#1 weitere Quelle
+citation_more_sources#:#%s weitere Quellen
+source_previous#:#Vorherige Quelle
+source_next#:#Nächste Quelle
+scroll_to_bottom#:#Zur neuesten Nachricht
+alert_note#:#Hinweis
+alert_tip#:#Tipp
+alert_important#:#Wichtig
+alert_warning#:#Warnung
+alert_caution#:#Vorsicht
 tab_statistics#:#Statistik
 stat_title#:#Titel
 stat_obj_id#:#Objekt-ID

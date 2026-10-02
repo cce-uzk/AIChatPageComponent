@@ -210,6 +210,19 @@ demo_assistant_creative#:#Hello! Let's get creative together! Whether it's brain
 sources_label#:#Sources
 page_label#:#Page
 pages_label#:#Pages
+table_copy#:#Copy table
+table_export_csv#:#Export table as CSV
+code_copy#:#Copy code
+citation_more_source#:#1 more source
+citation_more_sources#:#%s more sources
+source_previous#:#Previous source
+source_next#:#Next source
+scroll_to_bottom#:#Scroll to the latest message
+alert_note#:#Note
+alert_tip#:#Tip
+alert_important#:#Important
+alert_warning#:#Warning
+alert_caution#:#Caution
 tab_statistics#:#Statistics
 stat_title#:#Title
 stat_obj_id#:#Object ID

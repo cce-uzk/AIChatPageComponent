@@ -33,6 +33,7 @@
      data-stop-generation="{STOP_GENERATION}"
      data-remove-attachment="{REMOVE_ATTACHMENT}"
      data-send-aria-label="{SEND_ARIA_LABEL}"
+     data-loading-text="{LOADING_TEXT}"
      data-max-file-size-mb="{MAX_FILE_SIZE_MB}"
      data-max-attachments-per-message="{MAX_ATTACHMENTS_PER_MESSAGE}"
      data-error-max-attachments="{ERROR_MAX_ATTACHMENTS}"
@@ -47,6 +48,18 @@
      data-rag-incomplete-notice="{RAG_INCOMPLETE_NOTICE}"
      data-page-label="{PAGE_LABEL}"
      data-pages-label="{PAGES_LABEL}"
+     data-table-copy="{TABLE_COPY}"
+     data-table-export-csv="{TABLE_EXPORT_CSV}"
+     data-code-copy="{CODE_COPY}"
+     data-citation-more-source="{CITATION_MORE_SOURCE}"
+     data-citation-more-sources="{CITATION_MORE_SOURCES}"
+     data-source-previous="{SOURCE_PREVIOUS}"
+     data-source-next="{SOURCE_NEXT}"
+     data-alert-note="{ALERT_NOTE}"
+     data-alert-tip="{ALERT_TIP}"
+     data-alert-important="{ALERT_IMPORTANT}"
+     data-alert-warning="{ALERT_WARNING}"
+     data-alert-caution="{ALERT_CAUTION}"
      data-is-admin="{IS_ADMIN}">
 
     <!-- Chat Header -->
@@ -89,6 +102,21 @@
         <!-- Messages will be dynamically inserted here -->
     </div>
 
+    <!-- Button to the latest message, shown while the messages are scrolled up -->
+    <div class="ai-chat-scroll-anchor">
+        <button class="ai-chat-scroll-bottom"
+                type="button"
+                title="{SCROLL_TO_BOTTOM}"
+                aria-label="{SCROLL_TO_BOTTOM}"
+                aria-hidden="true"
+                tabindex="-1">
+            <!-- Arrow of the send button, pointing down -->
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" focusable="false">
+                <path transform="rotate(180 10 10)" d="M8.99992 16V6.41407L5.70696 9.70704C5.31643 10.0976 4.68342 10.0976 4.29289 9.70704C3.90237 9.31652 3.90237 8.6835 4.29289 8.29298L9.29289 3.29298L9.36907 3.22462C9.76184 2.90427 10.3408 2.92686 10.707 3.29298L15.707 8.29298L15.7753 8.36915C16.0957 8.76192 16.0731 9.34092 15.707 9.70704C15.3408 10.0732 14.7618 10.0958 14.3691 9.7754L14.2929 9.70704L10.9999 6.41407V16C10.9999 16.5523 10.5522 17 9.99992 17C9.44764 17 8.99992 16.5523 8.99992 16Z"></path>
+            </svg>
+        </button>
+    </div>
+
     <!-- Screen reader only status announcements -->
     <div class="ai-chat-sr-status"
          role="status"
@@ -96,18 +124,6 @@
          aria-atomic="true"
          class="sr-only"></div>
 
-    <!-- Loading Animation -->
-    <div class="ai-chat-loading"
-         style="display: none;"
-         role="status"
-         aria-live="polite">
-        <div class="ai-chat-loading-dots" aria-hidden="true">
-            <div class="ai-chat-loading-dot"></div>
-            <div class="ai-chat-loading-dot"></div>
-            <div class="ai-chat-loading-dot"></div>
-        </div>
-        <span>{LOADING_TEXT}</span>
-    </div>
 
     <!-- File Attachments Preview -->
     <!-- BEGIN chat_attachments_area -->

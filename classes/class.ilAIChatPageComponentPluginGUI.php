@@ -1481,6 +1481,19 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("RAG_INCOMPLETE_NOTICE", htmlspecialchars($this->plugin->txt('rag_incomplete_notice')));
         $tpl->setVariable("PAGE_LABEL", htmlspecialchars($this->plugin->txt('page_label')));
         $tpl->setVariable("PAGES_LABEL", htmlspecialchars($this->plugin->txt('pages_label')));
+        $tpl->setVariable("TABLE_COPY", htmlspecialchars($this->plugin->txt('table_copy')));
+        $tpl->setVariable("TABLE_EXPORT_CSV", htmlspecialchars($this->plugin->txt('table_export_csv')));
+        $tpl->setVariable("CODE_COPY", htmlspecialchars($this->plugin->txt('code_copy')));
+        $tpl->setVariable("CITATION_MORE_SOURCE", htmlspecialchars($this->plugin->txt('citation_more_source')));
+        $tpl->setVariable("CITATION_MORE_SOURCES", htmlspecialchars($this->plugin->txt('citation_more_sources')));
+        $tpl->setVariable("SOURCE_PREVIOUS", htmlspecialchars($this->plugin->txt('source_previous')));
+        $tpl->setVariable("SOURCE_NEXT", htmlspecialchars($this->plugin->txt('source_next')));
+        $tpl->setVariable("SCROLL_TO_BOTTOM", htmlspecialchars($this->plugin->txt('scroll_to_bottom')));
+        $tpl->setVariable("ALERT_NOTE", htmlspecialchars($this->plugin->txt('alert_note')));
+        $tpl->setVariable("ALERT_TIP", htmlspecialchars($this->plugin->txt('alert_tip')));
+        $tpl->setVariable("ALERT_IMPORTANT", htmlspecialchars($this->plugin->txt('alert_important')));
+        $tpl->setVariable("ALERT_WARNING", htmlspecialchars($this->plugin->txt('alert_warning')));
+        $tpl->setVariable("ALERT_CAUTION", htmlspecialchars($this->plugin->txt('alert_caution')));
 
         $max_size_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
         $max_size_mb = $max_size_config ? (int) $max_size_config : 5;
@@ -1936,6 +1949,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         // marked.js renders Markdown in the browser
         $tpl->addJavaScript($this->plugin->getDirectory() . "/js/vendor/marked.min.js");
+        // DOMPurify cleans the rendered answers
+        $tpl->addJavaScript($this->plugin->getDirectory() . "/js/vendor/purify.min.js");
         $tpl->addJavaScript($this->plugin->getDirectory() . "/js/ai_chat.js");
     }
 

@@ -13,7 +13,9 @@
  * Frontend of the AI chat page element
  *
  * Each element with the class ai-chat-container gets an AIChatPageComponent instance.
- * Markdown is rendered with marked.js if available.
+ * Markdown is rendered with marked.js if available. Rendered HTML is cleaned
+ * with DOMPurify; without DOMPurify, answers are shown as plain text.
+ * highlight.js and KaTeX are loaded on demand for code blocks and formulas.
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
@@ -35,6 +37,182 @@ const debug = AICHAT_DEBUG ? console.log.bind(console) : () => {};
  * @type {Function}
  */
 const debugError = AICHAT_DEBUG ? console.error.bind(console) : () => {};
+
+/**
+ * Base URL of the bundled libraries (js/vendor/), derived from the URL of this script
+ * @type {string}
+ */
+const AICHAT_VENDOR_URL = document.currentScript && document.currentScript.src
+  ? new URL('vendor/', document.currentScript.src).href
+  : '';
+
+/**
+ * Pending or completed loads of bundled libraries, by path
+ * @type {Object<string, Promise<void>>}
+ */
+const aiChatVendorLoads = {};
+
+/**
+ * Load a bundled script or stylesheet once
+ *
+ * @param {string} path - Path below js/vendor/
+ * @param {string} [globalName] - Global the script defines; if it exists, the script is not loaded
+ * @returns {Promise<void>}
+ */
+function loadAIChatVendor(path, globalName = '') {
+  if (globalName && window[globalName]) {
+    return Promise.resolve();
+  }
+  if (!aiChatVendorLoads[path]) {
+    aiChatVendorLoads[path] = new Promise((resolve, reject) => {
+      let element;
+      if (path.endsWith('.css')) {
+        element = document.createElement('link');
+        element.rel = 'stylesheet';
+        element.href = AICHAT_VENDOR_URL + path;
+      } else {
+        element = document.createElement('script');
+        element.src = AICHAT_VENDOR_URL + path;
+      }
+      element.onload = () => resolve();
+      element.onerror = () => {
+        delete aiChatVendorLoads[path];
+        reject(new Error(`Failed to load ${path}`));
+      };
+      document.head.appendChild(element);
+    });
+  }
+  return aiChatVendorLoads[path];
+}
+
+/**
+ * Escape text for use in HTML, also inside attribute values
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function escapeAIChatHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Superscript digits in the order 1-9, 0 */
+const AICHAT_SUPERSCRIPTS = '¹²³⁴⁵⁶⁷⁸⁹⁰';
+
+/**
+ * Rendered formulas (KaTeX HTML) by display mode and TeX source
+ * @type {Map<string, string>}
+ */
+const aiChatFormulaCache = new Map();
+
+/** Whether the Markdown extensions are registered */
+let aiChatMarkedConfigured = false;
+
+/**
+ * Register the Markdown extensions for citation markers and formulas
+ *
+ * Extensions are only applied outside of code, so [1] or $x$ in code stays unchanged.
+ * Citations ([1], [1, 2], [1][2], ^1, ¹) become placeholders that are replaced by
+ * source chips once the sources are known. Formulas ($…$, $$…$$, \(…\), \[…\])
+ * become placeholders that are rendered with KaTeX. Single dollar signs only
+ * delimit a formula if no space follows the opening and precedes the closing sign
+ * and no digit follows the closing sign, so prices like "5$ to 10$" stay text.
+ */
+function configureAIChatMarked() {
+  if (aiChatMarkedConfigured) {
+    return;
+  }
+  aiChatMarkedConfigured = true;
+
+  const citation = {
+    name: 'aiChatCitation',
+    level: 'inline',
+    start(src) {
+      const index = src.search(/\[\d|\^\d|[¹²³⁴⁵⁶⁷⁸⁹⁰]/);
+      return index < 0 ? undefined : index;
+    },
+    tokenizer(src) {
+      let match = /^(?:\[\d+(?:\s*,\s*\d+)*\])+/.exec(src);
+      if (match) {
+        // [1](https://…) is a link
+        if (src.charAt(match[0].length) === '(') {
+          return undefined;
+        }
+        return { type: 'aiChatCitation', raw: match[0], ids: match[0].match(/\d+/g).map(Number) };
+      }
+      match = /^\^(\d+)/.exec(src);
+      if (match) {
+        return { type: 'aiChatCitation', raw: match[0], ids: [Number(match[1])] };
+      }
+      match = /^[¹²³⁴⁵⁶⁷⁸⁹⁰]+/.exec(src);
+      if (match) {
+        const digits = [...match[0]].map((char) => (AICHAT_SUPERSCRIPTS.indexOf(char) + 1) % 10).join('');
+        return { type: 'aiChatCitation', raw: match[0], ids: [Number(digits)] };
+      }
+      return undefined;
+    },
+    renderer(token) {
+      return `<span class="ai-chat-cite" data-cite="${token.ids.join(',')}">${escapeAIChatHtml(token.raw)}</span>`;
+    },
+  };
+
+  const mathInline = {
+    name: 'aiChatMathInline',
+    level: 'inline',
+    start(src) {
+      const match = /\\[([]|\$\$|(^|[^\w\\$])\$(?=\S)/.exec(src);
+      if (!match) {
+        return undefined;
+      }
+      return match.index + (match[1] ? match[1].length : 0);
+    },
+    tokenizer(src) {
+      const patterns = [
+        [/^\\\(([\s\S]+?)\\\)/, false],
+        [/^\\\[([\s\S]+?)\\\]/, true],
+        [/^\$\$([^$]+?)\$\$/, true],
+        [/^\$(?=\S)([^$\n]+?)(?<=\S)\$(?!\d)/, false],
+      ];
+      const found = patterns
+        .map(([pattern, display]) => ({ match: pattern.exec(src), display }))
+        .find(({ match }) => match !== null);
+      if (!found) {
+        return undefined;
+      }
+      return {
+        type: 'aiChatMathInline', raw: found.match[0], text: found.match[1].trim(), display: found.display,
+      };
+    },
+    renderer(token) {
+      return `<span class="ai-chat-math" data-display="${token.display ? 1 : 0}">${escapeAIChatHtml(token.text)}</span>`;
+    },
+  };
+
+  const mathBlock = {
+    name: 'aiChatMathBlock',
+    level: 'block',
+    start(src) {
+      const match = /^ {0,3}(?:\$\$|\\\[)/m.exec(src);
+      return match ? match.index : undefined;
+    },
+    tokenizer(src) {
+      const match = /^ {0,3}\$\$([\s\S]+?)\$\$[ \t]*(?:\n|$)/.exec(src)
+        || /^ {0,3}\\\[([\s\S]+?)\\\][ \t]*(?:\n|$)/.exec(src);
+      if (!match) {
+        return undefined;
+      }
+      return { type: 'aiChatMathBlock', raw: match[0], text: match[1].trim() };
+    },
+    renderer(token) {
+      return `<div class="ai-chat-math" data-display="1">${escapeAIChatHtml(token.text)}</div>\n`;
+    },
+  };
+
+  window.marked.use({ extensions: [citation, mathInline, mathBlock] });
+}
 
 /**
  * Chat element on an ILIAS page: message exchange with api.php, streaming,
@@ -70,10 +248,16 @@ class AIChatPageComponent {
    */
   init() {
     this.messagesArea = this.container.querySelector('.ai-chat-messages');
+    this.scrollButton = this.container.querySelector('.ai-chat-scroll-bottom');
+    // New content keeps the view at the end only while the user is there
+    this.followMessages = true;
     this.inputArea = this.container.querySelector('.ai-chat-input');
     this.sendButton = this.container.querySelector('.ai-chat-send');
     this.welcomeMsg = this.container.querySelector('.ai-chat-welcome');
-    this.loadingDiv = this.container.querySelector('.ai-chat-loading');
+    // Answer placeholder with the thinking indicator while a request is running
+    this.pendingMessage = null;
+    // State of the answer being streamed; only one answer is streamed at a time
+    this.streamState = AIChatPageComponent.createStreamState();
     this.srStatus = this.container.querySelector('.ai-chat-sr-status');
 
     this.attachBtn = this.container.querySelector('.ai-chat-attach-btn');
@@ -136,6 +320,7 @@ class AIChatPageComponent {
       messageCopied: this.container.dataset.messageCopied || 'Copied!',
       messageCopyFailed: this.container.dataset.messageCopyFailed || 'Failed to copy',
       thinkingHeader: this.container.dataset.thinkingHeader || 'Thinking...',
+      thinking: this.container.dataset.loadingText || 'Thinking...',
       generationStopped: this.container.dataset.generationStopped || 'Generation stopped by user.',
       regenerateFailed: this.container.dataset.regenerateFailed || 'Failed to regenerate response. Please try again.',
       welcomeMessage: this.container.dataset.welcomeMessage || 'Start a conversation...',
@@ -146,6 +331,20 @@ class AIChatPageComponent {
         || 'Some background files have not been processed yet. The answer may be incomplete.',
       pageLabel: this.container.dataset.pageLabel || 'Seite',
       pagesLabel: this.container.dataset.pagesLabel || 'Seiten',
+      tableCopy: this.container.dataset.tableCopy || 'Copy table',
+      tableExportCsv: this.container.dataset.tableExportCsv || 'Export as CSV',
+      codeCopy: this.container.dataset.codeCopy || 'Copy code',
+      citationMoreSource: this.container.dataset.citationMoreSource || '1 more source',
+      citationMoreSources: this.container.dataset.citationMoreSources || '%s more sources',
+      sourcePrevious: this.container.dataset.sourcePrevious || 'Previous source',
+      sourceNext: this.container.dataset.sourceNext || 'Next source',
+      alerts: {
+        note: this.container.dataset.alertNote || 'Note',
+        tip: this.container.dataset.alertTip || 'Tip',
+        important: this.container.dataset.alertImportant || 'Important',
+        warning: this.container.dataset.alertWarning || 'Warning',
+        caution: this.container.dataset.alertCaution || 'Caution',
+      },
     };
 
     this.pageId = parseInt(this.container.dataset.pageId, 10) || 0;
@@ -170,6 +369,7 @@ class AIChatPageComponent {
 
     this.bindEvents();
     this.initTheme();
+    this.updateSendButtonState();
 
     if (this.serviceUnavailable) {
       this.disableInputForUnavailableService();
@@ -181,6 +381,32 @@ class AIChatPageComponent {
   }
 
   static get THEME_STORAGE_KEY() { return 'ai_chat_theme'; }
+
+  static get ICON_COPY() {
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>';
+  }
+
+  static get ICON_DOWNLOAD() {
+    return '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>';
+  }
+
+  /** Distance from the end of the messages, in pixels, still treated as "at the end" */
+  static get SCROLL_END_TOLERANCE() { return 48; }
+
+  /**
+   * State of a streamed answer: pending frame and sources received before the answer
+   *
+   * @returns {{renderPending: boolean, sources: Array|null, sourcesRow: HTMLElement|null}}
+   */
+  static createStreamState() {
+    return { renderPending: false, sources: null, sourcesRow: null };
+  }
+
+  /** Maximum width of the unfolded file name of a source chip, in pixels */
+  static get CHIP_NAME_WIDTH() { return 160; }
+
+  /** URLs allowed in rendered answers: http, https, mailto and relative URLs */
+  static get SAFE_URL() { return /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i; }
 
   static get ICON_MOON() {
     return `<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
@@ -460,8 +686,37 @@ class AIChatPageComponent {
       const copyButton = event.target.closest('.ai-chat-code-copy');
       if (copyButton) {
         copyCodeToClipboard(copyButton);
+        return;
+      }
+
+      const tableButton = event.target.closest('.ai-chat-table-copy, .ai-chat-table-csv');
+      if (tableButton) {
+        const table = tableButton.closest('.ai-chat-table-wrap').querySelector('table');
+        if (tableButton.classList.contains('ai-chat-table-copy')) {
+          const rows = AIChatPageComponent.tableToRows(table).map((row) => row.join('\t'));
+          copyTextToClipboard(rows.join('\n'), tableButton);
+        } else {
+          AIChatPageComponent.downloadTableAsCsv(table);
+        }
       }
     });
+
+    this.messagesArea.addEventListener('scroll', () => {
+      this.followMessages = this.isAtMessagesEnd();
+      this.updateScrollButton();
+    }, { passive: true });
+
+    // Images are loaded after the message was added and enlarge it
+    this.messagesArea.addEventListener('load', () => this.scrollToBottom(), true);
+
+    if (this.scrollButton) {
+      this.scrollButton.addEventListener('click', () => {
+        const reduceMotion = typeof window.matchMedia === 'function'
+          && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        this.followMessages = true;
+        this.messagesArea.scrollTo({ top: this.messagesArea.scrollHeight, behavior: reduceMotion ? 'auto' : 'smooth' });
+      });
+    }
 
     this.sendButton.addEventListener('click', (e) => {
       e.preventDefault();
@@ -484,6 +739,19 @@ class AIChatPageComponent {
       this.updateCharacterCounter();
       this.resizeComposer();
     });
+
+    // A different width (window, ILIAS side bar, chat becoming visible) can change the layout
+    const composer = this.container.querySelector('.ai-chat-composer');
+    if (composer && typeof window.ResizeObserver === 'function') {
+      let lastWidth = 0;
+      new window.ResizeObserver((entries) => {
+        const { width } = entries[0].contentRect;
+        if (width !== lastWidth) {
+          lastWidth = width;
+          this.resizeComposer();
+        }
+      }).observe(composer);
+    }
 
     if (this.enableChatUploads) {
       if (this.attachBtn) {
@@ -924,6 +1192,8 @@ class AIChatPageComponent {
 
           if (data.type === 'start') {
             debug('AIChatPageComponent: Streaming started');
+          } else if (data.type === 'sources') {
+            this.showStreamingSources(messageElement, data.sources);
           } else if (data.type === 'complete') {
             debug('AIChatPageComponent: Streaming completed');
             const sources = data.sources || null;
@@ -1002,12 +1272,22 @@ class AIChatPageComponent {
    * @returns {{messageEl: HTMLElement, contentEl: HTMLElement}} References to message and content elements
    */
   createStreamingMessageElement() {
+    this.streamState = AIChatPageComponent.createStreamState();
+
+    // The placeholder with the thinking indicator becomes the answer
+    if (this.pendingMessage) {
+      const pending = this.pendingMessage;
+      this.pendingMessage = null;
+      pending.messageEl.className = 'ai-chat-message assistant streaming';
+      return pending;
+    }
+
     const messageEl = document.createElement('div');
     messageEl.className = 'ai-chat-message assistant streaming';
 
     const contentEl = document.createElement('div');
     contentEl.className = 'ai-chat-message-content';
-    contentEl.innerHTML = '<div class="streaming-cursor">|</div>';
+    contentEl.appendChild(this.createThinkingIndicator());
 
     messageEl.appendChild(contentEl);
     this.messagesArea.appendChild(messageEl);
@@ -1030,17 +1310,70 @@ class AIChatPageComponent {
     }
     contentEl.dataset.rawContent += chunk;
 
-    const cursor = contentEl.querySelector('.streaming-cursor');
-    if (cursor) {
-      cursor.remove();
+    // Markdown is rendered at most once per frame; the answer may be finalized or
+    // stopped before the frame is drawn
+    const state = this.streamState;
+    if (state.renderPending) {
+      return;
     }
+    state.renderPending = true;
+    window.requestAnimationFrame(() => {
+      state.renderPending = false;
+      if (!messageElement.messageEl.classList.contains('streaming')) {
+        return;
+      }
+      // RAG citations [cit-N] (0-based) are shown as [N+1], as in the final message
+      const rawContent = (contentEl.dataset.rawContent || '')
+        .replace(/\[cit-(\d+)\]/gi, (m, n) => `[${parseInt(n, 10) + 1}]`);
+      contentEl.innerHTML = this.renderMarkdown(rawContent);
+      this.decorateRenderedContent(contentEl);
+      if (state.sourcesRow) {
+        // Without tooltips: the chips are replaced with every frame
+        this.convertFootnotesToChips(contentEl, state.sourcesRow, state.sources, false);
+      }
+      AIChatPageComponent.appendStreamingCursor(contentEl);
+      this.scrollToBottom();
+    });
+  }
 
-    // Plain text while streaming; Markdown is rendered when the answer is complete.
-    // RAG citations [cit-N] (0-based) are shown as [N+1], as in the final message.
-    const rawContent = contentEl.dataset.rawContent
-      .replace(/\[cit-(\d+)\]/gi, (m, n) => `[${parseInt(n, 10) + 1}]`);
-    contentEl.innerHTML = `${this.escapeHtml(rawContent).replace(/\n/g, '<br>')}<span class="streaming-cursor">|</span>`;
-    this.scrollToBottom();
+  /**
+   * Show the sources of a streamed RAG answer, which arrive before the answer
+   *
+   * @param {{messageEl: HTMLElement, contentEl: HTMLElement}} messageElement - Message element references
+   * @param {Array|null} sources
+   */
+  showStreamingSources(messageElement, sources) {
+    if (!Array.isArray(sources) || sources.length === 0) {
+      return;
+    }
+    const state = this.streamState;
+    if (state.sourcesRow) {
+      state.sourcesRow.remove();
+    }
+    state.sources = sources;
+    state.sourcesRow = this.renderSourcesRow(sources);
+    messageElement.messageEl.appendChild(state.sourcesRow);
+  }
+
+  /**
+   * Show the streaming cursor at the end of the last text block
+   *
+   * @param {HTMLElement} contentEl
+   */
+  static appendStreamingCursor(contentEl) {
+    const cursor = document.createElement('span');
+    cursor.className = 'streaming-cursor';
+    cursor.setAttribute('aria-hidden', 'true');
+
+    let target = contentEl.lastElementChild;
+    while (target && ['UL', 'OL', 'BLOCKQUOTE'].includes(target.tagName) && target.lastElementChild) {
+      target = target.lastElementChild;
+    }
+    if (target && ['P', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(target.tagName)) {
+      target.appendChild(cursor);
+    } else {
+      contentEl.appendChild(cursor);
+    }
   }
 
   /**
@@ -1074,8 +1407,15 @@ class AIChatPageComponent {
     }
 
     contentEl.innerHTML = this.formatMessage(contentToFormat);
+    this.decorateRenderedContent(contentEl);
 
     delete contentEl.dataset.rawContent;
+
+    // The sources of the complete answer replace those shown while streaming
+    if (this.streamState.sourcesRow) {
+      this.streamState.sourcesRow.remove();
+      this.streamState.sourcesRow = null;
+    }
 
     if (effectiveSources && effectiveSources.length > 0) {
       const sourcesRow = this.renderSourcesRow(effectiveSources);
@@ -1134,13 +1474,13 @@ class AIChatPageComponent {
         msg.classList.remove('streaming');
         const contentEl = msg.querySelector('.ai-chat-message-content');
         if (contentEl) {
-          const cursor = contentEl.querySelector('.streaming-cursor');
-          if (cursor) {
-            cursor.remove();
-          }
+          contentEl.querySelectorAll('.streaming-cursor, .ai-chat-thinking').forEach((element) => element.remove());
 
           if (userStopped) {
             contentEl.innerHTML += '<em class="generation-stopped"> [Generation stopped by user]</em>';
+          } else if (contentEl.textContent.trim() === '') {
+            // Error before any text: no empty answer
+            msg.remove();
           }
         }
       });
@@ -1184,6 +1524,11 @@ class AIChatPageComponent {
   displayMessageOnly(role, content, attachments = [], sources = null, usage = null) {
     debug('AIChatPageComponent: displayMessageOnly called with attachments:', attachments, 'sources:', sources);
 
+    // An answer or error message replaces the thinking indicator
+    if (role !== 'user') {
+      this.removeThinkingPlaceholder();
+    }
+
     if (this.welcomeMsg && this.welcomeMsg.parentNode) {
       this.welcomeMsg.remove();
     }
@@ -1203,6 +1548,7 @@ class AIChatPageComponent {
         if (webLinks.length > 0) effectiveSources = [...sources, ...webLinks];
       }
       contentWrapper.innerHTML = this.renderMarkdown(displayContent);
+      this.decorateRenderedContent(contentWrapper);
       sources = effectiveSources;
     } else {
       contentWrapper.textContent = content;
@@ -1296,7 +1642,7 @@ class AIChatPageComponent {
     }
 
     this.messagesArea.appendChild(messageDiv);
-    this.messagesArea.scrollTop = this.messagesArea.scrollHeight;
+    this.scrollToBottom(true);
 
     // Announce new answers to screen readers
     if (role === 'assistant') {
@@ -1313,6 +1659,11 @@ class AIChatPageComponent {
   renderMarkdown(text) {
     if (!text) return '';
 
+    // Answers and RAG excerpts may contain HTML injected via documents
+    if (typeof window.DOMPurify === 'undefined' || !window.DOMPurify.isSupported) {
+      return `<p class="ai-chat-paragraph">${this.escapeHtml(text).replace(/\n/g, '<br>')}</p>`;
+    }
+
     if (typeof marked !== 'undefined') {
       window.marked.setOptions({
         breaks: true,
@@ -1321,29 +1672,268 @@ class AIChatPageComponent {
         smartypants: false,
       });
 
+      configureAIChatMarked();
       const renderer = new window.marked.Renderer();
 
-      // Citation markers: in CommonMark a closing ** after punctuation (e.g. ")") must be
-      // followed by whitespace or punctuation. Superscript digits are neither, so ")**¹"
-      // does not close the bold text. ^N is converted to superscripts afterwards, and a
-      // space is inserted between ** and a following superscript.
-      text = text.replace(/\^(\d+)/g, (_, n) => {
-        const sup = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
-        return n.split('').map((d) => sup[parseInt(d, 10)] || d).join('');
-      });
-
+      // In CommonMark a closing ** after punctuation (e.g. ")") must be followed by
+      // whitespace or punctuation. Superscript digits are neither, so ")**¹" would not
+      // close the bold text; a space is inserted between ** and the superscript.
       text = text.replace(/(\S)\*\*([¹²³⁴⁵⁶⁷⁸⁹⁰])/g, '$1** $2');
 
-      text = this.renderMistralSpecialFormatting(text);
-
-      let html = window.marked.parse(text, { renderer });
-      // Links open in a new tab; done afterwards, because the renderer API differs between marked versions
-      html = html.replace(/<a href="(https?:[^"]+)"/g, '<a href="$1" target="_blank" rel="noopener noreferrer"');
-      return html;
+      return this.sanitizeHtml(window.marked.parse(text, { renderer }));
     }
 
     // Fallback if marked.js is not loaded
-    return this.renderMarkdownFallback(text);
+    return this.sanitizeHtml(this.renderMarkdownFallback(text));
+  }
+
+  /**
+   * Remove scripts, event handlers, unsafe URLs and form elements from rendered HTML
+   *
+   * Remote images are replaced by links, so that an answer cannot send data
+   * to other servers by loading an image. Links open in a new tab.
+   *
+   * @param {string} html - Rendered HTML
+   * @returns {string} Cleaned HTML
+   */
+  sanitizeHtml(html) {
+    const fragment = window.DOMPurify.sanitize(html, {
+      RETURN_DOM_FRAGMENT: true,
+      FORBID_TAGS: ['style', 'form', 'button', 'textarea', 'select'],
+      FORBID_ATTR: ['style', 'id', 'name'],
+      ALLOWED_URI_REGEXP: AIChatPageComponent.SAFE_URL,
+    });
+
+    fragment.querySelectorAll('input').forEach((input) => {
+      if (input.getAttribute('type') === 'checkbox') {
+        input.setAttribute('disabled', '');
+      } else {
+        input.remove();
+      }
+    });
+
+    fragment.querySelectorAll('img').forEach((img) => {
+      const src = img.getAttribute('src') || '';
+      if (src.startsWith('data:image/')) {
+        return;
+      }
+      const isRemote = /^https?:/i.test(src);
+      const label = img.getAttribute('alt') || (isRemote ? src : '');
+      if (isRemote) {
+        const link = document.createElement('a');
+        link.setAttribute('href', src);
+        link.textContent = label;
+        img.replaceWith(link);
+      } else {
+        img.replaceWith(document.createTextNode(label));
+      }
+    });
+
+    fragment.querySelectorAll('a[href]').forEach((link) => {
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+    });
+
+    fragment.querySelectorAll('blockquote').forEach((quote) => this.convertAlert(quote));
+
+    const container = document.createElement('div');
+    container.appendChild(fragment);
+    return container.innerHTML;
+  }
+
+  /**
+   * Convert a blockquote starting with [!NOTE], [!TIP], [!IMPORTANT], [!WARNING]
+   * or [!CAUTION] (GitHub notation) into a highlighted box
+   *
+   * @param {HTMLElement} quote
+   */
+  convertAlert(quote) {
+    const paragraph = quote.firstElementChild;
+    if (!paragraph || paragraph.tagName !== 'P' || !paragraph.firstChild
+        || paragraph.firstChild.nodeType !== window.Node.TEXT_NODE) {
+      return;
+    }
+
+    const marker = paragraph.firstChild;
+    const match = /^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i.exec(marker.textContent);
+    if (!match) {
+      return;
+    }
+
+    const type = match[1].toLowerCase();
+    marker.textContent = marker.textContent.slice(match[0].length);
+    if (marker.textContent === '') {
+      if (marker.nextSibling && marker.nextSibling.nodeName === 'BR') {
+        marker.nextSibling.remove();
+      }
+      marker.remove();
+    }
+    if (!paragraph.firstChild) {
+      paragraph.remove();
+    }
+
+    const title = document.createElement('div');
+    title.className = 'ai-chat-alert-title';
+    title.textContent = this.lang.alerts[type];
+    quote.classList.add('ai-chat-alert', `ai-chat-alert-${type}`);
+    quote.insertBefore(title, quote.firstChild);
+  }
+
+  /**
+   * Add toolbars to tables and code blocks, highlight code and render formulas
+   *
+   * highlight.js and KaTeX are loaded when an answer contains code or formulas.
+   *
+   * @param {HTMLElement} contentEl - Element with the rendered answer
+   */
+  decorateRenderedContent(contentEl) {
+    contentEl.querySelectorAll('table').forEach((table) => {
+      if (table.closest('.ai-chat-table-wrap')) {
+        return;
+      }
+      const wrap = document.createElement('div');
+      wrap.className = 'ai-chat-table-wrap';
+      const toolbar = document.createElement('div');
+      toolbar.className = 'ai-chat-table-toolbar';
+      toolbar.appendChild(AIChatPageComponent.createContentButton('ai-chat-table-copy', this.lang.tableCopy, AIChatPageComponent.ICON_COPY));
+      toolbar.appendChild(AIChatPageComponent.createContentButton('ai-chat-table-csv', this.lang.tableExportCsv, AIChatPageComponent.ICON_DOWNLOAD));
+      const scroll = document.createElement('div');
+      scroll.className = 'ai-chat-table-scroll';
+      table.replaceWith(wrap);
+      scroll.appendChild(table);
+      wrap.append(toolbar, scroll);
+    });
+
+    const codeBlocks = [];
+    contentEl.querySelectorAll('pre > code').forEach((code) => {
+      const pre = code.parentElement;
+      if (pre.closest('.ai-chat-code-block')) {
+        return;
+      }
+      const match = /(?:^|\s)language-([\w+#.-]+)/.exec(code.className);
+      const language = match ? match[1] : '';
+
+      const block = document.createElement('div');
+      block.className = 'ai-chat-code-block';
+      const header = document.createElement('div');
+      header.className = 'ai-chat-code-header';
+      const label = document.createElement('span');
+      label.className = 'ai-chat-code-language';
+      label.textContent = language || 'text';
+      header.append(label, AIChatPageComponent.createContentButton('ai-chat-code-copy', this.lang.codeCopy, AIChatPageComponent.ICON_COPY));
+      pre.classList.add('ai-chat-code-content');
+      pre.replaceWith(block);
+      block.append(header, pre);
+
+      if (language) {
+        codeBlocks.push({ code, language });
+      }
+    });
+
+    if (codeBlocks.length > 0) {
+      loadAIChatVendor('highlight.min.js', 'hljs').then(() => {
+        codeBlocks.forEach(({ code, language }) => {
+          if (window.hljs.getLanguage(language) && !code.dataset.highlighted) {
+            window.hljs.highlightElement(code);
+          }
+        });
+      }).catch((error) => debugError('AIChatPageComponent: highlight.js not available', error));
+    }
+
+    const formulas = [...contentEl.querySelectorAll('.ai-chat-math:not(.ai-chat-math-rendered)')];
+    if (formulas.length > 0) {
+      // Without the stylesheet, formulas are still rendered (MathML)
+      const stylesheet = loadAIChatVendor('katex/katex.min.css').catch(() => {});
+      Promise.all([stylesheet, loadAIChatVendor('katex/katex.min.js', 'katex')]).then(() => {
+        formulas.forEach((element) => {
+          try {
+            // Formulas are rendered again with every frame while streaming
+            const displayMode = element.dataset.display === '1';
+            const key = `${displayMode ? 1 : 0}:${element.textContent}`;
+            let html = aiChatFormulaCache.get(key);
+            if (html === undefined) {
+              html = window.katex.renderToString(element.textContent, {
+                displayMode,
+                throwOnError: false,
+                trust: false,
+              });
+              if (aiChatFormulaCache.size >= 500) {
+                aiChatFormulaCache.clear();
+              }
+              aiChatFormulaCache.set(key, html);
+            }
+            element.replaceChildren();
+            element.insertAdjacentHTML('beforeend', html);
+            element.classList.add('ai-chat-math-rendered');
+          } catch (error) {
+            debugError('AIChatPageComponent: formula not rendered', error);
+          }
+        });
+      }).catch((error) => debugError('AIChatPageComponent: KaTeX not available', error));
+    }
+  }
+
+  /**
+   * Icon button for tables and code blocks
+   *
+   * @param {string} className
+   * @param {string} label
+   * @param {string} icon - SVG markup
+   * @returns {HTMLButtonElement}
+   */
+  static createContentButton(className, label, icon) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `ai-chat-content-action ${className}`;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.innerHTML = icon;
+    return button;
+  }
+
+  /**
+   * Cell texts of a table, header included
+   *
+   * @param {HTMLTableElement} table
+   * @returns {string[][]}
+   */
+  static tableToRows(table) {
+    return [...table.rows].map((row) => [...row.cells].map((cell) => cell.textContent.replace(/\s+/g, ' ').trim()));
+  }
+
+  /**
+   * Download a table as CSV (UTF-8 with byte order mark, so that spreadsheet
+   * programs detect the encoding)
+   *
+   * Cells starting with =, +, - or @ are prefixed with ' so that spreadsheet
+   * programs do not execute them as formulas.
+   *
+   * @param {HTMLTableElement} table
+   */
+  static downloadTableAsCsv(table) {
+    const csv = AIChatPageComponent.tableToRows(table).map((row) => row.map((cell) => {
+      const value = /^[=+\-@\t\r]/.test(cell) ? `'${cell}` : cell;
+      return `"${value.replace(/"/g, '""')}"`;
+    }).join(',')).join('\r\n');
+
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'table.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  /**
+   * URL that may be used in a link: http, https, mailto or relative
+   *
+   * @param {string} url
+   * @returns {string} The URL, or an empty string if it is not allowed
+   */
+  safeUrl(url) {
+    return url && AIChatPageComponent.SAFE_URL.test(url) ? url : '';
   }
 
   /**
@@ -1394,7 +1984,7 @@ class AIChatPageComponent {
       return `<div class="ai-chat-code-block">
                 <div class="ai-chat-code-header">
                     <span class="ai-chat-code-language">${lang}</span>
-                    <button type="button" class="ai-chat-code-copy" title="Copy code">
+                    <button type="button" class="ai-chat-code-copy" title="${this.escapeHtml(this.lang.codeCopy)}">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
                             <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
                         </svg>
@@ -1499,26 +2089,17 @@ class AIChatPageComponent {
     });
   }
 
+  /**
+   * Thinking blocks (<thinking>…</thinking>) in the escaped text of the fallback renderer
+   *
+   * @param {string} text - HTML-escaped text
+   * @returns {string}
+   */
   renderMistralSpecialFormatting(text) {
-    text = text.replace(
+    return text.replace(
       /&lt;thinking&gt;([\s\S]*?)&lt;\/thinking&gt;/g,
       `<div class="ai-chat-thinking-block"><div class="ai-chat-thinking-header">${this.lang.thinkingHeader}</div><div class="ai-chat-thinking-content">$1</div></div>`,
     );
-
-    text = text.replace(/\$\$([^$]+)\$\$/g, '<div class="ai-chat-math-block">$1</div>');
-    text = text.replace(/\$([^$]+)\$/g, '<span class="ai-chat-math-inline">$1</span>');
-
-    text = text.replace(/^⚠️\s*(.+)$/gm, '<div class="ai-chat-warning">⚠️ $1</div>');
-    text = text.replace(/^ℹ️\s*(.+)$/gm, '<div class="ai-chat-info">ℹ️ $1</div>');
-    text = text.replace(/^✅\s*(.+)$/gm, '<div class="ai-chat-success">✅ $1</div>');
-    text = text.replace(/^❌\s*(.+)$/gm, '<div class="ai-chat-error">❌ $1</div>');
-
-    text = text.replace(/^(Step \d+[:.]\s*.+)$/gm, '<div class="ai-chat-step">$1</div>');
-
-    text = text.replace(/^- \[ \]\s*(.+)$/gm, '<div class="ai-chat-task"><input type="checkbox" disabled> $1</div>');
-    text = text.replace(/^- \[x\]\s*(.+)$/gm, '<div class="ai-chat-task"><input type="checkbox" checked disabled> $1</div>');
-
-    return text;
   }
 
   renderLineBreaks(text) {
@@ -1539,50 +2120,6 @@ class AIChatPageComponent {
     });
 
     return html;
-  }
-
-  /**
-   * Add hover tooltip with excerpt to an element
-   *
-   * @param {HTMLElement} element - Element to add tooltip to
-   * @param {string} excerpt - Text excerpt to show in tooltip
-   */
-  addExcerptTooltip(element, excerpt) {
-    let tooltip = null;
-
-    element.addEventListener('mouseenter', () => {
-      tooltip = document.createElement('div');
-      tooltip.className = 'ai-chat-source-tooltip';
-
-      tooltip.innerHTML = this.renderMarkdown(excerpt);
-      this.container.appendChild(tooltip);
-
-      const rect = element.getBoundingClientRect();
-      const tooltipRect = tooltip.getBoundingClientRect();
-
-      // Below the element, above it near the bottom of the viewport
-      let top = rect.bottom + 5;
-      if (top + tooltipRect.height > window.innerHeight - 20) {
-        top = rect.top - tooltipRect.height - 5;
-      }
-
-      let { left } = rect;
-      const maxWidth = Math.min(400, window.innerWidth - 40);
-      if (left + maxWidth > window.innerWidth - 20) {
-        left = window.innerWidth - maxWidth - 20;
-      }
-
-      tooltip.style.left = `${Math.max(10, left)}px`;
-      tooltip.style.top = `${top}px`;
-      tooltip.style.maxWidth = `${maxWidth}px`;
-    });
-
-    element.addEventListener('mouseleave', () => {
-      if (tooltip) {
-        tooltip.remove();
-        tooltip = null;
-      }
-    });
   }
 
   /**
@@ -1609,70 +2146,215 @@ class AIChatPageComponent {
   }
 
   /**
-   * Hover tooltip for source chips: shows full filename, pages and excerpt
+   * Set side and width of the unfolding file name of a source chip
+   *
+   * The name unfolds as an overlay, so the chip keeps its size in the text and
+   * does not wrap. It unfolds towards the side with more space within the answer
+   * and scrolls if it is wider than the available space.
+   *
+   * @param {HTMLElement} chip
    */
-  addSourceInfoTooltip(element, sourceData) {
+  prepareChipUnfold(chip) {
+    const bounds = (chip.closest('.ai-chat-message-content') || this.container).getBoundingClientRect();
+    const rect = chip.getBoundingClientRect();
+    const spaceRight = bounds.right - rect.right;
+    const spaceLeft = rect.left - bounds.left;
+    const toLeft = spaceRight < AIChatPageComponent.CHIP_NAME_WIDTH && spaceLeft > spaceRight;
+    const space = (toLeft ? spaceLeft : spaceRight) - 4;
+    const width = Math.max(0, Math.min(AIChatPageComponent.CHIP_NAME_WIDTH, space));
+    chip.classList.toggle('ai-chat-chip-unfold-left', toLeft);
+    chip.style.setProperty('--chip-name-width', `${width}px`);
+
+    // Horizontal padding of the unfolded name (see CSS)
+    const textWidth = width - 14;
+    const overflow = chip.querySelector('.ai-chat-chip-text').scrollWidth - textWidth;
+    chip.classList.toggle('ai-chat-chip-scrollable', overflow > 0);
+    chip.style.setProperty('--chip-scroll-offset', `-${Math.max(0, overflow)}px`);
+  }
+
+  /**
+   * Tooltip of a source chip with file name, pages and excerpt
+   *
+   * Opens on mouse hover and keyboard focus, not on touch. Width and height do
+   * not depend on the shown source: several sources are shown one at a time
+   * with buttons and the arrow keys to switch between them, at the height of
+   * the longest one. The tooltip closes on scrolling, resizing, clicking the
+   * chip and clicking elsewhere, because it has a fixed position.
+   *
+   * @param {HTMLElement} element
+   * @param {Object[]} sourceList - Sources cited by the chip
+   */
+  addSourceInfoTooltip(element, sourceList) {
     let tooltip = null;
     let closeTimer = null;
+    let current = 0;
 
     const cancelClose = () => {
       if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
     };
 
-    const scheduleClose = () => {
+    let onOutsidePointer = null;
+    let onScroll = null;
+
+    const close = () => {
       cancelClose();
-      closeTimer = setTimeout(() => {
-        if (tooltip) { tooltip.remove(); tooltip = null; }
-      }, 120);
+      if (tooltip) { tooltip.remove(); tooltip = null; }
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('pointerdown', onOutsidePointer, true);
     };
 
-    element.addEventListener('mouseenter', () => {
-      cancelClose();
+    onOutsidePointer = (e) => {
+      if (tooltip && !tooltip.contains(e.target) && !element.contains(e.target)) {
+        close();
+      }
+    };
 
+    // Scrolling the page moves the chip away; scrolling inside the tooltip does not
+    onScroll = (e) => {
+      if (tooltip && !tooltip.contains(e.target)) {
+        close();
+      }
+    };
+
+    const scheduleClose = () => {
+      cancelClose();
+      closeTimer = setTimeout(close, 120);
+    };
+
+    const position = () => {
+      const rect = element.getBoundingClientRect();
+      const tip = tooltip.getBoundingClientRect();
+      const margin = 16;
+      const left = Math.max(margin, Math.min(rect.left, window.innerWidth - tip.width - margin));
+      let top = rect.bottom + 6;
+      if (top + tip.height > window.innerHeight - margin && rect.top - tip.height - 6 >= margin) {
+        top = rect.top - tip.height - 6;
+      }
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    };
+
+    const show = (index) => {
+      current = (index + sourceList.length) % sourceList.length;
+      tooltip.querySelectorAll('.ai-chat-tooltip-entry').forEach((entry, i) => {
+        entry.toggleAttribute('hidden', i !== current);
+      });
+      const counter = tooltip.querySelector('.ai-chat-tooltip-counter');
+      if (counter) {
+        counter.textContent = `${current + 1} / ${sourceList.length}`;
+      }
+      tooltip.querySelector('.ai-chat-tooltip-body').scrollTop = 0;
+    };
+
+    const open = () => {
+      cancelClose();
       if (tooltip) return; // already open
 
       tooltip = document.createElement('div');
       tooltip.className = 'ai-chat-source-tooltip ai-chat-source-info-tooltip';
+      tooltip.setAttribute('role', 'tooltip');
 
-      let html = `<div class="ai-chat-tooltip-filename">${this.escapeHtml(sourceData.filename)}</div>`;
-
-      if (sourceData.pages && sourceData.pages.length > 0) {
-        const pageLabel = sourceData.pages.length === 1
-          ? (this.container.dataset.pageLabel || 'S.')
-          : (this.container.dataset.pagesLabel || 'S.');
-        html += `<div class="ai-chat-tooltip-pages">${pageLabel} ${sourceData.pages.join(', ')}</div>`;
+      let html = '';
+      if (sourceList.length > 1) {
+        html += `<div class="ai-chat-tooltip-nav">
+          <button type="button" class="ai-chat-tooltip-prev" aria-label="${this.escapeHtml(this.lang.sourcePrevious)}">‹</button>
+          <span class="ai-chat-tooltip-counter"></span>
+          <button type="button" class="ai-chat-tooltip-next" aria-label="${this.escapeHtml(this.lang.sourceNext)}">›</button>
+        </div>`;
       }
 
-      if (sourceData.excerpt) {
-        html += `<div class="ai-chat-tooltip-excerpt">${this.renderMarkdown(sourceData.excerpt)}</div>`;
-      }
+      html += '<div class="ai-chat-tooltip-body">';
+      sourceList.forEach((sourceData) => {
+        html += `<div class="ai-chat-tooltip-entry"><div class="ai-chat-tooltip-filename">${this.escapeHtml(sourceData.filename)}</div>`;
+
+        if (sourceData.pages && sourceData.pages.length > 0) {
+          const pageLabel = sourceData.pages.length === 1
+            ? (this.container.dataset.pageLabel || 'S.')
+            : (this.container.dataset.pagesLabel || 'S.');
+          html += `<div class="ai-chat-tooltip-pages">${this.escapeHtml(pageLabel)} ${this.escapeHtml(sourceData.pages.join(', '))}</div>`;
+        }
+
+        if (sourceData.excerpt) {
+          html += `<div class="ai-chat-tooltip-excerpt">${this.renderMarkdown(sourceData.excerpt)}</div>`;
+        }
+        html += '</div>';
+      });
+      html += '</div>';
 
       tooltip.innerHTML = html;
       this.container.appendChild(tooltip);
 
+      // Height of the longest source, so that switching does not resize the tooltip;
+      // the maximum height of the tooltip still applies
+      const body = tooltip.querySelector('.ai-chat-tooltip-body');
+      if (sourceList.length > 1) {
+        let height = 0;
+        sourceList.forEach((sourceData, i) => {
+          show(i);
+          height = Math.max(height, body.scrollHeight);
+        });
+        body.style.height = `${height}px`;
+      }
+
       // Keep the tooltip open while the mouse is over it
       tooltip.addEventListener('mouseenter', cancelClose);
       tooltip.addEventListener('mouseleave', scheduleClose);
+      tooltip.addEventListener('click', (e) => {
+        if (e.target.closest('.ai-chat-tooltip-prev')) {
+          show(current - 1);
+        } else if (e.target.closest('.ai-chat-tooltip-next')) {
+          show(current + 1);
+        }
+      });
 
-      const rect = element.getBoundingClientRect();
-      const maxWidth = Math.min(380, window.innerWidth - 40);
-      let { left } = rect;
-      let top = rect.bottom + 6;
+      show(0);
+      position();
 
-      if (left + maxWidth > window.innerWidth - 20) {
-        left = window.innerWidth - maxWidth - 20;
+      window.addEventListener('scroll', onScroll, true);
+      window.addEventListener('resize', close);
+      document.addEventListener('pointerdown', onOutsidePointer, true);
+    };
+
+    const isTouchOnly = () => typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches;
+
+    element.addEventListener('mouseenter', () => {
+      if (!isTouchOnly()) {
+        open();
       }
-      const tipHeight = tooltip.getBoundingClientRect().height;
-      if (top + tipHeight > window.innerHeight - 20) {
-        top = rect.top - tipHeight - 6;
-      }
-
-      tooltip.style.left = `${Math.max(10, left)}px`;
-      tooltip.style.top = `${top}px`;
-      tooltip.style.maxWidth = `${maxWidth}px`;
     });
-
     element.addEventListener('mouseleave', scheduleClose);
+    element.addEventListener('focus', () => {
+      // Keyboard focus only; a tap also focuses the chip
+      let keyboard = true;
+      try {
+        keyboard = element.matches(':focus-visible');
+      } catch (e) {
+        // Browsers without :focus-visible
+      }
+      if (keyboard) {
+        open();
+      }
+    });
+    element.addEventListener('blur', () => {
+      // Clicking a button in the tooltip moves the focus away from the chip
+      if (tooltip && !tooltip.matches(':hover')) {
+        scheduleClose();
+      }
+    });
+    element.addEventListener('click', close);
+    element.addEventListener('keydown', (e) => {
+      if (!tooltip) return;
+      if (e.key === 'ArrowRight' && sourceList.length > 1) {
+        e.preventDefault();
+        show(current + 1);
+      } else if (e.key === 'ArrowLeft' && sourceList.length > 1) {
+        e.preventDefault();
+        show(current - 1);
+      } else if (e.key === 'Escape') {
+        close();
+      }
+    });
   }
 
   /**
@@ -2153,6 +2835,7 @@ class AIChatPageComponent {
       this.sendButton.className = 'ai-chat-composer-btn ai-chat-stop';
       this.sendButton.title = this.lang.stopGeneration || 'Stop generation';
       this.sendButton.disabled = false;
+      this.showThinkingPlaceholder();
     } else {
       this.sendButton.innerHTML = `
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" focusable="false">
@@ -2160,25 +2843,54 @@ class AIChatPageComponent {
                 </svg>
             `;
       this.sendButton.className = 'ai-chat-composer-btn ai-chat-send';
-      this.sendButton.title = this.container.dataset.sendAriaLabel || 'Nachricht senden';
-
-      // The button stays disabled while the character limit is exceeded
-      const inputLength = this.inputArea.value.length;
-      const isOverLimit = inputLength > this.charLimit;
-
-      if (isOverLimit) {
-        this.sendButton.disabled = true;
-        this.sendButton.classList.add('disabled-over-limit');
-        this.sendButton.title = this.container.dataset.sendDisabledOverLimit
-                    || `Message too long (${inputLength}/${this.charLimit} characters). Please shorten your message.`;
-      } else {
-        this.sendButton.disabled = false;
-        this.sendButton.classList.remove('disabled-over-limit');
-      }
+      this.updateSendButtonState();
+      this.removeThinkingPlaceholder();
     }
+  }
 
-    if (this.loadingDiv) {
-      this.loadingDiv.style.display = loading ? 'block' : 'none';
+  /**
+   * Animated indicator shown where the answer will appear
+   *
+   * @returns {HTMLElement}
+   */
+  createThinkingIndicator() {
+    const indicator = document.createElement('div');
+    indicator.className = 'ai-chat-thinking';
+    indicator.setAttribute('role', 'status');
+    indicator.innerHTML = '<span class="ai-chat-thinking-dots" aria-hidden="true"><span></span><span></span><span></span></span>'
+      + `<span class="ai-chat-thinking-label">${this.escapeHtml(this.lang.thinking)}</span>`;
+    return indicator;
+  }
+
+  /**
+   * Show an answer placeholder with the thinking indicator
+   *
+   * A streamed answer takes the placeholder over (createStreamingMessageElement());
+   * otherwise it is removed when the answer or an error message is shown.
+   */
+  showThinkingPlaceholder() {
+    this.removeThinkingPlaceholder();
+    if (!this.messagesArea) return;
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'ai-chat-message assistant ai-chat-pending';
+    const contentEl = document.createElement('div');
+    contentEl.className = 'ai-chat-message-content';
+    contentEl.appendChild(this.createThinkingIndicator());
+    messageEl.appendChild(contentEl);
+
+    this.messagesArea.appendChild(messageEl);
+    this.pendingMessage = { messageEl, contentEl };
+    this.scrollToBottom(true);
+  }
+
+  /**
+   * Remove the answer placeholder, if it was not taken over by a streamed answer
+   */
+  removeThinkingPlaceholder() {
+    if (this.pendingMessage) {
+      this.pendingMessage.messageEl.remove();
+      this.pendingMessage = null;
     }
   }
 
@@ -2186,6 +2898,8 @@ class AIChatPageComponent {
    * Update the character counter display and styling
    */
   updateCharacterCounter() {
+    this.updateSendButtonState();
+
     if (this.charCounter) {
       const { length } = this.inputArea.value;
       this.charCounter.textContent = length;
@@ -2202,8 +2916,6 @@ class AIChatPageComponent {
 
       const isOverLimit = length > this.charLimit;
 
-      this.updateSendButtonState(isOverLimit);
-
       this.charCounter.classList.remove('warning', 'error');
       if (length > this.charLimit * 0.9) {
         this.charCounter.classList.add('warning');
@@ -2215,7 +2927,13 @@ class AIChatPageComponent {
   }
 
   /**
-   * Adapt the height and layout of the input to its content
+   * Adapt layout and height of the input to its content
+   *
+   * The input switches to the multi-line layout (text above the buttons) when the
+   * text contains a line break or does not fit into the single-line layout. The
+   * width of the single-line layout is used in both states; with the wider input
+   * of the multi-line layout the text would fit again, and the layout would
+   * toggle with every character.
    */
   resizeComposer() {
     const textarea = this.inputArea;
@@ -2223,73 +2941,91 @@ class AIChatPageComponent {
 
     if (!textarea || !composer) return;
 
+    const singleLineWidth = this.getSingleLineInputWidth(composer);
+    // Not measurable while the chat is hidden; the state is kept
+    if (singleLineWidth > 0) {
+      const text = textarea.value;
+      const isExpanded = /[\r\n]/.test(text) || this.measureInputTextWidth(text) > singleLineWidth;
+      composer.setAttribute('data-expanded', isExpanded.toString());
+    }
+
+    // The height is measured after the layout change, which changes the width
     textarea.style.height = 'auto';
-    const { scrollHeight } = textarea;
-    const computedStyle = window.getComputedStyle(textarea);
-    const lineHeight = parseInt(computedStyle.lineHeight, 10) || 24;
-    const maxLines = 10;
-    const maxHeight = lineHeight * maxLines;
-
-    if (scrollHeight > maxHeight) {
-      textarea.style.height = `${maxHeight}px`;
-    } else {
-      textarea.style.height = `${scrollHeight}px`;
-    }
-
-    // Expand when the text exceeds one line (estimated from the textarea width)
-    const text = textarea.value;
-    const hasNewlines = text.includes('\n') || text.includes('\r');
-
-    const textareaWidth = textarea.getBoundingClientRect().width;
-    const avgCharWidth = 8;
-    const estimatedCharsPerLine = Math.floor(textareaWidth / avgCharWidth);
-    const isLongText = text.length > estimatedCharsPerLine;
-
-    const heightExceedsOneLine = scrollHeight > (lineHeight + 20);
-
-    const isExpanded = hasNewlines || isLongText || heightExceedsOneLine;
-
-    composer.setAttribute('data-expanded', isExpanded.toString());
-
-    if (isExpanded) {
-      composer.querySelector('.ai-chat-composer-inner').style.gridTemplateAreas = '"primary primary primary" "leading footer trailing"';
-    } else {
-      composer.querySelector('.ai-chat-composer-inner').style.gridTemplateAreas = '"leading primary trailing"';
-    }
+    const lineHeight = parseFloat(window.getComputedStyle(textarea).lineHeight) || 21;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, lineHeight * 10)}px`;
   }
 
   /**
-   * Update send button state based on input validation
+   * Width available for text in the single-line layout of the input
    *
-   * @param {boolean} isOverLimit - Whether character limit is exceeded
+   * Computed from the input row minus the button columns, so it is the same in
+   * both layouts.
+   *
+   * @param {HTMLElement} composer
+   * @returns {number} Width in pixels, 0 or less if the chat is not visible
    */
-  updateSendButtonState(isOverLimit) {
-    if (!this.sendButton) return;
+  getSingleLineInputWidth(composer) {
+    const inner = composer.querySelector('.ai-chat-composer-inner');
+    const content = composer.querySelector('.ai-chat-composer-content');
+    if (!inner || !content) return 0;
 
-    // setLoading() controls the button while loading
-    if (this.isLoading) return;
+    const sum = (element, properties) => {
+      const style = window.getComputedStyle(element);
+      return properties.reduce((total, property) => total + (parseFloat(style[property]) || 0), 0);
+    };
 
-    const wasDisabled = this.sendButton.disabled;
+    // Three columns, two gaps
+    const gaps = 2 * sum(inner, ['columnGap']);
+    const buttons = ['.ai-chat-composer-leading', '.ai-chat-composer-trailing']
+      .map((selector) => composer.querySelector(selector))
+      .reduce((total, element) => total + (element ? element.offsetWidth : 0), 0);
 
-    if (isOverLimit) {
-      this.sendButton.disabled = true;
-      this.sendButton.title = this.container.dataset.sendDisabledOverLimit
-                || `Message too long (${this.inputArea.value.length}/${this.charLimit} characters). Please shorten your message.`;
-      this.sendButton.classList.add('disabled-over-limit');
-    } else {
-      this.sendButton.disabled = false;
-      this.sendButton.title = this.container.dataset.sendAriaLabel || 'Send message';
-      this.sendButton.classList.remove('disabled-over-limit');
+    // A few pixels less, so that rounding never leaves a wrapped line in the single-line layout
+    return inner.clientWidth - sum(inner, ['paddingLeft', 'paddingRight']) - gaps - buttons
+      - sum(content, ['marginLeft', 'marginRight']) - sum(this.inputArea, ['paddingLeft', 'paddingRight']) - 4;
+  }
+
+  /**
+   * Width of a text in the font of the input
+   *
+   * @param {string} text
+   * @returns {number} Width in pixels
+   */
+  measureInputTextWidth(text) {
+    const style = window.getComputedStyle(this.inputArea);
+    if (this.textMeasureContext === undefined) {
+      const canvas = document.createElement('canvas');
+      this.textMeasureContext = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
     }
-
-    if (wasDisabled !== this.sendButton.disabled) {
-      debug('AIChatPageComponent: Send button state changed', {
-        disabled: this.sendButton.disabled,
-        reason: isOverLimit ? 'over_limit' : 'enabled',
-        charCount: this.inputArea.value.length,
-        charLimit: this.charLimit,
-      });
+    if (!this.textMeasureContext) {
+      // Estimate without canvas support
+      return text.length * (parseFloat(style.fontSize) || 14) * 0.55;
     }
+    this.textMeasureContext.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    return this.textMeasureContext.measureText(text).width;
+  }
+
+  /**
+   * Enable the send button only for a message that can be sent
+   *
+   * Disabled for an empty message, a message over the character limit and while
+   * no AI service is available or the session has expired. While an answer is
+   * loading, the button is the stop button and controlled by setLoading().
+   */
+  updateSendButtonState() {
+    if (!this.sendButton || this.isLoading) return;
+
+    const { length } = this.inputArea.value;
+    const isOverLimit = length > this.charLimit;
+    const isEmpty = this.inputArea.value.trim() === '';
+    const isBlocked = this.serviceUnavailable || this.inputArea.disabled;
+
+    this.sendButton.disabled = isOverLimit || isEmpty || isBlocked;
+    this.sendButton.classList.toggle('disabled-over-limit', isOverLimit && !isBlocked);
+    this.sendButton.title = isOverLimit
+      ? (this.container.dataset.sendDisabledOverLimit
+        || `Message too long (${length}/${this.charLimit} characters). Please shorten your message.`)
+      : (this.container.dataset.sendAriaLabel || 'Send message');
   }
 
   /**
@@ -3666,10 +4402,43 @@ class AIChatPageComponent {
   }
 
   /**
-   * Scroll messages area to bottom
+   * Keep the messages scrolled to the end after new content
+   *
+   * Without force, the view only follows if the user has not scrolled up, so that
+   * a streamed answer can be read from the beginning.
+   *
+   * @param {boolean} [force=false] - Scroll to the end in any case, e.g. for a sent message
    */
-  scrollToBottom() {
-    this.messagesArea.scrollTop = this.messagesArea.scrollHeight;
+  scrollToBottom(force = false) {
+    if (force || this.followMessages) {
+      this.messagesArea.scrollTop = this.messagesArea.scrollHeight;
+      this.followMessages = true;
+    }
+    this.updateScrollButton();
+  }
+
+  /**
+   * Whether the messages are scrolled to the end, within a tolerance
+   *
+   * @returns {boolean}
+   */
+  isAtMessagesEnd() {
+    const area = this.messagesArea;
+    const distance = area.scrollHeight - area.scrollTop - area.clientHeight;
+    return distance <= AIChatPageComponent.SCROLL_END_TOLERANCE;
+  }
+
+  /**
+   * Show the button to the latest message while the messages are scrolled up
+   */
+  updateScrollButton() {
+    if (!this.scrollButton) {
+      return;
+    }
+    const visible = !this.isAtMessagesEnd();
+    this.scrollButton.classList.toggle('visible', visible);
+    this.scrollButton.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    this.scrollButton.tabIndex = visible ? 0 : -1;
   }
 
   /**
@@ -3860,18 +4629,19 @@ class AIChatPageComponent {
 
       let pageInfo = '';
       if (source.pages && source.pages.length > 0) {
-        pageInfo = `<span class="ai-chat-source-pages">S. ${source.pages.join(', ')}</span>`;
+        pageInfo = `<span class="ai-chat-source-pages">S. ${this.escapeHtml(source.pages.join(', '))}</span>`;
       }
 
-      const nameHtml = source.url
+      const nameHtml = this.safeUrl(source.url)
         ? `<a class="ai-chat-source-link" href="${this.escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${this.escapeHtml(source.filename)}</a>`
         : `<span class="ai-chat-source-name">${this.escapeHtml(source.filename)}</span>`;
 
-      const downloadBtn = source.download_url
+      const downloadBtn = this.safeUrl(source.download_url)
         ? `<a class="ai-chat-source-download" href="${this.escapeHtml(source.download_url)}" target="_blank" rel="noopener noreferrer" title="Herunterladen" aria-label="Datei herunterladen"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg></a>`
         : '';
 
       item.innerHTML = `
+                <span class="ai-chat-source-number">${dedupIdx + 1}</span>
                 <span class="ai-chat-source-icon" data-type="${type}">${this.getSourceTypeIcon(type)}</span>
                 ${nameHtml}
                 ${pageInfo}
@@ -3906,82 +4676,89 @@ class AIChatPageComponent {
 
     row.sourcesData = sources;
     row.dataset.sourcesId = sourcesId;
+    // Number of the file in the source list for each cited source (both 1-based)
+    row.sourceFileNumbers = origToDedup;
 
     return row;
   }
 
   /**
-   * Replace footnote markers (¹², [12], ^12) with clickable source chips
+   * Replace the citation placeholders of an answer with source chips
    *
-   * @param {HTMLElement} contentEl - Content element
+   * A placeholder citing several sources ([1, 2] or [1][2]) becomes one chip with
+   * the first source and the number of further sources. Placeholders without a
+   * matching source are shown as the original text.
+   *
+   * @param {HTMLElement} contentEl - Element with the rendered answer
    * @param {HTMLElement} sourcesRow - Sources row element
    * @param {Array} sources - Sources array
+   * @param {boolean} [withTooltips=true] - Tooltips with file name, pages and excerpt
    */
-  convertFootnotesToChips(contentEl, sourcesRow, sources) {
+  convertFootnotesToChips(contentEl, sourcesRow, sources, withTooltips = true) {
     if (!contentEl || !sourcesRow || !sources || sources.length === 0) return;
 
     const { sourcesId } = sourcesRow.dataset;
     const self = this;
-    const createdChips = []; // measured after they are in the DOM
-
-    const superscriptMap = {
-      '¹': 1,
-      '²': 2,
-      '³': 3,
-      '⁴': 4,
-      '⁵': 5,
-      '⁶': 6,
-      '⁷': 7,
-      '⁸': 8,
-      '⁹': 9,
-      '⁰': 0,
-    };
 
     /**
-     * Parse footnote number from different formats
+     * Source list entry of a source number; may be an anchor inside a merged entry
      *
-     * @param {string} matchStr - The matched string
-     * @param {string} format - 'superscript', 'bracket', or 'caret'
-     * @returns {number} The footnote number
+     * @param {number} num - Source number (1-based)
+     * @returns {HTMLElement|null}
      */
-    function parseFootnoteNumber(matchStr, format) {
-      if (format === 'superscript') {
-        let num = 0;
-        for (const char of matchStr) {
-          num = num * 10 + (superscriptMap[char] || 0);
-        }
-        return num;
-      } if (format === 'bracket') {
-        return parseInt(matchStr.slice(1, -1), 10);
-      } if (format === 'caret') {
-        return parseInt(matchStr.slice(1), 10);
-      }
-      return 0;
+    function findSourceItem(num) {
+      const anchor = document.getElementById(`${sourcesId}-source-${num}`);
+      if (!anchor) return null;
+      return anchor.classList.contains('ai-chat-source-item')
+        ? anchor
+        : (anchor.closest('.ai-chat-source-item') || anchor);
     }
 
     /**
-     * Create a source chip element
+     * Create a source chip
      *
-     * @param {number} num - Source index (1-based)
-     * @returns {HTMLElement|null} The chip element or null if source not found
+     * The chip shows the type icon and the number of the file in the source list;
+     * the file name is shown on hover or focus. Several cited files are shown as
+     * the first one and the number of further files.
+     *
+     * @param {number[]} nums - Cited source numbers (1-based), all existing
+     * @returns {HTMLElement}
      */
-    function createSourceChip(num) {
-      const sourceData = sources[num - 1];
-      if (!sourceData) return null;
+    function createSourceChip(nums) {
+      const fileNumbers = sourcesRow.sourceFileNumbers || {};
+      const files = [...new Set(nums.map((num) => fileNumbers[num] || num))];
+      const sourceData = sources[nums[0] - 1];
 
       const chip = document.createElement('span');
       chip.className = 'ai-chat-source-chip';
-      chip.dataset.sourceIndex = num;
+      chip.dataset.sourceIndex = nums.join(',');
+      chip.setAttribute('role', 'button');
+      chip.tabIndex = 0;
 
       const type = self.detectSourceType(sourceData.filename, sourceData.url);
+      let more = '';
+      let label = `${files[0]}: ${sourceData.filename}`;
+      if (files.length > 1) {
+        const moreLabel = files.length === 2
+          ? self.lang.citationMoreSource
+          : self.lang.citationMoreSources.replace('%s', files.length - 1);
+        more = `<span class="ai-chat-chip-more" aria-hidden="true">+${files.length - 1}</span>`;
+        label += `, ${moreLabel}`;
+      }
+      chip.setAttribute('aria-label', label);
+      chip.innerHTML = `<span class="ai-chat-chip-icon" data-type="${type}" aria-hidden="true">${self.getSourceTypeIcon(type)}</span>`
+        + `<span class="ai-chat-chip-number" aria-hidden="true">${files[0]}</span>`
+        + `<span class="ai-chat-chip-name" aria-hidden="true"><span class="ai-chat-chip-text">${self.escapeHtml(sourceData.filename)}</span></span>${more}`;
 
-      chip.innerHTML = `<span class="ai-chat-chip-icon" data-type="${type}">${self.getSourceTypeIcon(type)}</span><span class="ai-chat-chip-name"><span class="ai-chat-chip-text">${self.escapeHtml(sourceData.filename)}</span></span>`;
+      const prepareUnfold = () => self.prepareChipUnfold(chip);
+      chip.addEventListener('mouseenter', prepareUnfold);
+      chip.addEventListener('focus', prepareUnfold);
 
-      createdChips.push(chip);
+      if (withTooltips) {
+        self.addSourceInfoTooltip(chip, nums.map((num) => sources[num - 1]));
+      }
 
-      self.addSourceInfoTooltip(chip, sourceData);
-
-      chip.addEventListener('click', (e) => {
+      const openSources = (e) => {
         e.preventDefault();
         const section = sourcesRow.querySelector('.ai-chat-sources-section');
         const btn = sourcesRow.querySelector('.ai-chat-sources-toggle');
@@ -3989,93 +4766,33 @@ class AIChatPageComponent {
           section.classList.add('open');
           btn.classList.add('active');
         }
-        let targetItem = document.getElementById(`${sourcesId}-source-${num}`);
-        if (targetItem) {
-          // May be an anchor inside the merged item
-          if (!targetItem.classList.contains('ai-chat-source-item')) {
-            targetItem = targetItem.closest('.ai-chat-source-item') || targetItem;
-          }
-          targetItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          targetItem.classList.add('highlighted');
-          setTimeout(() => targetItem.classList.remove('highlighted'), 2000);
+        const items = nums.map(findSourceItem).filter((item) => item !== null);
+        if (items.length > 0) {
+          items[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        items.forEach((item) => {
+          item.classList.add('highlighted');
+          setTimeout(() => item.classList.remove('highlighted'), 2000);
+        });
+      };
+      chip.addEventListener('click', openSources);
+      chip.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          openSources(e);
         }
       });
 
       return chip;
     }
 
-    // Footnote formats: superscripts (¹²), brackets ([12]) and carets (^12)
-    const combinedRegex = /([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\[\d+\]|\^\d+)/g;
-
-    const walker = document.createTreeWalker(contentEl, window.NodeFilter.SHOW_TEXT, null, false);
-    const nodesToProcess = [];
-
-    while (walker.nextNode()) {
-      if (combinedRegex.test(walker.currentNode.textContent)) {
-        nodesToProcess.push(walker.currentNode);
-        // test() on a global regex advances lastIndex
-        combinedRegex.lastIndex = 0;
+    contentEl.querySelectorAll('.ai-chat-cite').forEach((marker) => {
+      const nums = [...new Set(marker.dataset.cite.split(',').map((n) => parseInt(n, 10)))]
+        .filter((num) => num > 0 && sources[num - 1]);
+      if (nums.length > 0) {
+        marker.replaceWith(createSourceChip(nums));
+      } else {
+        marker.replaceWith(document.createTextNode(marker.textContent));
       }
-    }
-
-    nodesToProcess.forEach((textNode) => {
-      const fragment = document.createDocumentFragment();
-      const text = textNode.textContent;
-      let lastIndex = 0;
-      let match;
-
-      combinedRegex.lastIndex = 0;
-
-      while ((match = combinedRegex.exec(text)) !== null) {
-        if (match.index > lastIndex) {
-          fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-        }
-
-        const matchStr = match[0];
-        let format; let
-          num;
-
-        if (/^[¹²³⁴⁵⁶⁷⁸⁹⁰]+$/.test(matchStr)) {
-          format = 'superscript';
-          num = parseFootnoteNumber(matchStr, format);
-        } else if (/^\[\d+\]$/.test(matchStr)) {
-          format = 'bracket';
-          num = parseFootnoteNumber(matchStr, format);
-        } else if (/^\^\d+$/.test(matchStr)) {
-          format = 'caret';
-          num = parseFootnoteNumber(matchStr, format);
-        }
-
-        const chip = num > 0 ? createSourceChip(num) : null;
-        if (chip) {
-          fragment.appendChild(chip);
-        } else {
-          // Unknown source: keep the text
-          fragment.appendChild(document.createTextNode(matchStr));
-        }
-
-        lastIndex = combinedRegex.lastIndex;
-      }
-
-      if (lastIndex < text.length) {
-        fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
-      }
-
-      textNode.parentNode.replaceChild(fragment, textNode);
-    });
-
-    // Scroll animation for long names, measured once the chips are in the DOM
-    window.requestAnimationFrame(() => {
-      createdChips.forEach((chip) => {
-        const nameEl = chip.querySelector('.ai-chat-chip-name');
-        const textEl = chip.querySelector('.ai-chat-chip-text');
-        if (!nameEl || !textEl) return;
-        const overflow = textEl.scrollWidth - nameEl.clientWidth;
-        if (overflow > 0) {
-          chip.style.setProperty('--chip-scroll-offset', `-${overflow}px`);
-          chip.classList.add('ai-chat-chip-scrollable');
-        }
-      });
     });
   }
 }
@@ -4120,8 +4837,16 @@ function getAIChatLang() {
 function copyCodeToClipboard(button) {
   const codeBlock = button.closest('.ai-chat-code-block');
   const codeContent = codeBlock.querySelector('.ai-chat-code-content code');
-  const text = codeContent.textContent;
+  copyTextToClipboard(codeContent.textContent, button);
+}
 
+/**
+ * Copy text and show the result on the button
+ *
+ * @param {string} text
+ * @param {HTMLElement} button
+ */
+function copyTextToClipboard(text, button) {
   if (window.navigator.clipboard && window.isSecureContext) {
     window.navigator.clipboard.writeText(text).then(() => {
       showCodeCopyFeedback(button, getAIChatLang().messageCopied);

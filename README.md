@@ -69,7 +69,9 @@ Developed by the CompetenceCenter E-Learning, University of Cologne.
 **Conversation**
 - Chat history per user and chat, optionally persistent across visits
 - Configurable number of previous messages sent as context
-- Markdown rendering with code blocks, copying of answers, regenerating the last answer, clearing the chat
+- Markdown rendering of answers, also while streaming: tables (scrollable, copy, CSV export), code blocks with syntax highlighting and copy button, formulas (LaTeX via KaTeX), highlight boxes (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`)
+- Copying of answers, regenerating the last answer, clearing the chat
+- While a long answer is streamed, the view only follows if the user is at the end of the messages; when scrolled up, a button jumps to the latest message
 - Light and dark mode
 
 **Operation**
@@ -242,6 +244,8 @@ In RAG mode:
 - With "Show sources", references such as `[1]` appear in the answer and the sources (file name, pages, excerpt, or link for web sources) are listed below it.
 - With "Allow source downloads", learners can download the cited background files. Access to the file is checked against the read permission of the page.
 - If the RAG finds no relevant passages, the AI answers without them and is instructed not to guess the content of the documents.
+- The RAG service requires a citation for every statement and always returns the most similar passages, even if none of them is relevant to the question. The plugin therefore adds the following rule to the system prompt of RAG answers (constant `RAG_CITATION_INSTRUCTION` in `AIChatPageComponentLLM`):
+  > Citation rules for the provided context: Cite a context item only where the statement is actually based on that item, using the citation format specified in the context instructions. Do not add citations to statements that are not derived from the context. If none of the context items is relevant to the question, answer without citations and without referring to the context.
 - The RAG processes uploaded files asynchronously; large PDFs can take several minutes. While background files are not yet processed or their processing failed, learners see a note below the answer that the answer may be incomplete.
 - The processing state is queried from the RAG service at most once per minute and chat, triggered by chat requests, so the number of concurrent learners does not increase the load on the RAG service.
 - Files whose processing failed are uploaded again with increasing delay (5 minutes, doubled after each failure, at most 6 hours).
@@ -292,6 +296,18 @@ Institutions should check, for each AI service and RAG service, whether a data p
 4. Without RAG, the request is sent to the chat API of the AI service.
 5. With RAG, the RAG service first returns the relevant passages and a prompt extended by them (`/v1/rag/augmentation`). This extended conversation is then sent to the AI service. The RAG references `[cit-N]` are converted to `[N+1]` and matched with the returned passages.
 6. The answer is stored with sources and token usage and returned to the browser (as a stream if enabled).
+
+### Rendering of answers
+
+Answers are rendered from Markdown with marked.js and then cleaned with DOMPurify, because answers can contain HTML that was injected via documents. Scripts, event handlers, form elements, inline styles and links other than http, https, mailto or relative URLs are removed. Remote images are not loaded but shown as links. If DOMPurify cannot be loaded, answers are shown as plain text. While an answer is streamed, it is rendered completely (including code highlighting, formulas, tables and highlight boxes) at most once per frame. In RAG mode the sources are sent before the answer, so that citations are shown as chips while streaming; their tooltips are available once the answer is complete.
+
+- **Citations**: `[1]`, `[1, 2]`, `[1][2]`, `^1` and superscript digits are recognised outside of code. With sources, they are replaced by compact chips showing the file type and the number of the file in the source list below the answer; the file name unfolds on hover or keyboard focus. Passages from the same file share one chip; a chip citing several files shows the first one and the number of further files. The tooltip shows file name, pages and excerpt; with several passages it switches between them with buttons or the arrow keys. Enter or click opens the source list and highlights the cited files.
+- **Formulas**: `$…$`, `$$…$$`, `\(…\)` and `\[…\]` are rendered with KaTeX. A single dollar sign only starts a formula if it is not preceded by a letter or digit and no space follows it, so amounts like "5$ to 10$" remain text.
+- **Code blocks** get a language label, a copy button and syntax highlighting (highlight.js, common languages).
+- **Tables** scroll horizontally and can be copied (tab-separated, for spreadsheets) or downloaded as CSV (UTF-8). Cells starting with `=`, `+`, `-` or `@` are prefixed with `'` in the CSV, so spreadsheet programs do not execute them as formulas.
+- **Highlight boxes** use the GitHub notation `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`.
+
+All libraries are bundled in `js/vendor` (see `js/vendor/README.md`); highlight.js and KaTeX are only loaded when an answer needs them.
 
 ### File processing
 

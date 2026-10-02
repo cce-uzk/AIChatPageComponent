@@ -76,6 +76,8 @@ location of processing) has to be assessed by the operating institution.
 - **Administrators** (plugin configuration, statistics tab) see per chat the number
   of sessions and messages and the time of the last activity. Names or message
   contents are not shown.
+- Images referenced in AI answers are not loaded from other servers; they are shown
+  as links.
 
 ## Data being deleted
 

@@ -446,36 +446,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
 
         $response_content = '';
 
-        if ($this->isStreaming()) {
-            curl_setopt($curl_session, CURLOPT_WRITEFUNCTION, function ($curl_session, $chunk) use (&$response_content) {
-                $response_content .= $chunk;
-
-                $lines = explode("\n", $chunk);
-                foreach ($lines as $line) {
-                    $line = trim($line);
-                    if (empty($line)) {
-                        continue;
-                    }
-
-                    if (strpos($line, 'data: ') === 0) {
-                        $json_data = substr($line, strlen('data: '));
-                        if ($json_data === '[DONE]') {
-                            continue;
-                        }
-
-                        $json = json_decode($json_data, true);
-                        if ($json && isset($json['choices'][0]['delta']['content'])) {
-                            $content = $json['choices'][0]['delta']['content'];
-                            echo "data: " . json_encode(['type' => 'chunk', 'content' => $content]) . "\n\n";
-                            ob_flush();
-                            flush();
-                        }
-                    }
-                }
-
-                return strlen($chunk);
-            });
-        }
+        $stream_state = $this->configureChatRequest($curl_session, $response_content);
 
         $response = curl_exec($curl_session);
         $httpcode = curl_getinfo($curl_session, CURLINFO_HTTP_CODE);
@@ -484,6 +455,11 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         $err_no = curl_errno($curl_session);
         $err_msg = curl_error($curl_session);
         curl_close($curl_session);
+
+        $err_no = $this->resolveChatRequestError($err_no, $stream_state, $api_url);
+        if ($err_no === 0 && $response === false) {
+            $response = true; // Streaming transfer ended at the end marker
+        }
 
         if ($response === false || $err_no) {
             if ($this->logger) {
