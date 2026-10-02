@@ -1345,6 +1345,16 @@
    RAG SOURCES
    ============================================================================= */
 
+.ai-chat-rag-notice {
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-left: 3px solid var(--chat-warning);
+    border-radius: var(--chat-radius-small);
+    background: var(--chat-surface-sm);
+    color: var(--chat-text-secondary);
+    font-size: 0.85em;
+}
+
 .ai-chat-sources-row {
     display: flex;
     flex-direction: column;

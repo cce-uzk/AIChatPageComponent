@@ -363,7 +363,7 @@ $db = $DIC->database();
 if ($db->tableExists('pcaic_messages')) {
     // Upgrade message column from TEXT (65KB) to LONGTEXT (4GB) to handle long AI responses
     $db->modifyTableColumn('pcaic_messages', 'message', array(
-        'type' => 'clob',  // ILIAS clob type maps to MySQL LONGTEXT
+        'type' => 'clob',
         'notnull' => false
     ));
 }
@@ -581,7 +581,6 @@ if ($db->tableExists('pcaic_chats') && $db->tableColumnExists('pcaic_chats', 'ba
         }
 
         // Parse JSON array of resource IDs
-        // Example: ["8d59dc3d-70e4-491e-ba26-b86e813ae6ce","072193e8-ecc8-4f53-bc59-e39855f3c428"]
         $resourceIds = json_decode($backgroundFilesJson, true);
         if (!is_array($resourceIds)) {
             continue;
@@ -596,7 +595,7 @@ if ($db->tableExists('pcaic_chats') && $db->tableColumnExists('pcaic_chats', 'ba
             $checkResult = $db->query($checkQuery);
 
             if ($db->fetchAssoc($checkResult)) {
-                continue; // Already migrated
+                continue;
             }
 
             // Insert as background file (message_id = NULL, background_file = 1 if column exists)
@@ -605,7 +604,7 @@ if ($db->tableExists('pcaic_chats') && $db->tableColumnExists('pcaic_chats', 'ba
                 'id' => array('integer', $nextId),
                 'message_id' => array('integer', null),  // NULL = Background File
                 'chat_id' => array('text', $chatId),
-                'user_id' => array('integer', null),  // Unknown for migrated files
+                'user_id' => array('integer', null),
                 'resource_id' => array('text', $resourceId),
                 'rag_collection_id' => array('text', null),
                 'rag_remote_file_id' => array('text', null),
@@ -627,7 +626,6 @@ if ($db->tableExists('pcaic_chats') && $db->tableColumnExists('pcaic_chats', 'ba
 
 // Add RAG configuration to pcaic_config
 if ($db->tableExists('pcaic_config')) {
-    // Simplified RAG configuration (removed complex mode settings)
     $rag_configs = array(
         array('config_key' => 'enable_rag', 'config_value' => '1'),  // Enable RAG by default
         array('config_key' => 'ramses_rag_api_url', 'config_value' => 'https://ramses-oski.itcc.uni-koeln.de/v1/rag/completions'),
@@ -640,7 +638,6 @@ if ($db->tableExists('pcaic_config')) {
     $current_time = date('Y-m-d H:i:s');
 
     foreach ($rag_configs as $config) {
-        // Check if exists
         $query = "SELECT config_key FROM pcaic_config WHERE config_key = " .
                  $db->quote($config['config_key'], 'text');
         $result = $db->query($query);
@@ -664,12 +661,10 @@ if ($db->tableExists('pcaic_chats') && $db->tableColumnExists('pcaic_chats', 'ba
 // Migrate enable_rag to LLM-specific ramses_enable_rag
 // RAG control is now per-LLM: ramses_enable_rag for RAMSES, openai_enable_rag for OpenAI, etc.
 if ($db->tableExists('pcaic_config')) {
-    // Check if old enable_rag exists
     $query = "SELECT config_value FROM pcaic_config WHERE config_key = " . $db->quote('enable_rag', 'text');
     $result = $db->query($query);
     $old_enable_rag = $db->fetchAssoc($result);
 
-    // Migrate to ramses_enable_rag
     $current_time = date('Y-m-d H:i:s');
     $query_check = "SELECT config_key FROM pcaic_config WHERE config_key = " . $db->quote('ramses_enable_rag', 'text');
     $result_check = $db->query($query_check);
@@ -685,7 +680,6 @@ if ($db->tableExists('pcaic_config')) {
         ));
     }
 
-    // Remove old enable_rag
     if ($old_enable_rag) {
         $db->manipulate("DELETE FROM pcaic_config WHERE config_key = " . $db->quote('enable_rag', 'text'));
     }
@@ -830,7 +824,7 @@ $db = $DIC->database();
 if ($db->tableExists('pcaic_chats')) {
     if (!$db->tableColumnExists('pcaic_chats', 'temperature')) {
         $db->addTableColumn('pcaic_chats', 'temperature', array(
-            'type'    => 'float',
+            'type' => 'float',
             'notnull' => false,
         ));
     }
@@ -851,10 +845,128 @@ $db = $DIC->database();
 if ($db->tableExists('pcaic_chats')) {
     if (!$db->tableColumnExists('pcaic_chats', 'model')) {
         $db->addTableColumn('pcaic_chats', 'model', array(
-            'type'    => 'text',
-            'length'  => 255,
+            'type' => 'text',
+            'length' => 255,
             'notnull' => false,
         ));
     }
+}
+?>
+
+<#13>
+<?php
+/**
+ * Step 13: Separate RAG service from the RAMSES chat service (v1.9.0)
+ *
+ * RAG (upload, delete, retrieval) now has its own configuration (rag_*), so any
+ * AI service can be combined with the RAG. Existing RAMSES RAG settings are copied.
+ * The RAG service is only enabled automatically if the RAMSES URL does not point to
+ * the legacy RAMSES host, which does not offer the retrieval endpoint.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_config')) {
+    $read = static function (string $key) use ($db): ?string {
+        $result = $db->query("SELECT config_value FROM pcaic_config WHERE config_key = " . $db->quote($key, 'text'));
+        $row = $db->fetchAssoc($result);
+        return $row !== null ? (string) $row['config_value'] : null;
+    };
+
+    $current_time = date('Y-m-d H:i:s');
+    $insertIfMissing = static function (string $key, string $value) use ($db, $read, $current_time): void {
+        if ($read($key) !== null) {
+            return;
+        }
+        $db->insert('pcaic_config', array(
+            'config_key' => array('text', $key),
+            'config_value' => array('clob', $value),
+            'created_at' => array('timestamp', $current_time),
+            'updated_at' => array('timestamp', $current_time)
+        ));
+    };
+
+    $ramses_url = rtrim(trim((string) ($read('ramses_api_url') ?? '')), '/');
+    $ramses_token = trim((string) ($read('ramses_api_token') ?? ''));
+    $ramses_rag = $read('ramses_enable_rag') ?? '1';
+
+    $file_types = $read('ramses_rag_allowed_file_types') ?? 'txt,csv,pdf';
+    $decoded = json_decode($file_types, true);
+    if (is_array($decoded)) {
+        $file_types = implode(',', $decoded);
+    }
+
+    $legacy_host = $ramses_url === '' || str_contains($ramses_url, 'ramses-oski.itcc.uni-koeln.de');
+    $rag_url = $legacy_host ? 'https://oski-rag.itcc.uni-koeln.de' : $ramses_url;
+    $rag_key = $legacy_host ? '' : $ramses_token;
+    $rag_enabled = (!$legacy_host && $ramses_rag === '1' && $ramses_token !== '') ? '1' : '0';
+
+    $insertIfMissing('rag_service_enabled', $rag_enabled);
+    $insertIfMissing('rag_api_url', $rag_url);
+    $insertIfMissing('rag_client_key', $rag_key);
+    $insertIfMissing('rag_application_id', $read('ramses_application_id') ?? 'ILIAS');
+    $insertIfMissing('rag_instance_id', $read('ramses_instance_id') ?? 'ilias9');
+    $insertIfMissing('rag_allowed_file_types', $file_types ?: 'txt,csv,pdf');
+    $insertIfMissing('rag_top_k', '10');
+    $insertIfMissing('openai_enable_rag', '0');
+
+    // Remove obsolete RAMSES RAG keys (now rag_*)
+    foreach (['ramses_rag_config', 'ramses_rag_api_url', 'ramses_file_upload_url', 'ramses_file_delete_url',
+              'ramses_application_id', 'ramses_instance_id', 'ramses_rag_allowed_file_types'] as $obsolete) {
+        $db->manipulate("DELETE FROM pcaic_config WHERE config_key = " . $db->quote($obsolete, 'text'));
+    }
+}
+?>
+
+<#14>
+<?php
+/**
+ * Step 14: Processing state of files in the RAG service (v1.10.0)
+ *
+ * pcaic_attachments:
+ *   rag_status        processing | completed | failed | skipped (not a RAG file type);
+ *                     NULL = not handled yet
+ *   rag_status_error  error message of the RAG if processing failed
+ *   rag_failed_count  failed uploads/processings in a row, used for the retry delay
+ *   rag_retry_at      no new upload before this time
+ * pcaic_chats:
+ *   rag_status_checked_at  last status check of the chat, limits checks to one per minute
+ * pcaic_rag_deletions:
+ *   files the RAG did not delete yet (still processing), deleted later
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_attachments')) {
+    $columns = [
+        'rag_status' => ['type' => 'text', 'length' => 20, 'notnull' => false],
+        'rag_status_error' => ['type' => 'text', 'length' => 1000, 'notnull' => false],
+        'rag_failed_count' => ['type' => 'integer', 'length' => 4, 'notnull' => true, 'default' => 0],
+        'rag_retry_at' => ['type' => 'timestamp', 'notnull' => false],
+    ];
+    foreach ($columns as $name => $definition) {
+        if (!$db->tableColumnExists('pcaic_attachments', $name)) {
+            $db->addTableColumn('pcaic_attachments', $name, $definition);
+        }
+    }
+    // Files already in the RAG: state unknown, checked once
+    $db->manipulate("UPDATE pcaic_attachments SET rag_status = 'processing' WHERE rag_remote_file_id IS NOT NULL AND rag_status IS NULL");
+}
+
+if ($db->tableExists('pcaic_chats') && !$db->tableColumnExists('pcaic_chats', 'rag_status_checked_at')) {
+    $db->addTableColumn('pcaic_chats', 'rag_status_checked_at', ['type' => 'timestamp', 'notnull' => false]);
+}
+
+if (!$db->tableExists('pcaic_rag_deletions')) {
+    $db->createTable('pcaic_rag_deletions', [
+        'id' => ['type' => 'integer', 'length' => 4, 'notnull' => true],
+        'remote_file_id' => ['type' => 'text', 'length' => 64, 'notnull' => true],
+        'entity_id' => ['type' => 'text', 'length' => 128, 'notnull' => true],
+        'attempts' => ['type' => 'integer', 'length' => 4, 'notnull' => true, 'default' => 0],
+        'next_try' => ['type' => 'timestamp', 'notnull' => false],
+        'created_at' => ['type' => 'timestamp', 'notnull' => false],
+    ]);
+    $db->addPrimaryKey('pcaic_rag_deletions', ['id']);
+    $db->createSequence('pcaic_rag_deletions');
 }
 ?>

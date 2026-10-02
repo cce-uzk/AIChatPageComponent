@@ -1,102 +1,67 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 require_once __DIR__ . "/../vendor/autoload.php";
 
 use ILIAS\Plugin\pcaic\Validation\FileUploadValidator;
 
 /**
- * AI Chat Page Component GUI Controller
- *
- * Handles all user interface interactions for the AI Chat PageComponent.
- * Manages form creation, validation, configuration storage, and rendering
- * of embedded AI chat instances within ILIAS pages.
- *
- * Core responsibilities:
- * - Form-based configuration interface for chat settings
- * - Background file upload and management
- * - Integration with ILIAS page editor
- * - Chat rendering with proper context and permissions
- * - Session management and user interaction handling
- *
- * ilAIChatPageComponentPlugin
+ * Page editor integration of the chat: create and edit forms, editor preview and
+ * rendering on the page
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- *
- * @see ilPageComponentPluginGUI Base class for PageComponent GUIs
- * @see ilAIChatPageComponentPlugin Main plugin class
  *
  * @ilCtrl_isCalledBy ilAIChatPageComponentPluginGUI: ilPCPluggedGUI
  * @ilCtrl_isCalledBy ilAIChatPageComponentPluginGUI: ilRepositoryGUI
  */
 class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 {
-    /** @var ilLanguage Language service for localization */
     protected ilLanguage $lng;
 
-    /** @var ilCtrl Control service for URL generation and routing */
     protected ilCtrl $ctrl;
 
-    /** @var ilGlobalTemplateInterface Global template for page rendering */
     protected ilGlobalTemplateInterface $tpl;
 
-    /** @var \Psr\Http\Message\ServerRequestInterface HTTP request object */
     protected $request;
 
-    /** @var \ilLogger Component logger for debugging and monitoring */
     protected $logger;
 
-    /**
-     * Constructor - initializes GUI dependencies and services
-     *
-     * Sets up all required ILIAS services through dependency injection.
-     * Establishes component-specific logging for debugging and monitoring.
-     */
     public function __construct()
     {
         global $DIC;
 
         parent::__construct();
 
-        // Initialize ILIAS core services
         $this->lng = $DIC->language();
         $this->ctrl = $DIC->ctrl();
         $this->tpl = $DIC['tpl'];
         $this->request = $DIC->http()->request();
 
-        // Initialize component-specific logging
         $this->logger = $DIC->logger()->pcaic();
     }
 
-    /**
-     * Sets the page content GUI reference
-     *
-     * Called by ILIAS during page component initialization to establish
-     * the connection between this GUI and the parent page context.
-     *
-     * @param ilPageContentGUI $a_val Page content GUI instance
-     */
     public function setPCGUI(ilPageContentGUI $a_val): void
     {
         parent::setPCGUI($a_val);
     }
 
     /**
-     * Main command dispatcher for all GUI actions
-     *
-     * Routes incoming requests to appropriate handlers based on the command
-     * and next class parameters. Supports both direct commands (create, edit, etc.)
-     * and forwarded commands (file upload handlers).
-     *
-     * Supported commands:
-     * - create: Create new chat configuration
-     * - save: Save chat configuration
-     * - edit: Edit existing chat
-     * - update: Update existing chat
-     * - cancel: Cancel current operation
-     *
-     * @throws ilException On invalid commands
+     * Upload requests are forwarded to the upload handler, all other commands must
+     * be in the list of allowed commands
      */
-    public function executeCommand() : void
+    public function executeCommand(): void
     {
         $next_class = $this->ctrl->getNextClass();
 
@@ -107,7 +72,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $this->ctrl->forwardCommand($gui);
                 break;
             default:
-                // Execute standard PageComponent commands
                 $cmd = $this->ctrl->getCmd();
                 $allowed = ["create", "save", "edit", "update", "cancel",
                             "showBasicTab", "saveBasic",
@@ -123,14 +87,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
     }
 
-
     /**
-     * Displays the form for inserting a new AI chat component
-     *
-     * Called when user selects "Insert > Plugin > AI Chat" in page editor.
-     * Renders the configuration form with all available options.
+     * Form for inserting a new chat
      */
-    public function insert() : void
+    public function insert(): void
     {
         global $DIC;
         $form = $this->initForm(true);
@@ -139,15 +99,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Processes form submission for creating a new AI chat component
-     *
-     * Validates form data, saves configuration to database, and returns
-     * to page editor. Handles both chat settings and background file uploads.
-     *
-     * On success: Redirects to parent page
-     * On failure: Redisplays form with error messages
+     * Save a new chat
      */
-    public function create() : void
+    public function create(): void
     {
         global $DIC;
         $form = $this->initForm(true);
@@ -179,56 +133,50 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $this->tpl->setContent($renderer->render($form));
     }
 
-    public function edit() : void
+    public function edit(): void
     {
         $this->showBasicTab();
     }
 
-    public function update() : void
+    public function update(): void
     {
         $this->saveBasic();
     }
 
     /**
-     * Init editing form
+     * Form for creating and editing a chat
      */
     protected function initForm(bool $a_create = false, string $tab = 'all')
     {
-        // Modern ILIAS 9 UI FileUpload component for background files
         global $DIC;
         $ui_factory = $DIC->ui()->factory();
 
-        // Check global file handling (hierarchical service-specific check happens in API)
+        // File types per service are checked again on upload
         $file_handling_enabled = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
         $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
 
-        // Determine allowed extensions based on RAG mode
-        // For background files, we need to check if RAG is likely to be enabled
+        // Allowed types depend on RAG, see getBackgroundFileExtensions()
         $allowed_extensions = $this->getAllowedBackgroundFileExtensions($a_create);
 
         if (!$file_handling_enabled) {
-            // File handling completely disabled - show clear message
             $file_upload = $ui_factory->input()->field()->text(
                 $this->plugin->txt('background_files_upload_label'),
                 $this->plugin->txt('setting_disabled_by_admin_info')
             )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('background_files');
         } elseif (!$background_files_enabled) {
-            // Create disabled placeholder if background files are globally disabled
+            // Placeholder if background files are disabled globally
             $file_upload = $ui_factory->input()->field()->text(
                 $this->plugin->txt('background_files_upload_label'),
                 $this->plugin->txt('setting_disabled_by_admin_info')
             )->withValue($this->plugin->txt('background_files_disabled'))->withDisabled(true)->withDedicatedName('background_files');
         } else {
-            // Use the same approach for both CREATE and EDIT
             $extensions_display = implode(', ', array_map('strtoupper', $allowed_extensions));
             $info_text = 'Upload background files for AI context. Allowed types: ' . $extensions_display;
 
-            // File uploads now work in both CREATE and EDIT mode with IRSS handler
             require_once(__DIR__ . '/class.ilAIChatPageComponentFileUploadHandlerGUI.php');
             $upload_handler = new ilAIChatPageComponentFileUploadHandlerGUI();
 
-            // Convert extensions to accept attribute values (MIME types + extensions)
-            // This ensures browser compatibility for all file types including .md
+            // MIME types and extensions, because browsers do not recognise every MIME type (e.g. .md)
             $allowed_accept_values = FileUploadValidator::extensionsToAcceptValues($allowed_extensions);
 
             $file_upload = $ui_factory->input()->field()->file(
@@ -239,7 +187,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
              ->withMaxFiles(10)
              ->withAcceptedMimeTypes($allowed_accept_values);
 
-            // Set existing values for EDIT mode
             if (!$a_create && isset($prop['background_files'])) {
                 $existing_file_ids = is_string($prop['background_files']) ?
                     json_decode($prop['background_files'], true) :
@@ -251,42 +198,38 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
         }
 
-        // Get AIChat defaults
         $defaults = $this->getAIChatDefaults();
 
-        // Load existing configuration from new ChatConfig model
         $prop = [];
-        $chatConfig = null;
+        $chat_config = null;
 
         if (!$a_create) {
-            // Try to load from new ChatConfig first
             $old_properties = $this->getProperties();
             $chat_id = $old_properties['chat_id'] ?? '';
 
             if (!empty($chat_id)) {
                 try {
-                    $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-                    if ($chatConfig->exists()) {
-                        // Load from new architecture
+                    $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+                    if ($chat_config->exists()) {
                         $prop = [
-                            'chat_title' => $chatConfig->getTitle(),
-                            'system_prompt' => $chatConfig->getSystemPrompt(),
-                            'ai_service' => $chatConfig->getAiService(),
-                            'max_memory' => $chatConfig->getMaxMemory(),
-                            'char_limit' => $chatConfig->getCharLimit(),
-                            'persistent' => $chatConfig->isPersistent(),
-                            'include_page_context' => $chatConfig->isIncludePageContext(),
-                            'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
-                            'enable_streaming' => $chatConfig->isEnableStreaming(),
-                            'enable_rag' => $chatConfig->isEnableRag(),
-                            'show_sources' => $chatConfig->isShowSources(),
-                            'allow_source_downloads' => $chatConfig->isAllowSourceDownloads(),
-                            'is_online' => $chatConfig->isOnline(),
-                            'disclaimer' => $chatConfig->getDisclaimer(),
-                            'background_files' => json_encode($chatConfig->getBackgroundFiles())
+                            'chat_title' => $chat_config->getTitle(),
+                            'system_prompt' => $chat_config->getSystemPrompt(),
+                            'ai_service' => $chat_config->getAiService(),
+                            'max_memory' => $chat_config->getMaxMemory(),
+                            'char_limit' => $chat_config->getCharLimit(),
+                            'persistent' => $chat_config->isPersistent(),
+                            'include_page_context' => $chat_config->isIncludePageContext(),
+                            'enable_chat_uploads' => $chat_config->isEnableChatUploads(),
+                            'enable_streaming' => $chat_config->isEnableStreaming(),
+                            'enable_rag' => $chat_config->isEnableRag(),
+                            'show_sources' => $chat_config->isShowSources(),
+                            'allow_source_downloads' => $chat_config->isAllowSourceDownloads(),
+                            'is_online' => $chat_config->isOnline(),
+                            'disclaimer' => $chat_config->getDisclaimer(),
+                            'background_files' => json_encode($chat_config->getBackgroundFiles())
                         ];
                     } else {
-                        // Fallback to old properties
+                        // Chat without stored configuration: use the element properties
                         $prop = $old_properties;
                     }
                 } catch (\Exception $e) {
@@ -299,7 +242,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         }
 
-        // Set existing files for edit mode (only when $file_upload is a real file field, not a disabled text placeholder)
+        // Only if file upload is available (not the disabled placeholder)
         if (!$a_create && $file_handling_enabled && $background_files_enabled && isset($prop['background_files'])) {
             $existing_file_ids = is_string($prop['background_files']) ?
                 json_decode($prop['background_files'], true) :
@@ -310,45 +253,35 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
         }
 
-        // Chat title
         $chat_title = $ui_factory->input()->field()->text(
             $this->plugin->txt('chat_title_label'),
             $this->plugin->txt('chat_title_info')
         )->withDedicatedName('chat_title')->withRequired(true)->withMaxLength(255)->withValue($prop['chat_title'] ?? $defaults['title']);
 
-        // Online/offline toggle
         $is_online = $ui_factory->input()->field()->checkbox(
             $this->plugin->txt('chat_online_label'),
             $this->plugin->txt('chat_online_info')
         )->withDedicatedName('is_online')->withValue($this->toBool($prop['is_online'] ?? true));
 
-        // System prompt
         $system_prompt = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('system_prompt_label'),
             $this->plugin->txt('system_prompt_info')
         )->withDedicatedName('system_prompt')->withMaxLimit(12000)->withValue($prop['system_prompt'] ?? $defaults['prompt']);
 
-        // AI Service Selection (DYNAMIC - using LLMRegistry)
-        // Get default AI service from config
         $default_ai_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
         $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
 
-        // Build available services dynamically from registry (only enabled ones)
-        $service_options = \ai\AIChatPageComponentLLMRegistry::getServiceOptions(true); // true = only enabled
+        $service_options = \ai\AIChatPageComponentLLMRegistry::getServiceOptions(true);
 
-        // Determine AI service value
         $stored_service = $prop['ai_service'] ?? null;
         if ($force_default_service === '1') {
-            // Force is enabled: use default service
             $ai_service_value = $default_ai_service;
         } elseif ($stored_service && isset($service_options[$stored_service])) {
-            // Stored service is still available: use it
             $ai_service_value = $stored_service;
         } elseif (!empty($service_options)) {
-            // Stored service no longer available or not set: use first available service
+            // The stored service has been disabled: use the first available service
             $ai_service_value = array_key_first($service_options);
 
-            // Add warning if stored service was disabled
             if ($stored_service && !isset($service_options[$stored_service])) {
                 global $DIC;
                 $DIC->ui()->mainTemplate()->setOnScreenMessage(
@@ -360,84 +293,70 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 );
             }
         } else {
-            // No services available at all
             $ai_service_value = null;
         }
 
-        // Create AI service field (disabled if forced)
         $ai_service = $ui_factory->input()->field()->select(
             $this->plugin->txt('ai_service_label'),
             $service_options,
             $this->plugin->txt('ai_service_info')
         )->withDedicatedName('ai_service');
 
-        // Only set value if we have one and it's valid
         if ($ai_service_value && isset($service_options[$ai_service_value])) {
             $ai_service = $ai_service->withValue($ai_service_value);
         }
 
-        // Disable field if service is forced
         if ($force_default_service === '1') {
             $ai_service = $ai_service->withDisabled(true);
         }
 
-        // Max messages in memory
         $max_memory = $ui_factory->input()->field()->numeric(
             $this->plugin->txt('max_memory_label'),
             $this->plugin->txt('max_memory_info')
-        )->withDedicatedName('max_memory')->withValue((int)($prop['max_memory'] ?? $defaults['max_memory_messages']));
+        )->withDedicatedName('max_memory')->withValue((int) ($prop['max_memory'] ?? $defaults['max_memory_messages']));
 
-        // Character limit per message
         $char_limit = $ui_factory->input()->field()->numeric(
             $this->plugin->txt('char_limit_label'),
             $this->plugin->txt('char_limit_info')
-        )->withDedicatedName('char_limit')->withValue((int)($prop['char_limit'] ?? $defaults['characters_limit']));
+        )->withDedicatedName('char_limit')->withValue((int) ($prop['char_limit'] ?? $defaults['characters_limit']));
 
-        // Chat persistence
         $persistent = $ui_factory->input()->field()->checkbox(
             $this->plugin->txt('persistent_chat_label'),
             $this->plugin->txt('persistent_chat_info')
         )->withDedicatedName('persistent')->withValue($this->toBool($prop['persistent'] ?? false));
 
-        // Page context inclusion
         $include_context = $ui_factory->input()->field()->checkbox(
             $this->plugin->txt('include_page_context_label'),
             $this->plugin->txt('include_page_context_info')
         )->withDedicatedName('include_page_context')->withValue($this->toBool($prop['include_page_context'] ?? true));
 
-        // Check hierarchical file handling (global → service) BEFORE defining file-related fields
+        // File handling must be known before the file-related fields are built
         $effective_ai_service = $ai_service_value ?? 'ramses';
         $global_file_handling = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
         $service_file_handling_key = $effective_ai_service . '_file_handling_enabled';
         $service_file_handling = (\platform\AIChatPageComponentConfig::get($service_file_handling_key) ?? '1') === '1';
         $file_handling_enabled_for_service = $global_file_handling && $service_file_handling;
 
-        // Enable chat file uploads - check hierarchical file handling and specific chat upload permissions
         $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
         if (!$file_handling_enabled_for_service) {
-            // File handling disabled (global or service-specific)
             $enable_chat_uploads = $ui_factory->input()->field()->text(
                 $this->plugin->txt('enable_chat_uploads_label'),
                 $this->plugin->txt('setting_disabled_by_admin_info')
             )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('enable_chat_uploads_disabled');
         } elseif ($chat_uploads_globally_enabled) {
-            // Chat uploads enabled - show checkbox
             $enable_chat_uploads = $ui_factory->input()->field()->checkbox(
                 $this->plugin->txt('enable_chat_uploads_label'),
                 $this->plugin->txt('enable_chat_uploads_info')
             )->withDedicatedName('enable_chat_uploads')->withValue($this->toBool($prop['enable_chat_uploads'] ?? false));
         } else {
-            // Chat uploads specifically disabled (but file handling is enabled)
             $enable_chat_uploads = $ui_factory->input()->field()->text(
                 $this->plugin->txt('enable_chat_uploads_label'),
                 $this->plugin->txt('setting_disabled_by_admin_info')
             )->withValue($this->plugin->txt('chat_uploads_disabled'))->withDisabled(true)->withDedicatedName('enable_chat_uploads_disabled');
         }
 
-        // Enable streaming responses - check global streaming setting
         $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
 
-        // Only create streaming field if globally enabled
         if ($streaming_globally_enabled) {
             $enable_streaming = $ui_factory->input()->field()->checkbox(
                 $this->plugin->txt('enable_streaming_label'),
@@ -445,46 +364,40 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             )->withDedicatedName('enable_streaming')->withValue($this->toBool($prop['enable_streaming'] ?? true));
         }
 
-        // Enable RAG mode - only available if file handling enabled AND AI service supports RAG AND RAG globally enabled
+        // RAG requires file handling, the RAG service and RAG allowed for the AI service
         require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
         require_once(__DIR__ . '/ai/class.AIChatPageComponentLLMRegistry.php');
 
-        // Use LLMRegistry to dynamically create service instance
         $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($effective_ai_service);
         if ($llm === null) {
-            // Fallback to first available service
-            $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
-            $firstService = !empty($availableServices) ? array_key_first($availableServices) : null;
-            $llm = $firstService ? \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService) : null;
+            $available_services = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+            $first_service = !empty($available_services) ? array_key_first($available_services) : null;
+            $llm = $first_service ? \ai\AIChatPageComponentLLMRegistry::createServiceInstance($first_service) : null;
         }
 
         $service_supports_rag = $llm->supportsRAG();
 
-        // Get global RAG setting (LLM-specific)
-        $rag_config_key = $effective_ai_service . '_enable_rag'; // e.g., ramses_enable_rag
+        $rag_config_key = $effective_ai_service . '_enable_rag';
         $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
         $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
 
         if (!$file_handling_enabled_for_service) {
-            // File handling disabled - no RAG available
             $enable_rag = $ui_factory->input()->field()->text(
                 $this->plugin->txt('enable_rag_label'),
                 $this->plugin->txt('setting_disabled_by_admin_info')
             )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('enable_rag_disabled');
         } elseif (!$service_supports_rag) {
-            // AI service doesn't support RAG
             $enable_rag = $ui_factory->input()->field()->text(
                 $this->plugin->txt('enable_rag_label'),
                 $this->plugin->txt('rag_not_supported_info')
             )->withValue($this->plugin->txt('rag_not_supported'))->withDisabled(true)->withDedicatedName('enable_rag_disabled');
         } elseif (!$rag_globally_enabled) {
-            // RAG globally disabled
             $enable_rag = $ui_factory->input()->field()->text(
                 $this->plugin->txt('enable_rag_label'),
                 $this->plugin->txt('setting_disabled_by_admin_info')
             )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('enable_rag_disabled');
         } else {
-            // RAG available – optionalGroup with source settings nested underneath
+            // Source settings are nested in the RAG option
             $rag_enabled_now = $this->toBool($prop['enable_rag'] ?? false);
             $rag_sub_inputs = [
                 'show_sources' => $ui_factory->input()->field()->checkbox(
@@ -507,13 +420,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             ] : null);
         }
 
-        // Disclaimer
         $disclaimer = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('legal_disclaimer_label'),
             $this->plugin->txt('legal_disclaimer_info')
         )->withDedicatedName('disclaimer')->withMaxLimit(4000)->withValue($prop['disclaimer'] ?? $defaults['disclaimer']);
 
-        // Determine form action based on context
         if ($a_create) {
             $form_action = $this->ctrl->getFormAction($this, 'create');
         } elseif ($tab === 'basic') {
@@ -522,7 +433,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $form_action = $this->ctrl->getFormAction($this, 'update');
         }
 
-        // ── Section 1: Grundeinstellungen ────────────────────────────────────────
+        // General settings
         $sections = [];
         $sections[] = $ui_factory->input()->field()->section(
             ['chat_title' => $chat_title, 'is_online' => $is_online, 'system_prompt' => $system_prompt],
@@ -530,14 +441,14 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('section_general_info')
         );
 
-        // ── Section 2: KI-Dienst & Konfiguration (create mode only) ─────────────
+        // AI service (create mode only)
         if ($tab !== 'basic') {
             $ai_config_fields = [];
             if ($force_default_service !== '1') {
                 $ai_config_fields['ai_service'] = $ai_service;
             }
             $ai_config_fields['max_memory'] = $max_memory;
-            $ai_config_fields['char_limit']  = $char_limit;
+            $ai_config_fields['char_limit'] = $char_limit;
             $sections[] = $ui_factory->input()->field()->section(
                 $ai_config_fields,
                 $this->plugin->txt('section_ai_config_label'),
@@ -545,9 +456,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             );
         }
 
-        // ── Section 3: Chat-Verhalten ─────────────────────────────────────────────
+        // Chat behaviour
         $behavior_fields = [
-            'persistent'         => $persistent,
+            'persistent' => $persistent,
             'include_page_context' => $include_context,
         ];
         if ($file_handling_enabled_for_service) {
@@ -565,7 +476,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('section_behavior_info')
         );
 
-        // ── Section 4: Hintergrunddateien (conditional) ──────────────────────────
+        // Background files
         if ($file_handling_enabled_for_service && $background_files_enabled) {
             $sections[] = $ui_factory->input()->field()->section(
                 ['background_files' => $file_upload],
@@ -574,7 +485,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             );
         }
 
-        // ── Section 5: Rechtliches (create mode only) ────────────────────────────
+        // Legal (create mode only)
         if ($tab !== 'basic') {
             $sections[] = $ui_factory->input()->field()->section(
                 ['disclaimer' => $disclaimer],
@@ -585,13 +496,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         $form = $ui_factory->input()->container()->form()->standard($form_action, $sections);
 
-
         return $form;
     }
 
-    protected function saveForm(array $form_data, bool $a_create) : bool
+    protected function saveForm(array $form_data, bool $a_create): bool
     {
-        // Generate or get chat ID
         $chat_id = '';
         if ($a_create) {
             $chat_id = uniqid('chat_', true);
@@ -600,7 +509,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $chat_id = $properties['chat_id'] ?? uniqid('chat_', true);
         }
 
-        // Handle file uploads - only process if file handling is enabled and background files are allowed
+        // Only if file handling and background files are enabled
         $file_handling_enabled = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
         $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
 
@@ -608,19 +517,16 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         if ($file_handling_enabled && $background_files_enabled) {
             $background_files = $form_data['background_files'] ?? [];
 
-            // Handle upload handler results
             if (is_array($background_files)) {
                 foreach ($background_files as $file_data) {
                     if (is_string($file_data)) {
-                        // Direct resource ID from upload handler
+                        // The upload handler returns the resource ID directly, as array or as JSON string
                         $file_ids[] = $file_data;
                     } elseif (is_array($file_data) && isset($file_data['resource_id'])) {
-                        // Resource ID wrapped in array
                         $file_ids[] = $file_data['resource_id'];
                     }
                 }
             } elseif (is_string($background_files)) {
-                // Fallback: JSON-encoded string
                 $decoded = json_decode($background_files, true);
                 if (is_array($decoded)) {
                     $file_ids = $decoded;
@@ -628,117 +534,105 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
         }
 
-        // Get page information for context
         $page_info = $this->getPageInfo();
 
         try {
-            // Create or update ChatConfig in new architecture
-            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
 
-            // Set all configuration data
-            $chatConfig->setChatId($chat_id);
-            $chatConfig->setPageId((int)($page_info['page_id'] ?? 0));
-            $chatConfig->setParentId((int)($page_info['parent_id'] ?? 0));
-            $chatConfig->setParentType($page_info['parent_type'] ?? '');
-            $chatConfig->setTitle($form_data['chat_title'] ?? '');
-            $chatConfig->setSystemPrompt($form_data['system_prompt'] ?? '');
+            $chat_config->setChatId($chat_id);
+            $chat_config->setPageId((int) ($page_info['page_id'] ?? 0));
+            $chat_config->setParentId((int) ($page_info['parent_id'] ?? 0));
+            $chat_config->setParentType($page_info['parent_type'] ?? '');
+            $chat_config->setTitle($form_data['chat_title'] ?? '');
+            $chat_config->setSystemPrompt($form_data['system_prompt'] ?? '');
 
-            // AI Service: Use default if forced, otherwise use form value
             $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
             if ($force_default_service === '1') {
                 $ai_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
             } else {
                 $ai_service = $form_data['ai_service'] ?? \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
             }
-            $chatConfig->setAiService($ai_service);
+            $chat_config->setAiService($ai_service);
 
-            $chatConfig->setMaxMemory((int) ($form_data['max_memory'] ?? 10));
-            $chatConfig->setCharLimit((int) ($form_data['char_limit'] ?? 2000));
+            $chat_config->setMaxMemory((int) ($form_data['max_memory'] ?? 10));
+            $chat_config->setCharLimit((int) ($form_data['char_limit'] ?? 2000));
 
-            // Save background files in pcaic_attachments table
-            $this->saveBackgroundFilesToAttachments($chat_id, $file_ids, $chatConfig, $a_create);
+            $this->saveBackgroundFilesToAttachments($chat_id, $file_ids, $chat_config, $a_create);
 
-            $chatConfig->setIsOnline((bool) ($form_data['is_online'] ?? true));
-            $chatConfig->setPersistent((bool) ($form_data['persistent'] ?? true));
-            $chatConfig->setIncludePageContext((bool) ($form_data['include_page_context'] ?? true));
-            // Only set chat uploads if file handling is enabled AND chat uploads are globally enabled
+            $chat_config->setIsOnline((bool) ($form_data['is_online'] ?? true));
+            $chat_config->setPersistent((bool) ($form_data['persistent'] ?? true));
+            $chat_config->setIncludePageContext((bool) ($form_data['include_page_context'] ?? true));
+            // Chat uploads and streaming can only be enabled if they are enabled globally
             $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
             if ($file_handling_enabled && $chat_uploads_globally_enabled) {
-                $chatConfig->setEnableChatUploads((bool) ($form_data['enable_chat_uploads'] ?? false));
+                $chat_config->setEnableChatUploads((bool) ($form_data['enable_chat_uploads'] ?? false));
             } else {
-                $chatConfig->setEnableChatUploads(false); // Force disabled when globally disabled
+                $chat_config->setEnableChatUploads(false);
             }
-            // Only set streaming if globally enabled AND form field is present
             $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
             if ($streaming_globally_enabled) {
-                $chatConfig->setEnableStreaming((bool) ($form_data['enable_streaming'] ?? true));
+                $chat_config->setEnableStreaming((bool) ($form_data['enable_streaming'] ?? true));
             } else {
-                $chatConfig->setEnableStreaming(false); // Force disabled when globally disabled
+                $chat_config->setEnableStreaming(false);
             }
 
-            // Only set RAG if service supports it AND globally enabled
             require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
             require_once(__DIR__ . '/ai/class.AIChatPageComponentLLMRegistry.php');
 
-            $ai_service = $chatConfig->getAiService();
-            // Use LLMRegistry to dynamically create service instance
+            $ai_service = $chat_config->getAiService();
             $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
             if ($llm === null) {
-                // Fallback to first available service
-                $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
-                $firstService = !empty($availableServices) ? array_key_first($availableServices) : null;
-                $llm = $firstService ? \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService) : null;
+                $available_services = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+                $first_service = !empty($available_services) ? array_key_first($available_services) : null;
+                $llm = $first_service ? \ai\AIChatPageComponentLLMRegistry::createServiceInstance($first_service) : null;
             }
 
             $service_supports_rag = $llm->supportsRAG();
 
-            // Get global RAG setting (LLM-specific)
-            $rag_config_key = $ai_service . '_enable_rag'; // e.g., ramses_enable_rag
+            $rag_config_key = $ai_service . '_enable_rag';
             $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
             $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
 
-            // Track RAG state change
-            $rag_was_enabled = $chatConfig->isEnableRag();
+            $rag_was_enabled = $chat_config->isEnableRag();
             $rag_now_enabled = false;
 
             if ($service_supports_rag && $rag_globally_enabled) {
                 $rag_data = $form_data['enable_rag'] ?? null;
                 $rag_now_enabled = is_array($rag_data);
-                $chatConfig->setEnableRag($rag_now_enabled);
+                $chat_config->setEnableRag($rag_now_enabled);
                 if ($rag_now_enabled) {
-                    $chatConfig->setShowSources((bool)($rag_data['show_sources'] ?? false));
-                    $chatConfig->setAllowSourceDownloads((bool)($rag_data['allow_source_downloads'] ?? false));
+                    $chat_config->setShowSources((bool) ($rag_data['show_sources'] ?? false));
+                    $chat_config->setAllowSourceDownloads((bool) ($rag_data['allow_source_downloads'] ?? false));
                 }
-            } else {
-                $chatConfig->setEnableRag(false); // Force disabled when not supported or globally disabled
             }
+            // Otherwise keep the stored value: RAG may be temporarily unavailable (e.g. RAG
+            // service not configured yet) and is checked again for every message
 
-            $chatConfig->setDisclaimer($form_data['disclaimer'] ?? '');
+            $chat_config->setDisclaimer($form_data['disclaimer'] ?? '');
 
-            // Save to database
-            $result = $chatConfig->save();
+            $result = $chat_config->save();
 
-            // Sync existing BACKGROUND FILES to RAG if RAG was just enabled
+            // When RAG is switched on, existing background files are uploaded to the RAG
             if ($result && !$rag_was_enabled && $rag_now_enabled) {
                 $this->logger->info("RAG was activated, syncing background files", ['chat_id' => $chat_id]);
                 try {
-                    $sync_stats = $llm->syncBackgroundFilesToRAG($chatConfig);
+                    $sync_stats = $llm->syncBackgroundFilesToRAG($chat_config);
                     $this->logger->info("Background files RAG sync completed", $sync_stats);
 
                     if ($sync_stats['uploaded'] > 0) {
-                        ilUtil::sendInfo(sprintf(
+                        $this->tpl->setOnScreenMessage('info', sprintf(
                             $this->plugin->txt('rag_sync_success'),
                             $sync_stats['uploaded']
                         ), true);
                     }
                 } catch (\Exception $e) {
                     $this->logger->error("Background files RAG sync failed", ['error' => $e->getMessage()]);
-                    ilUtil::sendFailure($this->plugin->txt('rag_sync_error'), true);
+                    $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('rag_sync_error'), true);
                 }
             }
 
             if ($result) {
-                // Also save minimal properties to PageComponent for backward compatibility
+                // The page element references the chat via these properties
                 $properties = $this->getProperties();
                 $properties['chat_id'] = $chat_id;
                 $properties['chat_title'] = $form_data['chat_title'] ?? '';
@@ -761,17 +655,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
     }
 
-    /**
-     * Cancel
-     */
     public function cancel()
     {
         $this->returnToParent();
     }
-
-    // ============================================================
-    // Tab helpers
-    // ============================================================
 
     private function getChatIdForEdit(): string
     {
@@ -783,18 +670,23 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     {
         global $DIC;
         $tabs = $DIC->tabs();
-        $tabs->addTab('basic', $this->plugin->txt('tab_settings'),
-            $this->ctrl->getLinkTarget($this, 'showBasicTab'));
-        $tabs->addTab('advanced', $this->plugin->txt('tab_advanced_settings'),
-            $this->ctrl->getLinkTarget($this, 'showAdvancedTab'));
-        $tabs->addTab('statistics', $this->plugin->txt('tab_statistics'),
-            $this->ctrl->getLinkTarget($this, 'showStatisticsTab'));
+        $tabs->addTab(
+            'basic',
+            $this->plugin->txt('tab_settings'),
+            $this->ctrl->getLinkTarget($this, 'showBasicTab')
+        );
+        $tabs->addTab(
+            'advanced',
+            $this->plugin->txt('tab_advanced_settings'),
+            $this->ctrl->getLinkTarget($this, 'showAdvancedTab')
+        );
+        $tabs->addTab(
+            'statistics',
+            $this->plugin->txt('tab_statistics'),
+            $this->ctrl->getLinkTarget($this, 'showStatisticsTab')
+        );
         $tabs->setTabActive($active);
     }
-
-    // ============================================================
-    // Tab 1 – Einstellungen
-    // ============================================================
 
     public function showBasicTab(): void
     {
@@ -853,44 +745,44 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $page_info = $this->getPageInfo();
 
         try {
-            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-            $chatConfig->setChatId($chat_id);
-            $chatConfig->setPageId((int)($page_info['page_id'] ?? 0));
-            $chatConfig->setParentId((int)($page_info['parent_id'] ?? 0));
-            $chatConfig->setParentType($page_info['parent_type'] ?? '');
-            $chatConfig->setTitle($form_data['chat_title'] ?? '');
-            $chatConfig->setSystemPrompt($form_data['system_prompt'] ?? '');
+            $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            $chat_config->setChatId($chat_id);
+            $chat_config->setPageId((int) ($page_info['page_id'] ?? 0));
+            $chat_config->setParentId((int) ($page_info['parent_id'] ?? 0));
+            $chat_config->setParentType($page_info['parent_type'] ?? '');
+            $chat_config->setTitle($form_data['chat_title'] ?? '');
+            $chat_config->setSystemPrompt($form_data['system_prompt'] ?? '');
 
-            $this->saveBackgroundFilesToAttachments($chat_id, $file_ids, $chatConfig, false);
+            $this->saveBackgroundFilesToAttachments($chat_id, $file_ids, $chat_config, false);
 
-            $chatConfig->setIsOnline((bool)($form_data['is_online'] ?? true));
-            $chatConfig->setPersistent((bool)($form_data['persistent'] ?? true));
-            $chatConfig->setIncludePageContext((bool)($form_data['include_page_context'] ?? true));
+            $chat_config->setIsOnline((bool) ($form_data['is_online'] ?? true));
+            $chat_config->setPersistent((bool) ($form_data['persistent'] ?? true));
+            $chat_config->setIncludePageContext((bool) ($form_data['include_page_context'] ?? true));
 
             $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
             if ($file_handling_enabled && $chat_uploads_globally_enabled) {
-                $chatConfig->setEnableChatUploads((bool)($form_data['enable_chat_uploads'] ?? false));
+                $chat_config->setEnableChatUploads((bool) ($form_data['enable_chat_uploads'] ?? false));
             } else {
-                $chatConfig->setEnableChatUploads(false);
+                $chat_config->setEnableChatUploads(false);
             }
 
             $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
             if ($streaming_globally_enabled) {
-                $chatConfig->setEnableStreaming((bool)($form_data['enable_streaming'] ?? true));
+                $chat_config->setEnableStreaming((bool) ($form_data['enable_streaming'] ?? true));
             } else {
-                $chatConfig->setEnableStreaming(false);
+                $chat_config->setEnableStreaming(false);
             }
 
             require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
             require_once(__DIR__ . '/ai/class.AIChatPageComponentLLMRegistry.php');
 
-            $ai_service = $chatConfig->getAiService() ?: (\platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses');
+            $ai_service = $chat_config->getAiService() ?: (\platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses');
 
             $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
             if ($llm === null) {
-                $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
-                $firstService = !empty($availableServices) ? array_key_first($availableServices) : null;
-                $llm = $firstService ? \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService) : null;
+                $available_services = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+                $first_service = !empty($available_services) ? array_key_first($available_services) : null;
+                $llm = $first_service ? \ai\AIChatPageComponentLLMRegistry::createServiceInstance($first_service) : null;
             }
 
             $service_supports_rag = $llm ? $llm->supportsRAG() : false;
@@ -898,33 +790,33 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
             $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
 
-            $rag_was_enabled = $chatConfig->isEnableRag();
+            $rag_was_enabled = $chat_config->isEnableRag();
             $rag_now_enabled = false;
 
             if ($service_supports_rag && $rag_globally_enabled) {
                 $rag_data = $form_data['enable_rag'] ?? null;
                 $rag_now_enabled = is_array($rag_data);
-                $chatConfig->setEnableRag($rag_now_enabled);
+                $chat_config->setEnableRag($rag_now_enabled);
                 if ($rag_now_enabled) {
-                    $chatConfig->setShowSources((bool)($rag_data['show_sources'] ?? false));
-                    $chatConfig->setAllowSourceDownloads((bool)($rag_data['allow_source_downloads'] ?? false));
+                    $chat_config->setShowSources((bool) ($rag_data['show_sources'] ?? false));
+                    $chat_config->setAllowSourceDownloads((bool) ($rag_data['allow_source_downloads'] ?? false));
                 }
             } else {
-                $chatConfig->setEnableRag(false);
+                $chat_config->setEnableRag(false);
             }
 
-            $result = $chatConfig->save();
+            $result = $chat_config->save();
 
             if ($result && !$rag_was_enabled && $rag_now_enabled && $llm) {
                 $this->logger->info("RAG was activated, syncing background files", ['chat_id' => $chat_id]);
                 try {
-                    $sync_stats = $llm->syncBackgroundFilesToRAG($chatConfig);
+                    $sync_stats = $llm->syncBackgroundFilesToRAG($chat_config);
                     if ($sync_stats['uploaded'] > 0) {
-                        ilUtil::sendInfo(sprintf($this->plugin->txt('rag_sync_success'), $sync_stats['uploaded']), true);
+                        $this->tpl->setOnScreenMessage('info', sprintf($this->plugin->txt('rag_sync_success'), $sync_stats['uploaded']), true);
                     }
                 } catch (\Exception $e) {
                     $this->logger->error("Background files RAG sync failed", ['error' => $e->getMessage()]);
-                    ilUtil::sendFailure($this->plugin->txt('rag_sync_error'), true);
+                    $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('rag_sync_error'), true);
                 }
             }
 
@@ -932,7 +824,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $properties = $this->getProperties();
                 $properties['chat_id'] = $chat_id;
                 $properties['chat_title'] = $form_data['chat_title'] ?? '';
-                return (bool)$this->updateElement($properties);
+                return (bool) $this->updateElement($properties);
             }
 
             return false;
@@ -942,10 +834,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             return false;
         }
     }
-
-    // ============================================================
-    // Tab 2 – Erweiterte Einstellungen
-    // ============================================================
 
     public function showAdvancedTab(): void
     {
@@ -987,15 +875,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $chat_id = $this->getChatIdForEdit();
         if (!empty($chat_id)) {
             try {
-                $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-                if ($chatConfig->exists()) {
+                $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+                if ($chat_config->exists()) {
                     $prop = [
-                        'max_memory'  => $chatConfig->getMaxMemory(),
-                        'char_limit'  => $chatConfig->getCharLimit(),
-                        'disclaimer'  => $chatConfig->getDisclaimer(),
-                        'temperature' => $chatConfig->getTemperature(),
-                        'ai_service'  => $chatConfig->getAiService(),
-                        'model'       => $chatConfig->getModel(),
+                        'max_memory' => $chat_config->getMaxMemory(),
+                        'char_limit' => $chat_config->getCharLimit(),
+                        'disclaimer' => $chat_config->getDisclaimer(),
+                        'temperature' => $chat_config->getTemperature(),
+                        'ai_service' => $chat_config->getAiService(),
+                        'model' => $chat_config->getModel(),
                     ];
                 }
             } catch (\Exception $e) {
@@ -1003,10 +891,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
         }
 
-        // ── AI Service ──────────────────────────────────────────────────────────
-        $default_ai_service  = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
-        $force_default_svc   = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
-        $service_options     = \ai\AIChatPageComponentLLMRegistry::getServiceOptions(true);
+        // AI service
+        $default_ai_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
+        $force_default_svc = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
+        $service_options = \ai\AIChatPageComponentLLMRegistry::getServiceOptions(true);
 
         $current_ai_service = $prop['ai_service'] ?? $default_ai_service;
         if (!isset($service_options[$current_ai_service])) {
@@ -1023,16 +911,18 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $ai_service_field = null;
         }
 
-        // ── Model override ───────────────────────────────────────────────────────
+        // Model
         $force_model_key = $current_ai_service . '_force_model';
-        $force_model     = \platform\AIChatPageComponentConfig::get($force_model_key) === '1';
-        $current_model   = $prop['model'] ?? null;
+        $force_model = \platform\AIChatPageComponentConfig::get($force_model_key) === '1';
+        $current_model = $prop['model'] ?? null;
 
         if ($force_model) {
             $model_field = null;
         } else {
             $global_default_model = \platform\AIChatPageComponentConfig::get($current_ai_service . '_selected_model') ?: '';
-            $cached_models = \platform\AIChatPageComponentConfig::get('cached_models');
+            // Only models the administrator offers to editors
+            $service_class = \ai\AIChatPageComponentLLMRegistry::getServiceClass($current_ai_service);
+            $cached_models = $service_class ? $service_class::getAvailableModels() : [];
             $model_value = $current_model ?? $global_default_model;
             $model_info = $this->plugin->txt('model_override_info')
                 . ($global_default_model ? ' (' . $this->plugin->txt('default_label') . ': ' . ($cached_models[$global_default_model] ?? $global_default_model) . ')' : '');
@@ -1049,36 +939,36 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $model_field = $ui_factory->input()->field()->text(
                     $this->plugin->txt('model_override_label'),
                     $model_info
-                )->withDedicatedName('model_override')->withValue((string)$model_value);
+                )->withDedicatedName('model_override')->withValue((string) $model_value);
             }
         }
 
-        // ── Max memory / Char limit ──────────────────────────────────────────────
+        // Memory and character limit
         $max_memory = $ui_factory->input()->field()->numeric(
             $this->plugin->txt('max_memory_label'),
             $this->plugin->txt('max_memory_info')
         )->withDedicatedName('max_memory')
-         ->withValue((int)($prop['max_memory'] ?? $defaults['max_memory_messages']));
+         ->withValue((int) ($prop['max_memory'] ?? $defaults['max_memory_messages']));
 
         $char_limit = $ui_factory->input()->field()->numeric(
             $this->plugin->txt('char_limit_label'),
             $this->plugin->txt('char_limit_info')
         )->withDedicatedName('char_limit')
-         ->withValue((int)($prop['char_limit'] ?? $defaults['characters_limit']));
+         ->withValue((int) ($prop['char_limit'] ?? $defaults['characters_limit']));
 
-        // ── Temperature override ─────────────────────────────────────────────────
-        $force_temp_key      = $current_ai_service . '_force_temperature';
-        $force_temperature   = \platform\AIChatPageComponentConfig::get($force_temp_key) === '1';
+        // Temperature
+        $force_temp_key = $current_ai_service . '_force_temperature';
+        $force_temperature = \platform\AIChatPageComponentConfig::get($force_temp_key) === '1';
         $temp_override_value = $prop['temperature'] ?? null;
-        $temp_display        = $temp_override_value !== null
-            ? rtrim(rtrim(number_format((float)$temp_override_value, 2, '.', ''), '0'), '.')
+        $temp_display = $temp_override_value !== null
+            ? rtrim(rtrim(number_format((float) $temp_override_value, 2, '.', ''), '0'), '.')
             : '';
 
         if ($force_temperature) {
             $temperature_override = null;
         } else {
             $global_default_temp = \platform\AIChatPageComponentConfig::get($current_ai_service . '_temperature') ?: '0.7';
-            $temp_value = $temp_override_value !== null ? $temp_display : (string)$global_default_temp;
+            $temp_value = $temp_override_value !== null ? $temp_display : (string) $global_default_temp;
             $temp_info = $this->plugin->txt('temperature_override_info')
                 . ' (' . $this->plugin->txt('default_label') . ': ' . $global_default_temp . ')';
             $temperature_override = $ui_factory->input()->field()->text(
@@ -1087,7 +977,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             )->withDedicatedName('temperature_override')->withMaxLength(10)->withValue($temp_value);
         }
 
-        // ── Disclaimer ───────────────────────────────────────────────────────────
+        // Disclaimer
         $disclaimer = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('legal_disclaimer_label'),
             $this->plugin->txt('legal_disclaimer_info')
@@ -1102,8 +992,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         if ($model_field !== null) {
             $form_fields_adv['model_override'] = $model_field;
         }
-        $form_fields_adv['max_memory']  = $max_memory;
-        $form_fields_adv['char_limit']  = $char_limit;
+        $form_fields_adv['max_memory'] = $max_memory;
+        $form_fields_adv['char_limit'] = $char_limit;
         if ($temperature_override !== null) {
             $form_fields_adv['temperature_override'] = $temperature_override;
         }
@@ -1123,62 +1013,56 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
 
         try {
-            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-            if (!$chatConfig->exists()) {
+            $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
                 return false;
             }
-            // AI service
             $force_default_svc = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
             if ($force_default_svc === '1') {
-                $chatConfig->setAiService(\platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses');
+                $chat_config->setAiService(\platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses');
             } elseif (!empty($form_data['ai_service'])) {
-                $chatConfig->setAiService($form_data['ai_service']);
+                $chat_config->setAiService($form_data['ai_service']);
             }
 
-            // Model override
-            $ai_service_id = $chatConfig->getAiService();
+            $ai_service_id = $chat_config->getAiService();
             $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
             if ($force_model) {
-                $chatConfig->setModel(null);
+                $chat_config->setModel(null);
             } else {
                 $model_value = $form_data['model_override'] ?? null;
                 $model_value = is_string($model_value) && $model_value !== '' ? $model_value : null;
-                // Save null when value matches global default so chat stays linked to global default
+                // NULL keeps the chat linked to the global default
                 $global_default_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_selected_model') ?: '';
                 if ($model_value === $global_default_model) {
                     $model_value = null;
                 }
-                $chatConfig->setModel($model_value);
+                $chat_config->setModel($model_value);
             }
 
-            $chatConfig->setMaxMemory((int)($form_data['max_memory'] ?? 10));
-            $chatConfig->setCharLimit((int)($form_data['char_limit'] ?? 2000));
+            $chat_config->setMaxMemory((int) ($form_data['max_memory'] ?? 10));
+            $chat_config->setCharLimit((int) ($form_data['char_limit'] ?? 2000));
 
             $force_temperature = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_temperature') === '1';
             if ($force_temperature) {
-                $chatConfig->setTemperature(null);
+                $chat_config->setTemperature(null);
             } else {
-                $raw = str_replace(',', '.', (string)($form_data['temperature_override'] ?? ''));
-                $temp_value = is_numeric($raw) ? max(0.0, min(2.0, (float)$raw)) : null;
-                // Save null when value matches global default so chat stays linked to global default
-                $global_default_temp = (float)(\platform\AIChatPageComponentConfig::get($ai_service_id . '_temperature') ?: 0.7);
+                $raw = str_replace(',', '.', (string) ($form_data['temperature_override'] ?? ''));
+                $temp_value = is_numeric($raw) ? max(0.0, min(2.0, (float) $raw)) : null;
+                // NULL keeps the chat linked to the global default
+                $global_default_temp = (float) (\platform\AIChatPageComponentConfig::get($ai_service_id . '_temperature') ?: 0.7);
                 if ($temp_value !== null && abs($temp_value - $global_default_temp) < 0.001) {
                     $temp_value = null;
                 }
-                $chatConfig->setTemperature($temp_value);
+                $chat_config->setTemperature($temp_value);
             }
 
-            $chatConfig->setDisclaimer($form_data['disclaimer'] ?? '');
-            return (bool)$chatConfig->save();
+            $chat_config->setDisclaimer($form_data['disclaimer'] ?? '');
+            return (bool) $chat_config->save();
         } catch (\Exception $e) {
             $this->logger->warning("Exception in saveAdvancedFormData", ['error' => $e->getMessage()]);
             return false;
         }
     }
-
-    // ============================================================
-    // Tab 3 – Statistik
-    // ============================================================
 
     public function showStatisticsTab(): void
     {
@@ -1187,7 +1071,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         $chat_id = $this->getChatIdForEdit();
         $ui_factory = $DIC->ui()->factory();
-        $renderer   = $DIC->ui()->renderer();
+        $renderer = $DIC->ui()->renderer();
 
         if (empty($chat_id)) {
             $this->tpl->setContent($renderer->render(
@@ -1201,10 +1085,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $res = $db->queryF(
             "SELECT COUNT(*) AS session_count, MAX(last_activity) AS last_activity
                FROM pcaic_sessions WHERE chat_id = %s",
-            ['text'], [$chat_id]
+            ['text'],
+            [$chat_id]
         );
-        $row           = $db->fetchAssoc($res) ?? [];
-        $session_count = (int)($row['session_count'] ?? 0);
+        $row = $db->fetchAssoc($res) ?? [];
+        $session_count = (int) ($row['session_count'] ?? 0);
         $last_activity = $row['last_activity'] ?? null;
 
         $res = $db->queryF(
@@ -1212,14 +1097,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                FROM pcaic_messages m
                JOIN pcaic_sessions s ON m.session_id = s.session_id
               WHERE s.chat_id = %s",
-            ['text'], [$chat_id]
+            ['text'],
+            [$chat_id]
         );
-        $msg_row       = $db->fetchAssoc($res) ?? [];
-        $message_count = (int)($msg_row['message_count'] ?? 0);
+        $msg_row = $db->fetchAssoc($res) ?? [];
+        $message_count = (int) ($msg_row['message_count'] ?? 0);
 
         try {
-            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-            $bg_count   = $chatConfig->exists() ? count($chatConfig->getBackgroundFiles()) : 0;
+            $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            $bg_count = $chat_config->exists() ? count($chat_config->getBackgroundFiles()) : 0;
         } catch (\Exception $e) {
             $bg_count = 0;
         }
@@ -1229,10 +1115,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             : '–';
 
         $listing = $ui_factory->listing()->descriptive([
-            $this->plugin->txt('stat_sessions')         => (string)$session_count,
-            $this->plugin->txt('stat_messages')         => (string)$message_count,
-            $this->plugin->txt('stat_last_activity')    => $last_activity_str,
-            $this->plugin->txt('stat_background_files') => (string)$bg_count,
+            $this->plugin->txt('stat_sessions') => (string) $session_count,
+            $this->plugin->txt('stat_messages') => (string) $message_count,
+            $this->plugin->txt('stat_last_activity') => $last_activity_str,
+            $this->plugin->txt('stat_background_files') => (string) $bg_count,
         ]);
 
         $panel = $ui_factory->panel()->standard(
@@ -1268,28 +1154,25 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Get HTML for element
-     * @param string    page mode (edit, presentation, print, preview, offline)
-     * @return string   html code
+     * @param string $a_mode edit, presentation, print, preview or offline
      */
-    public function getElementHTML(string $a_mode, array $a_properties, string $a_plugin_version) : string
+    public function getElementHTML(string $a_mode, array $a_properties, string $a_plugin_version): string
     {
-        // In edit mode, always show placeholder (editors have write permission already)
+        // Editors see a preview in the page editor
         if ($a_mode === 'edit') {
             return $this->renderEditPlaceholder($a_properties);
         }
 
-        // Presentation mode: enforce read access
         if (!$this->currentUserCanReadParent()) {
             return '';
         }
 
-        // If the chat config no longer exists (e.g. deleted via statistics), render nothing
+        // Chat deleted in the statistics tab: render nothing
         $chat_id = $a_properties['chat_id'] ?? '';
         if (!empty($chat_id)) {
             try {
-                $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-                if (!$chatConfig->exists()) {
+                $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+                if (!$chat_config->exists()) {
                     return '';
                 }
             } catch (\Exception $e) {
@@ -1297,16 +1180,14 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
         }
 
-        // Check online status
         $is_online = $this->isChatOnline($chat_id);
 
         if (!$is_online) {
-            // Editors always see the chat – but with an offline banner
+            // Offline chats are shown to editors with a banner and hidden from learners
             if ($this->currentUserCanWriteParent()) {
                 $a_properties['show_offline_banner'] = true;
                 return $this->renderChatInterface($a_properties);
             }
-            // Participants see nothing
             return '';
         }
 
@@ -1314,8 +1195,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Return true if the chat is set to online, false if offline.
-     * Defaults to true when the chat doesn't exist yet (new / not yet saved).
+     * Chats without stored configuration count as online
      */
     private function isChatOnline(string $chat_id): bool
     {
@@ -1323,17 +1203,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             return true;
         }
         try {
-            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-            // Non-existing chats are handled before this call; default to online for safety
-            return !$chatConfig->exists() || $chatConfig->isOnline();
+            $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            return !$chat_config->exists() || $chat_config->isOnline();
         } catch (\Exception $e) {
             return true;
         }
     }
 
-    /**
-     * Check whether the current user has write access to the parent ILIAS object.
-     */
     private function currentUserCanWriteParent(): bool
     {
         global $DIC;
@@ -1358,16 +1234,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Check whether the current user has read access to the parent ILIAS object.
-     *
-     * parent_id from the plugin is an obj_id (ilPageObject::getParentId()).
-     * All matching ref_ids are checked; access is granted if any passes.
+     * Read permission on the object containing the page; anonymous users need
+     * anonymous access to be enabled in the plugin configuration
      */
     private function currentUserCanReadParent(): bool
     {
         global $DIC;
 
-        // Anonymous users: respect the global allow_anonymous_access setting
         if ($DIC->user()->isAnonymous()) {
             $allow_anonymous = (\platform\AIChatPageComponentConfig::get('allow_anonymous_access') === '1');
             if (!$allow_anonymous) {
@@ -1377,12 +1250,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         $parent_id = (int) ($this->plugin->getParentId() ?? 0);
         if ($parent_id <= 0) {
-            return true; // Page not yet placed in an object – allow rendering
+            return true; // Element not yet placed on a page of an object
         }
 
         $refs = ilObject::_getAllReferences($parent_id);
         if (empty($refs)) {
-            $refs = [$parent_id]; // Fallback: treat as ref_id directly
+            $refs = [$parent_id]; // Some page types store the ref_id
         }
 
         foreach ($refs as $ref_id) {
@@ -1395,10 +1268,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Render edit mode placeholder
-     * Shows a preview of the chat interface with demo messages
+     * Preview of the chat in the page editor with demo messages
      */
-    private function renderEditPlaceholder(array $properties) : string
+    private function renderEditPlaceholder(array $properties): string
     {
         $tpl = new ilTemplate(
             "tpl.ai_chat_placeholder.html",
@@ -1407,20 +1279,19 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->getDirectory()
         );
 
-        // Load chat configuration if available
         $chat_id = $properties['chat_id'] ?? '';
         $config_properties = $properties;
 
         $is_orphaned = false;
         if (!empty($chat_id)) {
             try {
-                $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-                if ($chatConfig->exists()) {
+                $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+                if ($chat_config->exists()) {
                     $config_properties = [
-                        'chat_title' => $chatConfig->getTitle(),
-                        'system_prompt' => $chatConfig->getSystemPrompt(),
-                        'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
-                        'disclaimer' => $chatConfig->getDisclaimer()
+                        'chat_title' => $chat_config->getTitle(),
+                        'system_prompt' => $chat_config->getSystemPrompt(),
+                        'enable_chat_uploads' => $chat_config->isEnableChatUploads(),
+                        'disclaimer' => $chat_config->getDisclaimer()
                     ];
                 } else {
                     $is_orphaned = true;
@@ -1430,23 +1301,20 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
         }
 
-        // Chat title
         $chat_title = htmlspecialchars($config_properties['chat_title'] ?? $this->plugin->txt('default_chat_title'));
         $tpl->setVariable("CHAT_TITLE", $chat_title);
         $tpl->setVariable("CHAT_ARIA_LABEL", sprintf($this->plugin->txt('chat_aria_label'), $chat_title));
 
-        // Edit mode labels
         $tpl->setVariable("EDIT_MODE_LABEL", $this->plugin->txt('edit_mode_label'));
         $tpl->setVariable("CLICK_TO_EDIT_HINT", $this->plugin->txt('click_to_edit_hint'));
 
-        // Orphaned badge – chat config was deleted, shown so editors know to remove the element
+        // The chat was deleted in the statistics tab; editors should remove the element
         if ($is_orphaned) {
             $tpl->setCurrentBlock("placeholder_orphaned_badge");
             $tpl->setVariable("ORPHANED_BADGE_LABEL", $this->plugin->txt('chat_orphaned_title'));
             $tpl->parseCurrentBlock();
         }
 
-        // Offline badge – shown in edit mode when the chat is currently set offline
         $chat_id_for_status = $properties['chat_id'] ?? '';
         if (!$is_orphaned && !$this->isChatOnline($chat_id_for_status)) {
             $tpl->setCurrentBlock("placeholder_offline_badge");
@@ -1454,7 +1322,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $tpl->parseCurrentBlock();
         }
 
-        // Demo messages - use system prompt context if available
         $system_prompt = $config_properties['system_prompt'] ?? '';
         $demo_user_message = $this->plugin->txt('demo_user_message');
         $demo_assistant_message = $this->getDemoAssistantMessage($system_prompt);
@@ -1462,26 +1329,22 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("DEMO_USER_MESSAGE", htmlspecialchars($demo_user_message));
         $tpl->setVariable("DEMO_ASSISTANT_MESSAGE", htmlspecialchars($demo_assistant_message));
 
-        // Input and button labels
         $tpl->setVariable("INPUT_PLACEHOLDER", $this->plugin->txt('input_aria_label'));
         $tpl->setVariable("CLEAR_CHAT_LABEL", $this->plugin->txt('clear_chat_label'));
         $tpl->setVariable("THEME_TOGGLE_TITLE", htmlspecialchars($this->plugin->txt('theme_toggle_title')));
         $tpl->setVariable("THEME_TOGGLE_LABEL", htmlspecialchars($this->plugin->txt('theme_toggle_label')));
         $tpl->setVariable("ATTACH_FILE_TITLE", $this->plugin->txt('attach_file_title'));
 
-        // Action button titles
         $tpl->setVariable("COPY_MESSAGE_TITLE", htmlspecialchars($this->plugin->txt('copy_message_title')));
         $tpl->setVariable("LIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('like_response_title')));
         $tpl->setVariable("DISLIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('dislike_response_title')));
 
-        // Handle optional disclaimer
         if (!empty($config_properties['disclaimer'])) {
             $tpl->setCurrentBlock("disclaimer");
             $tpl->setVariable("DISCLAIMER", htmlspecialchars($config_properties['disclaimer']));
             $tpl->parseCurrentBlock();
         }
 
-        // Show attach button if chat uploads enabled
         $enable_chat_uploads = ($config_properties['enable_chat_uploads'] ?? false);
         $is_chat_uploads_enabled = ($enable_chat_uploads === true || $enable_chat_uploads === '1' || $enable_chat_uploads === 1);
 
@@ -1490,27 +1353,22 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $tpl->parseCurrentBlock();
         }
 
-        // Add CSS for edit mode
         $this->addChatAssets();
 
         return $tpl->get();
     }
 
     /**
-     * Generate a contextual demo assistant message based on system prompt
+     * Demo answer for the preview, chosen by keywords of the system prompt
      */
-    private function getDemoAssistantMessage(string $system_prompt) : string
+    private function getDemoAssistantMessage(string $system_prompt): string
     {
-        // Default demo message
         $default = $this->plugin->txt('demo_assistant_message');
 
-        // If there's a system prompt, we could analyze it to generate a more contextual demo
-        // For now, use the default translated message
         if (empty($system_prompt)) {
             return $default;
         }
 
-        // Check for common keywords in system prompt to provide context-aware demos
         $system_lower = strtolower($system_prompt);
 
         if (strpos($system_lower, 'tutor') !== false || strpos($system_lower, 'lehrer') !== false || strpos($system_lower, 'teacher') !== false) {
@@ -1528,10 +1386,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         return $default;
     }
 
-    /**
-     * Render chat interface for presentation mode
-     */
-    private function renderChatInterface(array $properties) : string
+    private function renderChatInterface(array $properties): string
     {
         $tpl = new ilTemplate(
             "tpl.ai_chat.html",
@@ -1540,31 +1395,29 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->getDirectory()
         );
 
-        // Get chat configuration - try loading from new ChatConfig model first
         $chat_id = $properties['chat_id'] ?? uniqid('chat_', true);
-        $config_properties = $properties; // fallback
+        $config_properties = $properties;
 
         try {
-            $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-            if ($chatConfig->exists()) {
-                // Update page context from current PageComponent context when rendering
-                $this->updateChatConfigPageContext($chatConfig);
+            $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            if ($chat_config->exists()) {
+                // The page may have been moved since the chat was created
+                $this->updateChatConfigPageContext($chat_config);
 
-                // Use configuration from new model
                 $config_properties = [
                     'chat_id' => $chat_id,
-                    'chat_title' => $chatConfig->getTitle(),
-                    'system_prompt' => $chatConfig->getSystemPrompt(),
-                    'ai_service' => $chatConfig->getAiService(),
-                    'max_memory' => $chatConfig->getMaxMemory(),
-                    'char_limit' => $chatConfig->getCharLimit(),
-                    'persistent' => $chatConfig->isPersistent(),
-                    'include_page_context' => $chatConfig->isIncludePageContext(),
-                    'enable_chat_uploads' => $chatConfig->isEnableChatUploads(),
-                    'enable_streaming' => $chatConfig->isEnableStreaming(),
-                    'disclaimer' => $chatConfig->getDisclaimer(),
-                    'background_files' => json_encode($chatConfig->getBackgroundFiles()),
-                    // Preserve runtime flags passed by the caller
+                    'chat_title' => $chat_config->getTitle(),
+                    'system_prompt' => $chat_config->getSystemPrompt(),
+                    'ai_service' => $chat_config->getAiService(),
+                    'max_memory' => $chat_config->getMaxMemory(),
+                    'char_limit' => $chat_config->getCharLimit(),
+                    'persistent' => $chat_config->isPersistent(),
+                    'include_page_context' => $chat_config->isIncludePageContext(),
+                    'enable_chat_uploads' => $chat_config->isEnableChatUploads(),
+                    'enable_streaming' => $chat_config->isEnableStreaming(),
+                    'disclaimer' => $chat_config->getDisclaimer(),
+                    'background_files' => json_encode($chat_config->getBackgroundFiles()),
+                    // Flags set by the caller (e.g. offline) are kept
                     'show_offline_banner' => $properties['show_offline_banner'] ?? false,
                 ];
             } else {
@@ -1578,7 +1431,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $container_id = 'ai-chat-' . md5($chat_id);
         $messages_id = $container_id . '-messages';
 
-        // Set basic template variables
         $tpl->setVariable("CONTAINER_ID", $container_id);
         $tpl->setVariable("MESSAGES_ID", $messages_id);
         $tpl->setVariable("CHAT_ID", htmlspecialchars($chat_id));
@@ -1589,9 +1441,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("INPUT_PLACEHOLDER", $this->plugin->txt('input_aria_label'));
         $tpl->setVariable("SEND_BUTTON_TEXT", $this->plugin->txt('send_button_text'));
         $tpl->setVariable("LOADING_TEXT", $this->plugin->txt('loading_text'));
-        $tpl->setVariable("CHAR_LIMIT", (int)($config_properties['char_limit'] ?? 2000));
+        $tpl->setVariable("CHAR_LIMIT", (int) ($config_properties['char_limit'] ?? 2000));
 
-        // File upload related strings
         $tpl->setVariable("ATTACHMENTS_LABEL", $this->plugin->txt('attachments_label'));
         $tpl->setVariable("CLEAR_ATTACHMENTS_TITLE", $this->plugin->txt('clear_attachments_title'));
         $tpl->setVariable("ATTACH_FILE_TITLE", $this->plugin->txt('attach_file_title'));
@@ -1600,7 +1451,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("SEND_ARIA_LABEL", $this->plugin->txt('send_aria_label'));
         $tpl->setVariable("FILE_INPUT_ARIA_LABEL", $this->plugin->txt('file_input_aria_label'));
 
-        // Accessibility (ARIA) labels and skip link
         $chat_title = htmlspecialchars($config_properties['chat_title'] ?? $this->plugin->txt('default_chat_title'));
         $tpl->setVariable("SKIP_TO_INPUT", $this->plugin->txt('skip_to_input'));
         $tpl->setVariable("CHAT_ARIA_LABEL", sprintf($this->plugin->txt('chat_aria_label'), $chat_title));
@@ -1609,50 +1459,44 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("ACTIONS_ARIA_LABEL", $this->plugin->txt('actions_aria_label'));
         $tpl->setVariable("NEW_MESSAGE_ARIA", $this->plugin->txt('new_message_aria'));
 
-        // Clear chat related strings
         $tpl->setVariable("CLEAR_CHAT_TEXT", $this->plugin->txt('clear_chat_text'));
         $tpl->setVariable("CLEAR_CHAT_TITLE", $this->plugin->txt('clear_chat_title'));
         $tpl->setVariable("CLEAR_CHAT_LABEL", $this->plugin->txt('clear_chat_label'));
         $tpl->setVariable("THEME_TOGGLE_TITLE", htmlspecialchars($this->plugin->txt('theme_toggle_title')));
         $tpl->setVariable("THEME_TOGGLE_LABEL", htmlspecialchars($this->plugin->txt('theme_toggle_label')));
-        // Clear chat confirmation text
         $tpl->setVariable("CLEAR_CHAT_CONFIRM", htmlspecialchars($this->plugin->txt('clear_chat_confirm')));
 
-        // Message action titles
         $tpl->setVariable("COPY_MESSAGE_TITLE", htmlspecialchars($this->plugin->txt('copy_message_title')));
         $tpl->setVariable("LIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('like_response_title')));
         $tpl->setVariable("DISLIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('dislike_response_title')));
         $tpl->setVariable("REGENERATE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('regenerate_response_title')));
 
-        // Feedback messages
         $tpl->setVariable("MESSAGE_COPIED", htmlspecialchars($this->plugin->txt('message_copied')));
         $tpl->setVariable("MESSAGE_COPY_FAILED", htmlspecialchars($this->plugin->txt('message_copy_failed')));
 
-        // Attachment actions
         $tpl->setVariable("REMOVE_ATTACHMENT", htmlspecialchars($this->plugin->txt('remove_attachment')));
         $tpl->setVariable("THINKING_HEADER", htmlspecialchars($this->plugin->txt('thinking_header')));
 
-        // RAG source citation labels
         $tpl->setVariable("SOURCES_LABEL", htmlspecialchars($this->plugin->txt('sources_label')));
+        $tpl->setVariable("RAG_INCOMPLETE_NOTICE", htmlspecialchars($this->plugin->txt('rag_incomplete_notice')));
         $tpl->setVariable("PAGE_LABEL", htmlspecialchars($this->plugin->txt('page_label')));
         $tpl->setVariable("PAGES_LABEL", htmlspecialchars($this->plugin->txt('pages_label')));
 
-        // Configuration limits
         $max_size_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
-        $max_size_mb = $max_size_config ? (int)$max_size_config : 5;
+        $max_size_mb = $max_size_config ? (int) $max_size_config : 5;
         $tpl->setVariable("MAX_FILE_SIZE_MB", $max_size_mb);
 
         $max_attachments_config = \platform\AIChatPageComponentConfig::get('max_attachments_per_message');
-        $max_attachments = $max_attachments_config ? (int)$max_attachments_config : 5;
+        $max_attachments = $max_attachments_config ? (int) $max_attachments_config : 5;
         $tpl->setVariable("MAX_ATTACHMENTS_PER_MESSAGE", $max_attachments);
 
-        // Error messages for file upload validation - format with sprintf
+        // Upload error messages with the configured limits
         $error_max_attachments_template = $this->plugin->txt('error_max_attachments');
         $error_file_too_large_template = $this->plugin->txt('error_file_too_large');
         $error_file_type_not_allowed_template = $this->plugin->txt('error_file_type_not_allowed');
         $error_file_upload_failed_template = $this->plugin->txt('error_file_upload_failed');
 
-        // Fallback if language key not found (when txt() returns the key itself) or if still using old format
+        // txt() returns the key if the entry is missing
         if ($error_max_attachments_template === 'error_max_attachments' || empty($error_max_attachments_template) || strpos($error_max_attachments_template, '{maxAttachments}') !== false) {
             $error_max_attachments_template = 'Maximum %d attachments per message allowed';
         }
@@ -1666,23 +1510,27 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $error_file_upload_failed_template = 'File upload failed: %s';
         }
 
-        // Format the error messages with actual values
         $error_max_attachments = sprintf($error_max_attachments_template, $max_attachments);
         $max_file_size_mb_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
-        $max_file_size_mb = $max_file_size_mb_config ? (int)$max_file_size_mb_config : 5;
+        $max_file_size_mb = $max_file_size_mb_config ? (int) $max_file_size_mb_config : 5;
         $error_file_too_large = sprintf($error_file_too_large_template, $max_file_size_mb);
 
-        // These messages need JavaScript to fill in dynamic values, so pass templates directly
+        // These messages are completed by JavaScript with runtime values
         $error_file_type_not_allowed = $error_file_type_not_allowed_template;
         $error_file_upload_failed = $error_file_upload_failed_template;
 
-
         $tpl->setVariable("ERROR_MAX_ATTACHMENTS", $error_max_attachments);
         $tpl->setVariable("ERROR_FILE_TOO_LARGE", $error_file_too_large);
+
+        $max_total_upload_mb = (int) (\platform\AIChatPageComponentConfig::get('max_total_upload_size_mb') ?: 25);
+        $tpl->setVariable("MAX_TOTAL_UPLOAD_SIZE_MB", $max_total_upload_mb);
+        $tpl->setVariable(
+            "ERROR_TOTAL_UPLOAD_TOO_LARGE",
+            htmlspecialchars(sprintf($this->plugin->txt('error_total_upload_too_large'), $max_total_upload_mb))
+        );
         $tpl->setVariable("ERROR_FILE_TYPE_NOT_ALLOWED", $error_file_type_not_allowed);
         $tpl->setVariable("ERROR_FILE_UPLOAD_FAILED", $error_file_upload_failed);
 
-        // Log config source for debugging
         global $DIC;
         if ($max_size_config !== null) {
             $DIC->logger()->pcaic()->debug("Template: Using central config for file size", [
@@ -1697,79 +1545,69 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             ]);
         }
 
-        // Error messages
         $tpl->setVariable("GENERATION_STOPPED", htmlspecialchars($this->plugin->txt('generation_stopped')));
         $tpl->setVariable("REGENERATE_FAILED", htmlspecialchars($this->plugin->txt('regenerate_failed')));
         $tpl->setVariable("WELCOME_MESSAGE", htmlspecialchars($this->plugin->txt('welcome_message')));
         $tpl->setVariable("STOP_GENERATION", htmlspecialchars($this->plugin->txt('stop_generation')));
 
-        // Set data attributes for JavaScript configuration
         $tpl->setVariable("API_URL", htmlspecialchars($this->getAIChatApiUrl()));
         $tpl->setVariable("SYSTEM_PROMPT", htmlspecialchars($config_properties['system_prompt'] ?? 'You are a helpful AI assistant.'));
-        $tpl->setVariable("MAX_MEMORY", (int)($config_properties['max_memory'] ?? 10));
-        // Fix persistent data attribute for JavaScript
+        $tpl->setVariable("MAX_MEMORY", (int) ($config_properties['max_memory'] ?? 10));
+        // JavaScript expects '1' or '0'
         $persistent_value = ($config_properties['persistent'] ?? false);
         $is_persistent = ($persistent_value === true || $persistent_value === '1' || $persistent_value === 1);
         $tpl->setVariable("PERSISTENT", $is_persistent ? 'true' : 'false');
         $tpl->setVariable("AI_SERVICE", htmlspecialchars($config_properties['ai_service'] ?? 'default'));
 
-        // Chat file uploads setting - respect global restrictions
         $enable_chat_uploads = ($config_properties['enable_chat_uploads'] ?? false);
         $is_chat_uploads_enabled = ($enable_chat_uploads === true || $enable_chat_uploads === '1' || $enable_chat_uploads === 1);
         $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
 
-        // Anonymous users must never see or use upload functionality
+        // Anonymous users can never upload
         $is_anonymous = $DIC->user()->isAnonymous();
 
-        // Admin raw data panel – only for ILIAS system administrators (role ID 2)
+        // Raw data panel for administrators (system role ID 2)
         $is_ilias_admin = $DIC->rbac()->review()->isAssigned($DIC->user()->getId(), SYSTEM_ROLE_ID);
         $tpl->setVariable("IS_ADMIN", $is_ilias_admin ? 'true' : 'false');
 
-        // Page setting, global setting, and authenticated user all required
         $effective_chat_uploads_enabled = $is_chat_uploads_enabled && $chat_uploads_globally_enabled && !$is_anonymous;
         $tpl->setVariable("ENABLE_CHAT_UPLOADS", $effective_chat_uploads_enabled ? 'true' : 'false');
         $tpl->setVariable("IS_ANONYMOUS", $is_anonymous ? 'true' : 'false');
         $tpl->setVariable("SERVICE_UNAVAILABLE", $service_unavailable ? 'true' : 'false');
         $tpl->setVariable("NO_SERVICE_AVAILABLE", htmlspecialchars($this->plugin->txt('no_service_available')));
 
-        // Streaming setting - respect global restrictions
         $enable_streaming = ($config_properties['enable_streaming'] ?? true);
         $is_streaming_enabled = ($enable_streaming === true || $enable_streaming === '1' || $enable_streaming === 1);
         $streaming_globally_enabled = (\platform\AIChatPageComponentConfig::get('enable_streaming') ?? '1') === '1';
 
-        // Both page component setting AND global setting must be enabled
+        // Streaming must be enabled in the chat and globally
         $effective_streaming_enabled = $is_streaming_enabled && $streaming_globally_enabled;
         $tpl->setVariable("ENABLE_STREAMING", $effective_streaming_enabled ? 'true' : 'false');
 
-        // Add page info for context extraction in backend
         $page_info = $this->getPageInfo();
-        $tpl->setVariable("PAGE_ID", (int)($page_info['page_id'] ?? 0));
-        $tpl->setVariable("PARENT_ID", (int)($page_info['parent_id'] ?? 0));
+        $tpl->setVariable("PAGE_ID", (int) ($page_info['page_id'] ?? 0));
+        $tpl->setVariable("PARENT_ID", (int) ($page_info['parent_id'] ?? 0));
         $tpl->setVariable("PARENT_TYPE", htmlspecialchars($page_info['parent_type'] ?? ''));
         $tpl->setVariable("INCLUDE_PAGE_CONTEXT", ($config_properties['include_page_context'] ?? true) ? 'true' : 'false');
 
-        // Add background files data
         $background_files = $config_properties['background_files'] ?? '[]';
         if (is_array($background_files)) {
             $background_files = json_encode($background_files);
         }
         $tpl->setVariable("BACKGROUND_FILES", htmlspecialchars($background_files));
 
-        // Offline badge for editors when chat is set offline
         if (!empty($config_properties['show_offline_banner'])) {
             $tpl->setCurrentBlock("chat_offline_badge");
             $tpl->setVariable("OFFLINE_BADGE_TEXT", $this->plugin->txt('chat_offline_badge'));
             $tpl->parseCurrentBlock();
         }
 
-        // Handle optional disclaimer
         if (!empty($config_properties['disclaimer'])) {
             $tpl->setCurrentBlock("disclaimer");
             $tpl->setVariable("DISCLAIMER", htmlspecialchars($config_properties['disclaimer']));
             $tpl->parseCurrentBlock();
         }
 
-        // Handle chat uploads - only render upload elements if enabled
         if ($effective_chat_uploads_enabled) {
             $tpl->setCurrentBlock("chat_attachments_area");
             $tpl->parseCurrentBlock();
@@ -1781,41 +1619,32 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $tpl->parseCurrentBlock();
         }
 
-        // Clear session management (old clear chat button removed - now in header)
         $tpl->setVariable("SESSION_MANAGEMENT_HTML", "");
 
-        // Add CSS and JavaScript assets
         $this->addChatAssets();
 
         return $tpl->get();
     }
 
     /**
-     * Save background files to pcaic_attachments table
-     * Creates Attachment records with message_id = NULL (indicating background files)
-     * Optionally uploads files to RAG based on background_files_mode configuration
-     * Also handles deletion of removed background files
+     * Store the background files of the chat as attachments (message_id NULL)
+     *
+     * Removed files are deleted on edit; new files are uploaded to the RAG if RAG is used.
      */
-    private function saveBackgroundFilesToAttachments(string $chat_id, array $new_file_ids, \ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig, bool $is_create): void
+    private function saveBackgroundFilesToAttachments(string $chat_id, array $new_file_ids, \ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config, bool $is_create): void
     {
         global $DIC;
         $db = $DIC->database();
 
-        // Get current user ID
         $user_id = $DIC->user()->getId();
 
-        // Check if RAG is enabled: LLM must support it AND admin must enable it for this LLM
-        $llm = $this->getLLMInstanceForChat($chatConfig);
-        $ai_service = $chatConfig->getAiService();
+        $llm = $this->getLLMInstanceForChat($chat_config);
+        $ai_service = $chat_config->getAiService();
 
-        // Get LLM-specific RAG configuration
-        $llm_rag_enabled = '0';
-        if ($ai_service === 'ramses') {
-            $llm_rag_enabled = \platform\AIChatPageComponentConfig::get('ramses_enable_rag') ?: '1';
-        }
-        // Future: Add openai_enable_rag when OpenAI supports RAG
+        // RAG service available and allowed for the AI service
+        $llm_rag_enabled = \ai\AIChatPageComponentRAG::isEnabledForService($ai_service);
 
-        $enable_rag = $llm->supportsRAG() && ($llm_rag_enabled == '1' || $llm_rag_enabled === 1);
+        $enable_rag = $llm->supportsRAG() && $llm_rag_enabled;
 
         $this->logger->debug("RAG configuration check", [
             'llm_supports_rag' => $llm->supportsRAG(),
@@ -1824,17 +1653,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             'ai_service' => $ai_service
         ]);
 
-        // Get existing background file attachments for this chat
         $existing_query = "SELECT id, resource_id FROM pcaic_attachments " .
                          "WHERE chat_id = " . $db->quote($chat_id, 'text') . " " .
                          "AND message_id IS NULL";
         $existing_result = $db->query($existing_query);
         $existing_files = [];
         while ($row = $db->fetchAssoc($existing_result)) {
-            $existing_files[$row['resource_id']] = (int)$row['id'];
+            $existing_files[$row['resource_id']] = (int) $row['id'];
         }
 
-        // On edit (not create): Delete background files that were removed
         if (!$is_create) {
             $files_to_delete = array_diff(array_keys($existing_files), $new_file_ids);
             foreach ($files_to_delete as $resource_id) {
@@ -1842,12 +1669,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 try {
                     $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
 
-                    // Delete from RAG if needed
                     if ($enable_rag && $attachment->isInRAG()) {
-                        $this->deleteFileFromRAG($attachment, $chat_id, $chatConfig);
+                        $this->deleteFileFromRAG($attachment, $chat_id, $chat_config);
                     }
 
-                    // Delete attachment (also removes from IRSS)
                     $attachment->delete();
 
                     $this->logger->info("Deleted background file attachment", [
@@ -1865,19 +1690,16 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
         }
 
-        // Process new file_ids (add files that don't exist yet)
         foreach ($new_file_ids as $resource_id) {
-            // Skip if already exists
             if (isset($existing_files[$resource_id])) {
                 continue;
             }
 
             try {
-                // Create new Attachment record
                 $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment();
-                $attachment->setMessageId(null);  // NULL for background files (not bound to message)
-                $attachment->setBackgroundFile(true);  // Mark as background file
-                $attachment->setChatId($chat_id);  // Set chat_id
+                $attachment->setMessageId(null);
+                $attachment->setBackgroundFile(true);
+                $attachment->setChatId($chat_id);
                 $attachment->setUserId($user_id);
                 $attachment->setResourceId($resource_id);
                 $attachment->setTimestamp(date('Y-m-d H:i:s'));
@@ -1888,10 +1710,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     'enable_rag' => $enable_rag
                 ]);
 
-                // Upload to RAG if enabled
                 if ($enable_rag) {
                     $this->logger->debug("Calling uploadFileToRAG", ['resource_id' => $resource_id]);
-                    $this->uploadFileToRAG($attachment, $chat_id, $chatConfig);
+                    $this->uploadFileToRAG($attachment, $chat_id, $chat_config);
                     $this->logger->debug("uploadFileToRAG completed", [
                         'resource_id' => $resource_id,
                         'has_rag_collection_id' => $attachment->getRAGCollectionId() !== null,
@@ -1899,8 +1720,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     ]);
                 }
 
-                // Save attachment (includes RAG fields if set)
                 $attachment->save();
+                if ($attachment->isInRAG()) {
+                    \ai\AIChatPageComponentRAGStatus::markUploaded((int) $attachment->getId());
+                }
 
                 $this->logger->info("Saved background file attachment", [
                     'chat_id' => $chat_id,
@@ -1919,11 +1742,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
     }
 
-    /**
-     * Delete file from RAG collection (supports multiple AI services)
-     * Removes file from RAG system using the configured AI service
-     */
-    private function deleteFileFromRAG(\ILIAS\Plugin\pcaic\Model\Attachment $attachment, string $chat_id, \ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig): void
+    private function deleteFileFromRAG(\ILIAS\Plugin\pcaic\Model\Attachment $attachment, string $chat_id, \ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): void
     {
         try {
             $this->logger->debug("Starting RAG deletion", [
@@ -1937,17 +1756,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 return;
             }
 
-            // Get LLM instance based on ChatConfig AI service
-            $llm = $this->getLLMInstanceForChat($chatConfig);
+            $llm = $this->getLLMInstanceForChat($chat_config);
 
-            // Delete from RAG using the configured LLM service
             $llm->deleteFileFromRAG($attachment->getRAGRemoteFileId(), $chat_id);
 
             $this->logger->info("File deleted from RAG successfully", [
                 'resource_id' => $attachment->getResourceId(),
                 'rag_remote_file_id' => $attachment->getRAGRemoteFileId(),
                 'chat_id' => $chat_id,
-                'ai_service' => $chatConfig->getAiService()
+                'ai_service' => $chat_config->getAiService()
             ]);
 
         } catch (\Exception $e) {
@@ -1958,15 +1775,14 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 'trace' => $e->getTraceAsString()
             ]);
 
-            // Don't throw - allow attachment to be deleted even if RAG deletion fails
+            // The attachment is deleted even if the RAG deletion fails
         }
     }
 
     /**
-     * Upload file to RAG collection (supports multiple AI services)
-     * Updates attachment with rag_collection_id and rag_remote_file_id
+     * Upload the file of an attachment to the RAG and store the RAG references
      */
-    private function uploadFileToRAG(\ILIAS\Plugin\pcaic\Model\Attachment $attachment, string $chat_id, \ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig): void
+    private function uploadFileToRAG(\ILIAS\Plugin\pcaic\Model\Attachment $attachment, string $chat_id, \ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): void
     {
         global $DIC;
 
@@ -1976,7 +1792,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 'chat_id' => $chat_id
             ]);
 
-            // Get file from IRSS
             $irss = $DIC->resourceStorage();
             $identification = $irss->manage()->find($attachment->getResourceId());
             if (!$identification) {
@@ -1986,7 +1801,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
             $this->logger->debug("File found in IRSS");
 
-            // Download file to temp location
             $stream = $irss->consume()->stream($identification);
             $content = $stream->getStream()->getContents();
 
@@ -2000,8 +1814,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 'size' => strlen($content)
             ]);
 
-            // Create temp file WITH correct extension AND original filename
-            // RAG systems validate file signature against filename
+            // Temporary file with the original name, the RAG validates the extension
             $safe_filename = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $original_filename);
             $temp_file = sys_get_temp_dir() . '/' . $safe_filename;
             file_put_contents($temp_file, $content);
@@ -2011,34 +1824,30 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 'exists' => file_exists($temp_file)
             ]);
 
-            // Get LLM instance based on ChatConfig AI service
-            $llm = $this->getLLMInstanceForChat($chatConfig);
+            $llm = $this->getLLMInstanceForChat($chat_config);
             $this->logger->debug("LLM instance created, calling uploadFileToRAG", [
-                'ai_service' => $chatConfig->getAiService()
+                'ai_service' => $chat_config->getAiService()
             ]);
 
-            $rag_result = $llm->uploadFileToRAG($temp_file, $chat_id);
+            $rag_result = $llm->uploadFileToRAG($temp_file, $chat_id, $original_filename);
 
             $this->logger->debug("RAG upload returned", ['result' => $rag_result]);
 
-            // Update attachment with RAG info
             $attachment->setRagCollectionId($rag_result['collection_id']);
             $attachment->setRagRemoteFileId($rag_result['remote_file_id']);
             $attachment->setRagUploadedAt(date('Y-m-d H:i:s'));
 
-            // Update ChatConfig with collection_id if not set
-            if (!$chatConfig->getRAGCollectionId()) {
-                $chatConfig->setRAGCollectionId($rag_result['collection_id']);
+            if (!$chat_config->getRAGCollectionId()) {
+                $chat_config->setRAGCollectionId($rag_result['collection_id']);
             }
 
-            // Clean up temp file
             @unlink($temp_file);
 
             $this->logger->info("File uploaded to RAG successfully", [
                 'resource_id' => $attachment->getResourceId(),
                 'collection_id' => $rag_result['collection_id'],
                 'remote_file_id' => $rag_result['remote_file_id'],
-                'ai_service' => $chatConfig->getAiService()
+                'ai_service' => $chat_config->getAiService()
             ]);
 
         } catch (\Exception $e) {
@@ -2049,36 +1858,32 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 'trace' => $e->getTraceAsString()
             ]);
 
-            // Log more details about the configuration
             $this->logger->debug("RAG upload configuration", [
-                'ai_service' => $chatConfig->getAiService(),
-                'file_upload_url' => \platform\AIChatPageComponentConfig::get('ramses_file_upload_url'),
-                'application_id' => \platform\AIChatPageComponentConfig::get('ramses_application_id'),
-                'instance_id' => \platform\AIChatPageComponentConfig::get('ramses_instance_id'),
-                'api_token_set' => !empty(\platform\AIChatPageComponentConfig::get('ramses_api_token'))
+                'ai_service' => $chat_config->getAiService(),
+                'rag_api_url' => \ai\AIChatPageComponentRAG::getApiUrl(),
+                'application_id' => \platform\AIChatPageComponentConfig::get('rag_application_id'),
+                'instance_id' => \platform\AIChatPageComponentConfig::get('rag_instance_id'),
+                'client_key_set' => \ai\AIChatPageComponentRAG::getClientKey() !== ''
             ]);
 
-            // Don't throw - allow attachment to be saved without RAG
+            // The attachment is stored without RAG
         }
     }
 
     /**
-     * Get LLM instance based on ChatConfig AI service
-     * Factory method to create the correct LLM service instance
+     * Service of the chat; falls back to the first available service
      */
-    private function getLLMInstanceForChat(\ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig)
+    private function getLLMInstanceForChat(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config)
     {
-        $ai_service = $chatConfig->getAiService();
+        $ai_service = $chat_config->getAiService();
 
-        // Use LLMRegistry to dynamically create service instance
         $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
 
         if ($instance === null) {
-            // Fallback to first available service if requested service not found
-            $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
-            if (!empty($availableServices)) {
-                $firstService = array_key_first($availableServices);
-                $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService);
+            $available_services = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+            if (!empty($available_services)) {
+                $first_service = array_key_first($available_services);
+                $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($first_service);
             }
 
             if ($instance === null) {
@@ -2090,34 +1895,30 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Update ChatConfig page context from current PageComponent context
-     * This is called when rendering the chat to ensure correct page context
-     * even for moved/copied PageComponents
+     * Update page_id, parent_id and parent_type of the chat if the page has moved
      */
-    private function updateChatConfigPageContext(\ILIAS\Plugin\pcaic\Model\ChatConfig $chatConfig): void
+    private function updateChatConfigPageContext(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): void
     {
 
         try {
-            // Get current page info from this PageComponent instance
-            $currentPageInfo = $this->getPageInfo();
+            $current_page_info = $this->getPageInfo();
 
-            $current_page_id = $chatConfig->getPageId();
-            $current_parent_id = $chatConfig->getParentId();
-            $current_parent_type = $chatConfig->getParentType();
+            $current_page_id = $chat_config->getPageId();
+            $current_parent_id = $chat_config->getParentId();
+            $current_parent_type = $chat_config->getParentType();
 
-            $new_page_id = $currentPageInfo['page_id'];
-            $new_parent_id = $currentPageInfo['parent_id'];
-            $new_parent_type = $currentPageInfo['parent_type'];
+            $new_page_id = $current_page_info['page_id'];
+            $new_parent_id = $current_page_info['parent_id'];
+            $new_parent_type = $current_page_info['parent_type'];
 
-            // Check if page context needs updating
             if ($current_page_id !== $new_page_id ||
                 $current_parent_id !== $new_parent_id ||
                 $current_parent_type !== $new_parent_type) {
 
-                $chatConfig->setPageId($new_page_id);
-                $chatConfig->setParentId($new_parent_id);
-                $chatConfig->setParentType($new_parent_type);
-                $chatConfig->save();
+                $chat_config->setPageId($new_page_id);
+                $chat_config->setParentId($new_parent_id);
+                $chat_config->setParentType($new_parent_type);
+                $chat_config->save();
 
             }
 
@@ -2126,27 +1927,22 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
     }
 
-    /**
-     * Add CSS and JavaScript assets for AI chat
-     */
-    private function addChatAssets() : void
+    private function addChatAssets(): void
     {
         global $DIC;
         $tpl = $DIC['tpl'];
 
-        // Add CSS
         $tpl->addCss($this->plugin->getDirectory() . "/css/ai_chat.css");
 
-        // Add JavaScript - marked.js for markdown parsing (local version)
+        // marked.js renders Markdown in the browser
         $tpl->addJavaScript($this->plugin->getDirectory() . "/js/vendor/marked.min.js");
         $tpl->addJavaScript($this->plugin->getDirectory() . "/js/ai_chat.js");
     }
 
-
     /**
-     * Get the AIChatPageComponent API URL for AJAX requests
+     * URL of api.php
      */
-    private function getAIChatApiUrl() : string
+    private function getAIChatApiUrl(): string
     {
         try {
             $plugin_base_url = $this->plugin->getPluginBaseUrl();
@@ -2160,52 +1956,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Get available AI services from AIChat configuration
+     * Defaults for new chats from the plugin configuration
      */
-    private function getAvailableAIServices() : array
-    {
-        // Currently only RAMSES is available - simplified service list
-        $services = [
-            'ramses' => $this->plugin->txt('ramses_service')
-        ];
-
-        /* Commented out other services for now - only RAMSES is active
-        try {
-            // Include the config class
-            require_once($this->plugin->getPluginBaseDir() . '/classes/platform/class.AIChatPageComponentConfig.php');
-
-            // Get available services from AIChat config
-            $available_services = \platform\AIChatPageComponentConfig::get('available_services');
-
-            if (is_array($available_services)) {
-                if (isset($available_services['openai']) && $available_services['openai'] == "1") {
-                    $services['openai'] = $this->plugin->txt('openai_service');
-                }
-                if (isset($available_services['ramses']) && $available_services['ramses'] == "1") {
-                    $services['ramses'] = $this->plugin->txt('ramses_service');
-                }
-                if (isset($available_services['ollama']) && $available_services['ollama'] == "1") {
-                    $services['ollama'] = $this->plugin->txt('ollama_service');
-                }
-                if (isset($available_services['gwdg']) && $available_services['gwdg'] == "1") {
-                    $services['gwdg'] = $this->plugin->txt('gwdg_service');
-                }
-            }
-        } catch (Exception $e) {
-            $this->logger->warning("Failed to load available services from AIChat config", ['error' => $e->getMessage()]);
-            // Fallback to basic options
-            $services['openai'] = $this->plugin->txt('openai_service');
-            $services['ramses'] = $this->plugin->txt('ramses_service');
-        }
-        */
-
-        return $services;
-    }
-
-    /**
-     * Get default values from AIChat configuration
-     */
-    private function getAIChatDefaults() : array
+    private function getAIChatDefaults(): array
     {
         $defaults = [
             'title' => 'AI Chat',
@@ -2225,12 +1978,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
             $char_limit = \platform\AIChatPageComponentConfig::get('characters_limit');
             if (!empty($char_limit)) {
-                $defaults['characters_limit'] = (int)$char_limit;
+                $defaults['characters_limit'] = (int) $char_limit;
             }
 
             $max_memory = \platform\AIChatPageComponentConfig::get('max_memory_messages');
             if (!empty($max_memory)) {
-                $defaults['max_memory_messages'] = (int)$max_memory;
+                $defaults['max_memory_messages'] = (int) $max_memory;
             }
 
             $disclaimer = \platform\AIChatPageComponentConfig::get('default_disclaimer');
@@ -2245,265 +1998,45 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Get information about the page that embeds the component
-     * @return    array    key => value
+     * @return array{page_id: int, parent_id: int, parent_type: string}
      */
-    private function getPageInfo() : array
+    private function getPageInfo(): array
     {
-        $page_id     = (int) ($this->getPlugin()->getPageId()     ?? 0);
-        $parent_id   = (int) ($this->getPlugin()->getParentId()   ?? 0);
-        $parent_type =        ($this->getPlugin()->getParentType() ?? '');
-
+        $page_id = (int) ($this->getPlugin()->getPageId() ?? 0);
+        $parent_id = (int) ($this->getPlugin()->getParentId() ?? 0);
+        $parent_type = ($this->getPlugin()->getParentType() ?? '');
 
         return [
-            'page_id'     => $page_id,
-            'parent_id'   => $parent_id,
+            'page_id' => $page_id,
+            'parent_id' => $parent_id,
             'parent_type' => $parent_type,
         ];
     }
 
     /**
-     * Extract page content for AI context
-     * @return string The page content as plain text
-     */
-    public function getPageContext() : string
-    {
-        global $DIC;
-
-        try {
-            $page_id = $this->plugin->getPageId();
-            $parent_id = $this->plugin->getParentId();
-            $parent_type = $this->plugin->getParentType();
-
-            if (!$page_id) {
-                return '';
-            }
-
-            // Load the COPage object
-            require_once("Services/COPage/classes/class.ilPageObject.php");
-            require_once("Services/COPage/classes/class.ilPageObjectGUI.php");
-
-            // Determine the correct page class based on parent type
-            $page_class = $this->getPageClassForParentType($parent_type);
-
-            if (!$page_class || !class_exists($page_class)) {
-                $this->logger->warning("Page class not found", [
-                    'page_class' => $page_class,
-                    'parent_type' => $parent_type
-                ]);
-                return '';
-            }
-
-            // Create page object
-            $page_obj = new $page_class($parent_id);
-
-            if (!$page_obj->exists()) {
-                $this->logger->warning("Page does not exist", [
-                    'parent_id' => $parent_id,
-                    'parent_type' => $parent_type
-                ]);
-                return '';
-            }
-
-            // Get the page XML content
-            $xml_content = $page_obj->getXMLContent();
-
-            if (empty($xml_content)) {
-                $this->logger->warning("No XML content found");
-                return '';
-            }
-
-            // Extract text content from XML
-            $context = $this->extractTextFromPageXML($xml_content);
-
-            // Add page title and metadata
-            $page_title = $this->getPageTitle($parent_type, $parent_id);
-            if (!empty($page_title)) {
-                $context = "Page Title: $page_title\n\n" . $context;
-            }
-
-
-            return $context;
-
-        } catch (Exception $e) {
-            $this->logger->warning("Error extracting page context", ['error' => $e->getMessage()]);
-            return '';
-        }
-    }
-
-    /**
-     * Get appropriate page class for parent type
-     */
-    private function getPageClassForParentType(string $parent_type) : string
-    {
-        switch ($parent_type) {
-            case 'lm':
-                require_once("Modules/LearningModule/classes/class.ilLMPage.php");
-                return 'ilLMPage';
-            case 'wpg':
-                require_once("Modules/Wiki/classes/class.ilWikiPage.php");
-                return 'ilWikiPage';
-            case 'cont':
-                require_once("Services/Container/classes/class.ilContainerPage.php");
-                return 'ilContainerPage';
-            case 'copa':
-                require_once("Services/COPage/classes/class.ilPageObject.php");
-                return 'ilPageObject';
-            default:
-                // Try generic page object
-                require_once("Services/COPage/classes/class.ilPageObject.php");
-                return 'ilPageObject';
-        }
-    }
-
-    /**
-     * Get page title based on parent type
-     */
-    private function getPageTitle(string $parent_type, int $parent_id) : string
-    {
-        global $DIC;
-
-        try {
-            switch ($parent_type) {
-                case 'lm':
-                    require_once("Modules/LearningModule/classes/class.ilObjLearningModule.php");
-                    require_once("Modules/LearningModule/classes/class.ilLMPageObject.php");
-                    $lm_page = new ilLMPageObject($parent_id);
-                    return $lm_page->getTitle();
-
-                case 'wpg':
-                    require_once("Modules/Wiki/classes/class.ilWikiPage.php");
-                    $wiki_page = new ilWikiPage($parent_id);
-                    return $wiki_page->getTitle();
-
-                case 'cont':
-                    require_once("Services/Object/classes/class.ilObject.php");
-                    $obj = ilObject::_lookupTitle($parent_id);
-                    return $obj;
-
-                default:
-                    // Try to get title via object lookup
-                    $title = ilObject::_lookupTitle($parent_id);
-                    return $title ?: '';
-            }
-        } catch (Exception $e) {
-            $this->logger->warning("Error getting page title", ['error' => $e->getMessage()]);
-            return '';
-        }
-    }
-
-    /**
-     * Extract plain text from ILIAS page XML
-     */
-    private function extractTextFromPageXML(string $xml_content) : string
-    {
-        if (empty($xml_content)) {
-            return '';
-        }
-
-        try {
-            // Load XML
-            $dom = new DOMDocument();
-            $dom->loadXML($xml_content);
-
-            // Remove PageComponent elements that contain AI chats to avoid recursion
-            $xpath = new DOMXPath($dom);
-            $page_components = $xpath->query('//PageComponent[@ComponentType="AIChatPageComponent"]');
-            foreach ($page_components as $component) {
-                $component->parentNode->removeChild($component);
-            }
-
-            // Extract text content from various ILIAS page elements
-            $text_parts = [];
-
-            // Paragraphs
-            $paragraphs = $xpath->query('//Paragraph');
-            foreach ($paragraphs as $paragraph) {
-                $text = trim($paragraph->textContent);
-                if (!empty($text)) {
-                    $text_parts[] = $text;
-                }
-            }
-
-            // Lists
-            $lists = $xpath->query('//List');
-            foreach ($lists as $list) {
-                $text = trim($list->textContent);
-                if (!empty($text)) {
-                    $text_parts[] = $text;
-                }
-            }
-
-            // Tables
-            $tables = $xpath->query('//Table');
-            foreach ($tables as $table) {
-                $text = trim($table->textContent);
-                if (!empty($text)) {
-                    $text_parts[] = "Table content: " . $text;
-                }
-            }
-
-            // Media objects (get alt text/captions)
-            $media_objects = $xpath->query('//MediaObject');
-            foreach ($media_objects as $media) {
-                $caption_nodes = $xpath->query('.//Caption', $media);
-                foreach ($caption_nodes as $caption) {
-                    $text = trim($caption->textContent);
-                    if (!empty($text)) {
-                        $text_parts[] = "Image/Media caption: " . $text;
-                    }
-                }
-            }
-
-            // Join all text parts
-            $content = implode("\n\n", $text_parts);
-
-            // Clean up whitespace
-            $content = preg_replace('/\s+/', ' ', $content);
-            $content = preg_replace('/\n\s*\n/', "\n\n", $content);
-
-            return trim($content);
-
-        } catch (Exception $e) {
-            $this->logger->warning("Error parsing page XML", ['error' => $e->getMessage()]);
-            // Fallback: try to extract basic text content
-            return strip_tags($xml_content);
-        }
-    }
-
-
-
-
-    /**
-     * Get allowed file extensions for background files based on RAG configuration
+     * Allowed file types for background files
      *
-     * This method determines which file types are allowed for background file uploads
-     * based on the RAG mode settings. If RAG is enabled for the AI service, only
-     * RAG-compatible file types are allowed.
-     *
-     * @param bool $a_create Whether this is create mode (no existing chat)
-     * @return array Array of allowed file extensions
+     * In create mode the RAG file types are used if RAG is available, because RAG will
+     * probably be enabled; in edit mode the RAG setting of the chat is used.
      */
     private function getAllowedBackgroundFileExtensions(bool $a_create): array
     {
         require_once(__DIR__ . '/ai/class.AIChatPageComponentLLM.php');
         require_once(__DIR__ . '/ai/class.AIChatPageComponentLLMRegistry.php');
 
-        // Determine AI service to use
         $ai_service = null;
         $rag_enabled_for_chat = false;
 
         if (!$a_create) {
-            // EDIT mode: Try to get settings from existing chat
             $old_properties = $this->getProperties();
             $chat_id = $old_properties['chat_id'] ?? '';
 
             if (!empty($chat_id)) {
                 try {
-                    $chatConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
-                    if ($chatConfig->exists()) {
-                        $ai_service = $chatConfig->getAiService();
-                        $rag_enabled_for_chat = $chatConfig->isEnableRag();
+                    $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+                    if ($chat_config->exists()) {
+                        $ai_service = $chat_config->getAiService();
+                        $rag_enabled_for_chat = $chat_config->isEnableRag();
                     }
                 } catch (\Exception $e) {
                     $this->logger->warning("Error loading ChatConfig for file extensions", ['error' => $e->getMessage()]);
@@ -2511,47 +2044,34 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
         }
 
-        // Fallback: Use default/forced AI service
         if (empty($ai_service)) {
             $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
             if ($force_default_service === '1') {
                 $ai_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
             } else {
-                // Use first available enabled service
                 $service_options = \ai\AIChatPageComponentLLMRegistry::getServiceOptions(true);
                 $ai_service = !empty($service_options) ? array_key_first($service_options) : 'ramses';
             }
         }
 
-        // Get LLM instance
         $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
         if ($llm === null) {
-            // Fallback to default extensions
             return FileUploadValidator::getAllowedExtensions('background');
         }
 
-        // Check if RAG is globally enabled for this service
         $rag_config_key = $ai_service . '_enable_rag';
         $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
         $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
 
-        // Determine effective RAG state:
-        // - In EDIT mode: Use chat-specific RAG setting (if RAG is globally enabled)
-        // - In CREATE mode: If RAG is globally enabled, show RAG-restricted types
-        //   (user will likely enable RAG, and we want to prevent incompatible uploads)
         $effective_rag_enabled = false;
         if ($rag_globally_enabled && $llm->supportsRAG()) {
             if ($a_create) {
-                // CREATE mode: Use RAG-restricted types if RAG is globally available
-                // This prevents uploading incompatible files that would fail if RAG is enabled
                 $effective_rag_enabled = true;
             } else {
-                // EDIT mode: Use the chat's actual RAG setting
                 $effective_rag_enabled = $rag_enabled_for_chat;
             }
         }
 
-        // Get allowed file types from LLM service
         $allowed_extensions = $llm->getAllowedFileTypes($effective_rag_enabled);
 
         $this->logger->debug("Background file extensions determined", [
@@ -2567,8 +2087,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Convert property value to boolean
-     * Handles various string representations of booleans
+     * Convert stored property values ('1', 'true', 'on', ...) to bool
      */
     private function toBool($value): bool
     {
@@ -2581,6 +2100,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             return in_array($value, ['1', 'true', 'yes', 'on'], true);
         }
 
-        return (bool)$value;
+        return (bool) $value;
     }
 }

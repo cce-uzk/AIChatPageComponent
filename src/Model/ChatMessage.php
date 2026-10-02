@@ -1,34 +1,40 @@
 <?php
 
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
 namespace ILIAS\Plugin\pcaic\Model;
 
 /**
- * Chat message model
- *
- * Represents individual messages within a chat session.
- * Messages belong to sessions and include role, content, and timestamp.
+ * Message of a chat session
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 class ChatMessage
 {
-    private ?int $messageId = null;
-    private string $sessionId;
+    private ?int $message_id = null;
+    private string $session_id;
     private string $role;
     private string $message;
     private ?\DateTime $timestamp = null;
-    private ?array $metadata = null;  // RAG source citations
-    private ?array $usage = null;     // Token usage data
+    private ?array $metadata = null;  // RAG sources of an assistant message
+    private ?array $usage = null;     // Token usage of an assistant message
 
     /**
-     * Constructor
-     *
-     * @param int|null $messageId Optional message ID to load existing message
+     * @param int|null $message_id Loads this message if given
      */
-    public function __construct(int $messageId = null)
+    public function __construct(int $message_id = null)
     {
-        if ($messageId) {
-            $this->messageId = $messageId;
+        if ($message_id) {
+            $this->message_id = $message_id;
             $this->load();
         } else {
             $this->timestamp = new \DateTime();
@@ -36,115 +42,94 @@ class ChatMessage
     }
 
     /**
-     * Get all messages for session
-     *
-     * @param string $sessionId Session ID
-     * @return ChatMessage[] Array of messages in chronological order
+     * @return ChatMessage[] All messages of the session in chronological order
      */
-    public static function getForSession(string $sessionId): array
+    public static function getForSession(string $session_id): array
     {
         global $DIC;
         $db = $DIC->database();
 
         $query = "SELECT message_id FROM pcaic_messages 
-                  WHERE session_id = " . $db->quote($sessionId, 'text') . "
-                  ORDER BY timestamp ASC";
-        
+                  WHERE session_id = " . $db->quote($session_id, 'text') . "
+                  ORDER BY timestamp ASC, message_id ASC";
+
         $result = $db->query($query);
         $messages = [];
-        
+
         while ($row = $db->fetchAssoc($result)) {
-            $messages[] = new self((int)$row['message_id']);
+            $messages[] = new self((int) $row['message_id']);
         }
-        
+
         return $messages;
     }
 
     /**
-     * Get recent messages for session with limit
-     *
-     * @param string $sessionId Session ID
-     * @param int $limit Maximum number of messages to retrieve
-     * @return ChatMessage[] Array of recent messages in chronological order
+     * @return ChatMessage[] The last $limit messages of the session in chronological order
      */
-    public static function getRecentForSession(string $sessionId, int $limit): array
+    public static function getRecentForSession(string $session_id, int $limit): array
     {
         global $DIC;
         $db = $DIC->database();
 
         $query = "SELECT message_id FROM pcaic_messages 
-                  WHERE session_id = " . $db->quote($sessionId, 'text') . "
-                  ORDER BY timestamp DESC 
+                  WHERE session_id = " . $db->quote($session_id, 'text') . "
+                  ORDER BY timestamp DESC, message_id DESC
                   LIMIT " . $limit;
-        
+
         $result = $db->query($query);
         $messages = [];
-        
+
         while ($row = $db->fetchAssoc($result)) {
-            $messages[] = new self((int)$row['message_id']);
+            $messages[] = new self((int) $row['message_id']);
         }
 
         return array_reverse($messages);
     }
 
-    /**
-     * Delete all messages for session
-     *
-     * @param string $sessionId Session ID
-     * @return bool Always returns true
-     */
-    public static function deleteForSession(string $sessionId): bool
+    public static function deleteForSession(string $session_id): bool
     {
         global $DIC;
         $db = $DIC->database();
 
-        $query = "DELETE FROM pcaic_messages WHERE session_id = " . $db->quote($sessionId, 'text');
+        $query = "DELETE FROM pcaic_messages WHERE session_id = " . $db->quote($session_id, 'text');
         $db->manipulate($query);
-        
+
         return true;
     }
 
     /**
-     * Load message data from database
-     *
-     * @return bool True if message was found and loaded, false otherwise
+     * @return bool True if the message was found
      */
     private function load(): bool
     {
         global $DIC;
         $db = $DIC->database();
 
-        $query = "SELECT * FROM pcaic_messages WHERE message_id = " . $db->quote($this->messageId, 'integer');
+        $query = "SELECT * FROM pcaic_messages WHERE message_id = " . $db->quote($this->message_id, 'integer');
         $result = $db->query($query);
-        
+
         if ($row = $db->fetchAssoc($result)) {
-            $this->sessionId = $row['session_id'];
+            $this->session_id = $row['session_id'];
             $this->role = $row['role'];
             $this->message = $row['message'];
             $this->timestamp = $row['timestamp'] ? new \DateTime($row['timestamp']) : null;
 
-            // Load metadata (RAG sources) if present
             if (!empty($row['metadata'])) {
                 $this->metadata = json_decode($row['metadata'], true);
             }
 
-            // Load usage (token data) if present
             if (!empty($row['usage'])) {
                 $this->usage = json_decode($row['usage'], true);
             }
 
             return true;
         }
-        
+
         return false;
     }
 
     /**
-     * Save message to database
-     *
-     * Performs INSERT for new messages or UPDATE for existing ones.
-     *
-     * @return bool Always returns true
+     * Insert or update the message
      */
     public function save(): bool
     {
@@ -156,7 +141,7 @@ class ChatMessage
         }
 
         $values = [
-            'session_id' => ['text', $this->sessionId],
+            'session_id' => ['text', $this->session_id],
             'role' => ['text', $this->role],
             'message' => ['clob', $this->message],
             'timestamp' => ['timestamp', $this->timestamp->format('Y-m-d H:i:s')],
@@ -164,11 +149,11 @@ class ChatMessage
             'usage' => ['clob', $this->usage ? json_encode($this->usage) : null]
         ];
 
-        if ($this->messageId) {
-            $db->update('pcaic_messages', $values, ['message_id' => ['integer', $this->messageId]]);
+        if ($this->message_id) {
+            $db->update('pcaic_messages', $values, ['message_id' => ['integer', $this->message_id]]);
         } else {
-            $this->messageId = $db->nextId('pcaic_messages');
-            $values['message_id'] = ['integer', $this->messageId];
+            $this->message_id = $db->nextId('pcaic_messages');
+            $values['message_id'] = ['integer', $this->message_id];
             $db->insert('pcaic_messages', $values);
         }
 
@@ -176,116 +161,128 @@ class ChatMessage
     }
 
     /**
-     * Delete message from database
-     *
-     * @return bool True if message was deleted, false if message ID is not set
+     * @return bool False if the message has not been saved yet
      */
     public function delete(): bool
     {
-        if (!$this->messageId) {
+        if (!$this->message_id) {
             return false;
         }
 
         global $DIC;
         $db = $DIC->database();
 
-        $query = "DELETE FROM pcaic_messages WHERE message_id = " . $db->quote($this->messageId, 'integer');
+        $query = "DELETE FROM pcaic_messages WHERE message_id = " . $db->quote($this->message_id, 'integer');
         $db->manipulate($query);
 
         return true;
     }
 
-    /**
-     * Check if message exists in database
-     *
-     * @return bool True if message exists, false otherwise
-     */
     public function exists(): bool
     {
-        if (!$this->messageId) {
+        if (!$this->message_id) {
             return false;
         }
 
         global $DIC;
         $db = $DIC->database();
 
-        $query = "SELECT message_id FROM pcaic_messages WHERE message_id = " . $db->quote($this->messageId, 'integer');
+        $query = "SELECT message_id FROM pcaic_messages WHERE message_id = " . $db->quote($this->message_id, 'integer');
         $result = $db->query($query);
         return $db->fetchAssoc($result) !== null;
     }
 
-    /**
-     * Get attachments for message
-     *
-     * @return Attachment[] Array of attachments
-     */
     public function getAttachments(): array
     {
-        if (!$this->messageId) {
+        if (!$this->message_id) {
             return [];
         }
 
         global $DIC;
         $db = $DIC->database();
 
-        $query = "SELECT * FROM pcaic_attachments WHERE message_id = " . $db->quote($this->messageId, 'integer');
+        $query = "SELECT * FROM pcaic_attachments WHERE message_id = " . $db->quote($this->message_id, 'integer');
         $result = $db->query($query);
 
         $attachments = [];
         while ($row = $db->fetchAssoc($result)) {
-            $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int)$row['id']);
+            $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int) $row['id']);
             $attachments[] = $attachment;
         }
 
         return $attachments;
     }
 
-    public function getMessageId(): ?int { return $this->messageId; }
-    public function getSessionId(): string { return $this->sessionId; }
-    public function setSessionId(string $sessionId): void { $this->sessionId = $sessionId; }
-    public function getRole(): string { return $this->role; }
-    public function setRole(string $role): void { $this->role = $role; }
-    public function getMessage(): string { return $this->message; }
-    public function setMessage(string $message): void { $this->message = $message; }
-    public function getTimestamp(): ?\DateTime { return $this->timestamp; }
-    public function setTimestamp(\DateTime $timestamp): void { $this->timestamp = $timestamp; }
+    public function getMessageId(): ?int
+    {
+        return $this->message_id;
+    }
+    public function getSessionId(): string
+    {
+        return $this->session_id;
+    }
+    public function setSessionId(string $session_id): void
+    {
+        $this->session_id = $session_id;
+    }
+    public function getRole(): string
+    {
+        return $this->role;
+    }
+    public function setRole(string $role): void
+    {
+        $this->role = $role;
+    }
+    public function getMessage(): string
+    {
+        return $this->message;
+    }
+    public function setMessage(string $message): void
+    {
+        $this->message = $message;
+    }
+    public function getTimestamp(): ?\DateTime
+    {
+        return $this->timestamp;
+    }
+    public function setTimestamp(\DateTime $timestamp): void
+    {
+        $this->timestamp = $timestamp;
+    }
 
     /**
-     * Get RAG metadata (source citations)
-     * @return array|null Array of source objects with filename, page_numbers, text
+     * @return array|null RAG sources (filename, page_numbers, text, ...)
      */
-    public function getMetadata(): ?array { return $this->metadata; }
+    public function getMetadata(): ?array
+    {
+        return $this->metadata;
+    }
+
+    public function setMetadata(?array $metadata): void
+    {
+        $this->metadata = $metadata;
+    }
 
     /**
-     * Set RAG metadata (source citations)
-     * @param array|null $metadata Array of source objects from RAG response
+     * @return array|null Token usage (prompt_tokens, completion_tokens, total_tokens)
      */
-    public function setMetadata(?array $metadata): void { $this->metadata = $metadata; }
+    public function getUsage(): ?array
+    {
+        return $this->usage;
+    }
 
-    /**
-     * Get token usage data
-     * @return array|null Array with prompt_tokens, completion_tokens, total_tokens
-     */
-    public function getUsage(): ?array { return $this->usage; }
+    public function setUsage(?array $usage): void
+    {
+        $this->usage = $usage;
+    }
 
-    /**
-     * Set token usage data
-     * @param array|null $usage Token usage from AI response
-     */
-    public function setUsage(?array $usage): void { $this->usage = $usage; }
-
-    /**
-     * Check if message has RAG sources
-     * @return bool True if metadata contains sources
-     */
     public function hasSources(): bool
     {
         return !empty($this->metadata) && is_array($this->metadata);
     }
 
     /**
-     * Get formatted sources for display
-     * @return array Array of simplified source objects for frontend
+     * Sources in the format used by the frontend
      */
     public function getFormattedSources(): array
     {
@@ -305,16 +302,13 @@ class ChatMessage
     }
 
     /**
-     * Bind attachment to message
+     * Bind an uploaded attachment to this message
      *
-     * Message must be saved (have ID) before attachments can be added.
-     *
-     * @param int $attachment_id Attachment ID
-     * @return bool True if successful, false if message not saved or attachment not found
+     * @return bool False if the message has not been saved yet or the attachment does not exist
      */
     public function addAttachment(int $attachment_id): bool
     {
-        if (!$this->messageId) {
+        if (!$this->message_id) {
             return false;
         }
 
@@ -324,7 +318,7 @@ class ChatMessage
         }
 
         try {
-            $attachment->setMessageId($this->messageId);
+            $attachment->setMessageId($this->message_id);
             $attachment->save();
             return true;
         } catch (\Exception $e) {
@@ -332,16 +326,11 @@ class ChatMessage
         }
     }
 
-    /**
-     * Convert message to array representation
-     *
-     * @return array Associative array containing message data and attachments
-     */
     public function toArray(): array
     {
         return [
-            'message_id' => $this->messageId,
-            'session_id' => $this->sessionId,
+            'message_id' => $this->message_id,
+            'session_id' => $this->session_id,
             'role' => $this->role,
             'content' => $this->message,
             'message' => $this->message,

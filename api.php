@@ -1,13 +1,24 @@
 <?php
+
 /**
- * AIChatPageComponent API Endpoint
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
  *
- * Handles all AJAX requests for AI chat functionality.
- * Routes requests to appropriate LLM service implementations.
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+/**
+ * Endpoint of the chat frontend
+ *
+ * The browser only sends the chat ID, the message and attachment IDs; all chat
+ * settings are read on the server. Access is checked for every request.
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
-
 $ilias_root = rtrim(dirname(__DIR__, 7), '/');
 chdir($ilias_root);
 require_once($ilias_root . '/Services/Init/classes/class.ilInitialisation.php');
@@ -31,43 +42,40 @@ use ILIAS\Plugin\pcaic\Model\ChatSession;
 use ILIAS\Plugin\pcaic\Model\ChatMessage;
 use ILIAS\Plugin\pcaic\Model\Attachment;
 
+$request = $DIC->http()->request();
+$method = strtoupper($request->getMethod());
+
 // Restrict CORS to the ILIAS installation's own origin
 $allowed_origin = defined('ILIAS_HTTP_PATH') ? rtrim(ILIAS_HTTP_PATH, '/') : '';
-$request_origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if ($allowed_origin !== '' && $request_origin === $allowed_origin) {
+if ($allowed_origin !== '' && $request->getHeaderLine('Origin') === $allowed_origin) {
     header('Access-Control-Allow-Origin: ' . $allowed_origin);
-} elseif ($allowed_origin === '') {
-    // Fallback when ILIAS_HTTP_PATH is not yet defined
-    header('Access-Control-Allow-Origin: ' . ($_SERVER['HTTP_ORIGIN'] ?? ''));
 }
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+if ($method === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
 
 $data = [];
-$method = $_SERVER['REQUEST_METHOD'];
-$request = $DIC->http()->request();
 
 if ($method === 'GET') {
-    $queryParams = $request->getQueryParams();
-    $data = is_array($queryParams) ? $queryParams : $queryParams->toArray();
+    $query_params = $request->getQueryParams();
+    $data = is_array($query_params) ? $query_params : $query_params->toArray();
 } elseif ($method === 'POST') {
-    $content_type = $_SERVER['CONTENT_TYPE'] ?? '';
+    $content_type = $request->getHeaderLine('Content-Type');
     if (strpos($content_type, 'multipart/form-data') !== false) {
-        $postData = $request->getParsedBody();
-        $data = is_array($postData) ? $postData : $postData->toArray();
+        $post_data = $request->getParsedBody();
+        $data = is_array($post_data) ? $post_data : $post_data->toArray();
     } else {
-        $input = file_get_contents('php://input');
+        $input = (string) $request->getBody();
         $json_data = json_decode($input, true);
         if ($json_data !== null) {
             $data = $json_data;
         } else {
-            $postData = $request->getParsedBody();
-            $data = is_array($postData) ? $postData : $postData->toArray();
+            $post_data = $request->getParsedBody();
+            $data = is_array($post_data) ? $post_data : $post_data->toArray();
         }
     }
 }
@@ -87,22 +95,16 @@ if ($is_anonymous && !$allow_anonymous) {
 }
 
 try {
-    // ============================================
-    // Action Routing
-    // ============================================
 
     switch ($action) {
 
-        // ========================================
-        // Send Message (Non-Streaming)
-        // ========================================
         case 'send_message':
             header('Content-Type: application/json');
 
             $message = $data['message'] ?? '';
             $attachment_ids = $data['attachment_ids'] ?? [];
 
-            // Handle attachment_ids: may come as JSON string or array
+            // attachment_ids may be sent as JSON string or array
             if (is_string($attachment_ids)) {
                 $attachment_ids = json_decode($attachment_ids, true) ?: [];
             }
@@ -115,20 +117,19 @@ try {
                 exit;
             }
 
-            // Load chat config to get AI service
-            $chatConfig = new ChatConfig($chat_id);
-            if (!$chatConfig->exists()) {
+            $chat_config = new ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
                 echo json_encode(['error' => 'Chat not found']);
                 exit;
             }
 
-            if (!checkChatAccess($chatConfig)) {
+            if (!checkChatAccess($chat_config)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Access denied']);
                 exit;
             }
 
-            // Daily message rate limit (authenticated users only)
+            // Daily message limit (logged-in users only)
             if (!$is_anonymous) {
                 $limit_error = checkDailyMessageLimit($chat_id, $user_id);
                 if ($limit_error !== null) {
@@ -136,25 +137,37 @@ try {
                     echo json_encode(['error' => $limit_error]);
                     exit;
                 }
+
+                $attachment_check = validateAttachmentIds($attachment_ids, $chat_id, $user_id);
+                if ($attachment_check['error'] !== null) {
+                    http_response_code(400);
+                    echo json_encode(['error' => $attachment_check['error']]);
+                    exit;
+                }
+                $attachment_ids = $attachment_check['ids'];
             }
 
-            // Create LLM instance and delegate (respect force default service)
-            $llm = createLLMInstance(getEffectiveAiService($chatConfig));
+            // The default service is used if the administrator enforces it
+            $llm = createLLMInstance(getEffectiveAiService($chat_config));
             $llm->setStreaming(false);
 
-            // Normalise or suppress inline source citations via system prompt
-            if (!$chatConfig->isShowSources()) {
-                $llm->setPrompt(($llm->getPrompt() ?? '') .
+            // Suppress inline citations if sources are hidden
+            if (!$chat_config->isShowSources()) {
+                $llm->setPrompt(
+                    ($llm->getPrompt() ?? '') .
                     "\n\n[SYSTEM INSTRUCTION: Answer directly and completely. Sources are managed separately.]"
                 );
-            } else {
-                $llm->setPrompt(($llm->getPrompt() ?? '') .
+            } elseif (!isRagEnabledForChat($chat_config, $llm)) {
+                $llm->setPrompt(
+                    ($llm->getPrompt() ?? '') .
                     "\n\n[SYSTEM INSTRUCTION: Cite sources inline as [1], [2], [3]. A sources panel is shown separately.]"
                 );
             }
+            // In RAG mode the RAG prompt defines the citation format ([cit-N], 0-based),
+            // which is converted to [N+1]; an additional [1] instruction would shift the numbering
 
             if ($is_anonymous) {
-                // Stateless mode: no DB session, history comes from frontend
+                // Anonymous users: nothing is stored, the history comes from the frontend
                 $conversation_history = $data['conversation_history'] ?? [];
                 if (is_string($conversation_history)) {
                     $conversation_history = json_decode($conversation_history, true) ?: [];
@@ -165,49 +178,47 @@ try {
                 $response = $llm->handleSendMessage($chat_id, $user_id, $message, $attachment_ids);
             }
 
-            // Strip sources from response text when show_sources is disabled
-            if (!$chatConfig->isShowSources()) {
+            if (!$chat_config->isShowSources()) {
                 $response = stripSourcesFromResponse($response);
             }
 
-            // Build response with optional metadata
-            $jsonResponse = [
+            $json_response = [
                 'success' => true,
                 'message' => $response
             ];
 
-            // Include RAG sources if enabled for this chat
-            if ($chatConfig->isShowSources()) {
+            if ($chat_config->isShowSources()) {
                 $metadata = $llm->getLastResponseMetadata();
                 if ($metadata !== null && !empty($metadata)) {
-                    $bgUrls = $chatConfig->isAllowSourceDownloads()
+                    $bg_urls = $chat_config->isAllowSourceDownloads()
                         ? getBackgroundFileDownloadUrls($chat_id)
                         : [];
-                    $jsonResponse['sources'] = array_map(function($source) use ($bgUrls, $chat_id) {
+                    $json_response['sources'] = array_map(function ($source) use ($bg_urls, $chat_id) {
                         $filename = $source['filename'] ?? 'Unknown';
-                        $attachmentId = $bgUrls[$filename] ?? null;
+                        $attachment_id = $bg_urls[$filename] ?? null;
                         return [
-                            'filename'     => $filename,
-                            'pages'        => $source['page_numbers'] ?? [],
-                            'excerpt'      => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
-                            'download_url' => $attachmentId ? buildSecureDownloadUrl($chat_id, $attachmentId) : null,
+                            'filename' => $filename,
+                            'pages' => $source['page_numbers'] ?? [],
+                            'url' => $source['url'] ?? null,
+                            'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
+                            'download_url' => $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null,
                         ];
                     }, $metadata);
                 }
             }
 
-            // Include token usage if available
             $usage = $llm->getLastResponseUsage();
             if ($usage !== null) {
-                $jsonResponse['usage'] = $usage;
+                $json_response['usage'] = $usage;
             }
 
-            echo json_encode($jsonResponse);
+            if ($llm->isRagIncomplete()) {
+                $json_response['rag_incomplete'] = true;
+            }
+
+            echo json_encode($json_response);
             break;
 
-        // ========================================
-        // Send Message (Streaming)
-        // ========================================
         case 'send_message_stream':
             header('Content-Type: text/event-stream');
             header('Cache-Control: no-cache');
@@ -216,7 +227,7 @@ try {
             $message = $data['message'] ?? '';
             $attachment_ids = $data['attachment_ids'] ?? [];
 
-            // Handle attachment_ids: may come as JSON string or array
+            // attachment_ids may be sent as JSON string or array
             if (is_string($attachment_ids)) {
                 $attachment_ids = json_decode($attachment_ids, true) ?: [];
             }
@@ -229,21 +240,20 @@ try {
                 exit;
             }
 
-            // Load chat config to get AI service
-            $chatConfig = new ChatConfig($chat_id);
-            if (!$chatConfig->exists()) {
+            $chat_config = new ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
                 echo "data: " . json_encode(['error' => 'Chat not found']) . "\n\n";
                 exit;
             }
 
-            if (!checkChatAccess($chatConfig)) {
+            if (!checkChatAccess($chat_config)) {
                 http_response_code(403);
                 echo "data: " . json_encode(['error' => 'Access denied']) . "\n\n";
                 exit;
             }
 
-            // Daily message rate limit (authenticated users only)
-            // Note: EventSource uses HTTP 200 always – errors must be sent as SSE events.
+            // Daily message limit (logged-in users only); EventSource always receives HTTP 200,
+            // so errors are sent as events
             if (!$is_anonymous) {
                 $limit_error = checkDailyMessageLimit($chat_id, $user_id);
                 if ($limit_error !== null) {
@@ -251,38 +261,47 @@ try {
                     flush();
                     exit;
                 }
+
+                $attachment_check = validateAttachmentIds($attachment_ids, $chat_id, $user_id);
+                if ($attachment_check['error'] !== null) {
+                    echo "data: " . json_encode(['type' => 'error', 'error' => $attachment_check['error']]) . "\n\n";
+                    flush();
+                    exit;
+                }
+                $attachment_ids = $attachment_check['ids'];
             }
 
-            // Get effective AI service (respects force default)
-            $aiService = getEffectiveAiService($chatConfig);
+            $ai_service = getEffectiveAiService($chat_config);
 
-            // Check hierarchical streaming settings (central → LLM → chat)
-            $streamingEnabled = isStreamingEnabledForChat($chatConfig, $aiService);
+            // Streaming must be enabled globally, for the service and for the chat
+            $streaming_enabled = isStreamingEnabledForChat($chat_config, $ai_service);
 
-            // Flush start event BEFORE creating the LLM instance so that headers_sent()
-            // is true when createLLMInstance() throws (e.g. no_service_available).
-            // EventSource only fires onmessage for HTTP 200 responses; a 503 would only
-            // trigger onerror where the body is inaccessible.
+            // Send the start event before the service is created, so that an exception
+            // (e.g. no_service_available) is reported as event: EventSource only fires
+            // onmessage for HTTP 200, the body of an error response is not accessible
             echo "data: " . json_encode(['type' => 'start']) . "\n\n";
             flush();
 
-            // Create LLM instance and delegate
-            $llm = createLLMInstance($aiService);
-            $llm->setStreaming($streamingEnabled);
+            $llm = createLLMInstance($ai_service);
+            $llm->setStreaming($streaming_enabled);
 
-            // Normalise or suppress inline source citations via system prompt
-            if (!$chatConfig->isShowSources()) {
-                $llm->setPrompt(($llm->getPrompt() ?? '') .
+            // Suppress inline citations if sources are hidden
+            if (!$chat_config->isShowSources()) {
+                $llm->setPrompt(
+                    ($llm->getPrompt() ?? '') .
                     "\n\n[SYSTEM INSTRUCTION: Answer directly and completely. Sources are managed separately.]"
                 );
-            } else {
-                $llm->setPrompt(($llm->getPrompt() ?? '') .
+            } elseif (!isRagEnabledForChat($chat_config, $llm)) {
+                $llm->setPrompt(
+                    ($llm->getPrompt() ?? '') .
                     "\n\n[SYSTEM INSTRUCTION: Cite sources inline as [1], [2], [3]. A sources panel is shown separately.]"
                 );
             }
+            // In RAG mode the RAG prompt defines the citation format ([cit-N], 0-based),
+            // which is converted to [N+1]; an additional [1] instruction would shift the numbering
 
             if ($is_anonymous) {
-                // Stateless mode: no DB session, history comes from frontend
+                // Anonymous users: nothing is stored, the history comes from the frontend
                 $conversation_history = $data['conversation_history'] ?? [];
                 if (is_string($conversation_history)) {
                     $conversation_history = json_decode($conversation_history, true) ?: [];
@@ -293,96 +312,104 @@ try {
                 $response = $llm->handleSendMessage($chat_id, $user_id, $message, $attachment_ids);
             }
 
-            // Strip sources from response text when show_sources is disabled
-            if (!$chatConfig->isShowSources()) {
+            if (!$chat_config->isShowSources()) {
                 $response = stripSourcesFromResponse($response);
             }
 
-            // Build complete response with optional metadata
-            $completeData = ['type' => 'complete', 'message' => $response];
+            $complete_data = ['type' => 'complete', 'message' => $response];
 
-            // Include RAG sources if enabled for this chat
-            if ($chatConfig->isShowSources()) {
+            if ($chat_config->isShowSources()) {
                 $metadata = $llm->getLastResponseMetadata();
                 if ($metadata !== null && !empty($metadata)) {
-                    $bgUrls = $chatConfig->isAllowSourceDownloads()
+                    $bg_urls = $chat_config->isAllowSourceDownloads()
                         ? getBackgroundFileDownloadUrls($chat_id)
                         : [];
-                    $completeData['sources'] = array_map(function($source) use ($bgUrls, $chat_id) {
+                    $complete_data['sources'] = array_map(function ($source) use ($bg_urls, $chat_id) {
                         $filename = $source['filename'] ?? 'Unknown';
-                        $attachmentId = $bgUrls[$filename] ?? null;
+                        $attachment_id = $bg_urls[$filename] ?? null;
                         return [
-                            'filename'     => $filename,
-                            'pages'        => $source['page_numbers'] ?? [],
-                            'excerpt'      => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
-                            'download_url' => $attachmentId ? buildSecureDownloadUrl($chat_id, $attachmentId) : null,
+                            'filename' => $filename,
+                            'pages' => $source['page_numbers'] ?? [],
+                            'url' => $source['url'] ?? null,
+                            'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
+                            'download_url' => $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null,
                         ];
                     }, $metadata);
                 }
             }
 
-            // Include token usage if available
             $usage = $llm->getLastResponseUsage();
             if ($usage !== null) {
-                $completeData['usage'] = $usage;
+                $complete_data['usage'] = $usage;
             }
 
-            echo "data: " . json_encode($completeData) . "\n\n";
+            if ($llm->isRagIncomplete()) {
+                $complete_data['rag_incomplete'] = true;
+            }
+
+            echo "data: " . json_encode($complete_data) . "\n\n";
             flush();
             break;
 
-        // ========================================
-        // Upload File
-        // ========================================
         case 'upload_file':
             header('Content-Type: application/json');
 
-            // File uploads are never permitted for anonymous users – regardless of the
-            // allow_anonymous_access setting. Anonymous can chat (stateless) but never upload.
+            // Anonymous users can chat, but never upload files
             if ($is_anonymous) {
                 http_response_code(403);
                 echo json_encode(['error' => 'File uploads are not available for anonymous users']);
                 exit;
             }
 
-            if (!isset($_FILES['file'])) {
+            $uploaded_files = $request->getUploadedFiles();
+            $uploaded_file = $uploaded_files['file'] ?? null;
+            if (!$uploaded_file instanceof \Psr\Http\Message\UploadedFileInterface) {
                 echo json_encode(['error' => 'No file uploaded']);
                 exit;
             }
 
-            // Load chat config
-            $chatConfig = new ChatConfig($chat_id);
-            if (!$chatConfig->exists()) {
+            $chat_config = new ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
                 echo json_encode(['error' => 'Chat not found']);
                 exit;
             }
 
-            if (!checkChatAccess($chatConfig)) {
+            if (!checkChatAccess($chat_config)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Access denied']);
                 exit;
             }
 
-            // Check hierarchical file handling (global → service)
-            $aiService = getEffectiveAiService($chatConfig);
-            if (!isFileHandlingEnabledForService($aiService)) {
+            $ai_service = getEffectiveAiService($chat_config);
+            if (!isFileHandlingEnabledForService($ai_service)) {
                 echo json_encode(['error' => 'File handling is disabled for this AI service']);
                 exit;
             }
 
-            // Validate file upload
-            $upload_info = $_FILES['file'];
-            if ($upload_info['error'] !== UPLOAD_ERR_OK) {
+            if ($uploaded_file->getError() !== UPLOAD_ERR_OK) {
                 echo json_encode(['error' => 'File upload failed']);
                 exit;
             }
 
-            // Get LLM instance and check if RAG is enabled (service + global + chat)
-            $llm = createLLMInstance(getEffectiveAiService($chatConfig));
-            $rag_enabled = isRagEnabledForChat($chatConfig, $llm);
+            $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions');
+            $chat_uploads_allowed = !is_array($file_restrictions) || ($file_restrictions['allow_chat_uploads'] ?? true);
+            if (!$chat_uploads_allowed || !$chat_config->isEnableChatUploads()) {
+                http_response_code(403);
+                echo json_encode(['error' => 'File uploads are disabled for this chat']);
+                exit;
+            }
 
-            // Validate file type based on RAG mode
-            $file_extension = strtolower(pathinfo($upload_info['name'], PATHINFO_EXTENSION));
+            // Enforced here, the browser check can be bypassed
+            $max_file_size_mb = (int) (\platform\AIChatPageComponentConfig::get('max_file_size_mb') ?: 5);
+            if ((int) $uploaded_file->getSize() > $max_file_size_mb * 1024 * 1024) {
+                echo json_encode(['error' => "File too large. Maximum size is {$max_file_size_mb} MB."]);
+                exit;
+            }
+
+            $llm = createLLMInstance(getEffectiveAiService($chat_config));
+            $rag_enabled = isRagEnabledForChat($chat_config, $llm);
+
+            $file_extension = strtolower(pathinfo((string) $uploaded_file->getClientFilename(), PATHINFO_EXTENSION));
             if (!$llm->isFileTypeAllowed($file_extension, $rag_enabled)) {
                 $mode = $rag_enabled ? 'RAG' : 'Multimodal';
                 $allowed = $llm->getAllowedFileTypesDescription($rag_enabled);
@@ -393,11 +420,9 @@ try {
             }
 
             try {
-                // Store file using ILIAS Resource Storage
                 $resource_storage = $DIC->resourceStorage();
                 $stakeholder = new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder();
 
-                // Use ILIAS FileUpload service
                 $upload_service = $DIC->upload();
                 $upload_service->process();
 
@@ -412,81 +437,55 @@ try {
                     throw new \Exception('Upload validation failed');
                 }
 
-                // Store in IRSS
                 $resource_id = $resource_storage->manage()->upload($upload_result, $stakeholder);
 
-                // Create attachment record
                 $attachment = new Attachment();
                 $attachment->setChatId($chat_id);
                 $attachment->setUserId($user_id);
                 $attachment->setResourceId($resource_id->serialize());
-                $attachment->setMessageId(null); // Unbound until sent with message
+                $attachment->setMessageId(null); // Bound to the message when it is sent
                 $attachment->setTimestamp(date('Y-m-d H:i:s'));
                 $attachment->save();
 
-                // Check if we should upload to RAG (use chat-specific setting)
-                $llm = createLLMInstance(getEffectiveAiService($chatConfig));
-                $enable_rag = $chatConfig->isEnableRag() && $llm->supportsRAG();
+                $enable_rag = $rag_enabled;
 
-                // Get file info
                 $revision = $resource_storage->manage()->getCurrentRevision($resource_id);
                 $suffix = strtolower($revision->getInformation()->getSuffix());
 
-                // CRITICAL: If RAG is active, ALL chat uploads must go to RAG
-                // Mixing RAG + Base64 in same chat is not supported by RAMSES
-                // File type validation already done by FileUpload service
                 if ($enable_rag) {
-                    try {
-                        // Download file from IRSS to temp location
+                    $rag_types = $llm->getRagFileTypes();
+                    $is_rag_type = in_array($suffix, $rag_types, true);
+
+                    if ($is_rag_type) {
+                        // RAG file type: stored in the RAG, not sent as image
                         $stream = $resource_storage->consume()->stream($resource_id);
                         $content = $stream->getStream()->getContents();
 
-                        // Use original filename for RAMSES validation (signature check needs correct filename)
                         $original_filename = $revision->getTitle();
                         $safe_filename = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $original_filename);
-                        // Add unique prefix to avoid collisions
                         $temp_file = sys_get_temp_dir() . '/' . uniqid() . '_' . $safe_filename;
                         file_put_contents($temp_file, $content);
 
-                        $logger->debug("Prepared temp file for RAG upload", [
-                            'temp_file' => $temp_file,
-                            'original_filename' => $original_filename,
-                            'size' => strlen($content),
-                            'suffix' => $suffix
-                        ]);
+                        $logger->debug("Prepared temp file for RAG upload: $temp_file | original=$original_filename | size=" . strlen($content) . " | suffix=$suffix");
 
-                        // Get or create session for this upload
-                        // IMPORTANT: Each session gets its own RAG collection to separate user uploads from background files
                         $session = ChatSession::getOrCreateForUserAndChat($user_id, $chat_id);
                         $session_id = $session->getSessionId();
 
-                        // Upload to RAG using session_id as entityId (not chat_id!)
-                        // This ensures user uploads are isolated from background files
-                        $rag_response = $llm->uploadFileToRAG($temp_file, $session_id);
+                        $rag_response = $llm->uploadFileToRAG($temp_file, (string) $session_id, $original_filename);
 
-                        // Update attachment with RAG info
                         $attachment->setRAGCollectionId($rag_response['collection_id']);
                         $attachment->setRAGRemoteFileId($rag_response['remote_file_id']);
                         $attachment->setRAGUploadedAt(date('Y-m-d H:i:s'));
                         $attachment->save();
+                        \ai\AIChatPageComponentRAGStatus::markUploaded((int) $attachment->getId());
 
-                        // Cleanup
                         @unlink($temp_file);
-
-                    } catch (\Exception $e) {
-                        $logger->error("RAG upload failed for chat upload", [
-                            'attachment_id' => $attachment->getId(),
-                            'chat_id' => $chat_id,
-                            'suffix' => $suffix,
-                            'error' => $e->getMessage()
-                        ]);
-                        // RAG upload failed - this is critical because RAG mode is active
-                        // File will NOT be available as base64 fallback to avoid mixing RAG + Base64
-                        throw new \Exception('RAG upload failed: ' . $e->getMessage());
+                    } else {
+                        // Other types (e.g. images) are sent to the AI service directly
+                        $logger->debug("File type '$suffix' is not a RAG type — storing for multimodal embedding");
                     }
                 }
 
-                // Return attachment info
                 echo json_encode([
                     'success' => true,
                     'attachment' => $attachment->toArray()
@@ -500,13 +499,10 @@ try {
             }
             break;
 
-        // ========================================
-        // Load Chat History
-        // ========================================
         case 'load_chat':
             header('Content-Type: application/json');
 
-            // Anonymous sessions are stateless – no server-side history exists
+            // Anonymous users have no stored history
             if ($is_anonymous) {
                 echo json_encode(['success' => true, 'messages' => [], 'session' => null, 'config' => []]);
                 exit;
@@ -517,26 +513,22 @@ try {
                 exit;
             }
 
-            // Load chat configuration
-            $chatConfig = new ChatConfig($chat_id);
-            if (!$chatConfig->exists()) {
+            $chat_config = new ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
                 echo json_encode(['error' => 'Chat configuration not found']);
                 exit;
             }
 
-            if (!checkChatAccess($chatConfig)) {
+            if (!checkChatAccess($chat_config)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Access denied']);
                 exit;
             }
 
-            // Get or create session
             $session = ChatSession::getOrCreateForUserAndChat($user_id, $chat_id);
 
-            // Get recent messages
             $messages = $session->getRecentMessages(50);
 
-            // Format messages for frontend
             $formatted_messages = [];
             foreach ($messages as $msg) {
                 $attachments = $msg->getAttachments();
@@ -546,36 +538,33 @@ try {
                     $formatted_attachments[] = $att->toArray();
                 }
 
-                $msgText = $msg->getMessage();
-                $showSources = $chatConfig->isShowSources();
+                $msg_text = $msg->getMessage();
+                $show_sources = $chat_config->isShowSources();
 
-                // Strip sources from assistant messages when show_sources is disabled
-                if ($msg->getRole() === 'assistant' && !$showSources) {
-                    $msgText = stripSourcesFromResponse($msgText);
+                if ($msg->getRole() === 'assistant' && !$show_sources) {
+                    $msg_text = stripSourcesFromResponse($msg_text);
                 }
 
                 $formatted_msg = [
                     'role' => $msg->getRole(),
-                    'message' => $msgText,
+                    'message' => $msg_text,
                     'timestamp' => $msg->getTimestamp(),
                     'attachments' => $formatted_attachments
                 ];
 
-                // Include sources for assistant messages (RAG citations)
-                if ($msg->getRole() === 'assistant' && $showSources && $msg->hasSources()) {
-                    $bgUrls = $chatConfig->isAllowSourceDownloads()
+                if ($msg->getRole() === 'assistant' && $show_sources && $msg->hasSources()) {
+                    $bg_urls = $chat_config->isAllowSourceDownloads()
                         ? getBackgroundFileDownloadUrls($chat_id)
                         : [];
-                    $formatted_msg['sources'] = array_map(function($source) use ($bgUrls, $chat_id) {
+                    $formatted_msg['sources'] = array_map(function ($source) use ($bg_urls, $chat_id) {
                         $filename = $source['filename'] ?? 'Unknown';
-                        $attachmentId = $bgUrls[$filename] ?? null;
+                        $attachment_id = $bg_urls[$filename] ?? null;
                         return array_merge($source, [
-                            'download_url' => $attachmentId ? buildSecureDownloadUrl($chat_id, $attachmentId) : null,
+                            'download_url' => $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null,
                         ]);
                     }, $msg->getFormattedSources());
                 }
 
-                // Include usage data if available
                 $usage = $msg->getUsage();
                 if ($usage !== null) {
                     $formatted_msg['usage'] = $usage;
@@ -586,15 +575,15 @@ try {
 
             echo json_encode([
                 'success' => true,
-                'config' => $chatConfig->toArray(),
+                'config' => $chat_config->toArray(),
                 'session' => $session->toArray(),
                 'messages' => $formatted_messages
             ]);
 
-            // Lazy session cleanup: run with ~5% probability, restricted to users with
-            // write access on the parent object so it never runs in a plain user context.
-            if (mt_rand(1, 20) === 1 && checkChatAccess($chatConfig, 'write')) {
-                $cleanup_days = (int)(\platform\AIChatPageComponentConfig::get('session_cleanup_days') ?? 90);
+            // Cleanup of inactive sessions with a probability of about 5 %, only for users
+            // with write permission, so that it never runs for learners
+            if (mt_rand(1, 20) === 1 && checkChatAccess($chat_config, 'write')) {
+                $cleanup_days = (int) (\platform\AIChatPageComponentConfig::get('session_cleanup_days') ?? 90);
                 if ($cleanup_days > 0) {
                     try {
                         $plugin = ilAIChatPageComponentPlugin::getInstance();
@@ -606,13 +595,10 @@ try {
             }
             break;
 
-        // ========================================
-        // Clear Chat History
-        // ========================================
         case 'clear_chat':
             header('Content-Type: application/json');
 
-            // Anonymous sessions are stateless – nothing to clear server-side
+            // Anonymous users have no stored history
             if ($is_anonymous) {
                 echo json_encode(['success' => true]);
                 exit;
@@ -623,22 +609,20 @@ try {
                 exit;
             }
 
-            $chatConfig = new ChatConfig($chat_id);
-            if (!$chatConfig->exists()) {
+            $chat_config = new ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
                 echo json_encode(['error' => 'Chat not found']);
                 exit;
             }
 
-            if (!checkChatAccess($chatConfig)) {
+            if (!checkChatAccess($chat_config)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Access denied']);
                 exit;
             }
 
-            // Delete user session for this chat
             $db = $DIC->database();
 
-            // Get session ID
             $query = "SELECT session_id FROM pcaic_sessions " .
                      "WHERE user_id = " . $db->quote($user_id, 'integer') . " " .
                      "AND chat_id = " . $db->quote($chat_id, 'text');
@@ -647,7 +631,7 @@ try {
             if ($row = $db->fetchAssoc($result)) {
                 $session_id = $row['session_id'];
 
-                // First, explicitly delete all attachments (triggers RAG cleanup)
+                // Attachments are deleted individually, so that files are also removed from the RAG
                 $attachments_query = "SELECT a.id FROM pcaic_attachments a " .
                                     "INNER JOIN pcaic_messages m ON a.message_id = m.message_id " .
                                     "WHERE m.session_id = " . $db->quote($session_id, 'text');
@@ -655,8 +639,8 @@ try {
 
                 while ($attachment_row = $db->fetchAssoc($attachments_result)) {
                     try {
-                        $attachment = new Attachment((int)$attachment_row['id']);
-                        $attachment->delete(); // This triggers RAG cleanup
+                        $attachment = new Attachment((int) $attachment_row['id']);
+                        $attachment->delete();
                     } catch (\Exception $e) {
                         $logger->warning("Failed to delete attachment during clear_chat", [
                             'attachment_id' => $attachment_row['id'],
@@ -665,46 +649,38 @@ try {
                     }
                 }
 
-                // Delete messages
                 $db->manipulate("DELETE FROM pcaic_messages WHERE session_id = " . $db->quote($session_id, 'text'));
 
-                // Delete session
                 $db->manipulate("DELETE FROM pcaic_sessions WHERE session_id = " . $db->quote($session_id, 'text'));
             }
 
             echo json_encode(['success' => true]);
             break;
 
-        // ========================================
-        // Get Upload Configuration
-        // ========================================
         case 'get_upload_config':
             header('Content-Type: application/json');
 
-            $max_file_size = \platform\AIChatPageComponentConfig::get('max_upload_size_mb') ?: 10;
+            $max_file_size = \platform\AIChatPageComponentConfig::get('max_file_size_mb') ?: 5;
             $allowed_types = \platform\AIChatPageComponentConfig::get('allowed_file_types') ?: 'txt,md,csv,pdf,jpg,jpeg,png,gif,webp';
 
             echo json_encode([
                 'success' => true,
-                'max_file_size_mb' => (int)$max_file_size,
+                'max_file_size_mb' => (int) $max_file_size,
                 'allowed_types' => explode(',', $allowed_types)
             ]);
             break;
 
-        // ========================================
-        // Get Global Configuration
-        // ========================================
         case 'get_global_config':
             header('Content-Type: application/json');
 
-            // Anonymous users never get upload access
+            // Anonymous users can never upload
             if ($DIC->user()->isAnonymous()) {
-                $chatConfig = new ChatConfig($data['chat_id'] ?? '');
-                $ai_service = getEffectiveAiService($chatConfig);
+                $chat_config = new ChatConfig($data['chat_id'] ?? '');
+                $ai_service = getEffectiveAiService($chat_config);
                 $llm = createLLMInstance($ai_service);
-                $rag_enabled = isRagEnabledForChat($chatConfig, $llm);
+                $rag_enabled = isRagEnabledForChat($chat_config, $llm);
                 $allowed_extensions = $llm->getAllowedFileTypes($rag_enabled);
-                $streaming_enabled = isStreamingEnabledForChat($chatConfig, $ai_service);
+                $streaming_enabled = isStreamingEnabledForChat($chat_config, $ai_service);
 
                 echo json_encode([
                     'success' => true,
@@ -717,20 +693,18 @@ try {
                     'file_handling_enabled' => false,
                     'max_file_size_mb' => 0,
                     'max_attachments_per_message' => 0,
-                    'max_char_limit' => (int)(\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000),
-                    'max_memory_limit' => (int)(\platform\AIChatPageComponentConfig::get('max_memory_messages') ?: 10)
+                    'max_char_limit' => (int) (\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000),
+                    'max_memory_limit' => (int) (\platform\AIChatPageComponentConfig::get('max_memory_messages') ?: 10)
                 ]);
                 exit;
             }
 
-            // Check if uploads are globally enabled
-            $upload_enabled = true; // Default to enabled
+            $upload_enabled = true;
             $enable_uploads_setting = \platform\AIChatPageComponentConfig::get('enable_file_uploads');
             if ($enable_uploads_setting !== null) {
                 $upload_enabled = ($enable_uploads_setting === '1' || $enable_uploads_setting === 'true');
             }
 
-            // Determine allowed file types based on chat's RAG mode
             $chat_id = $data['chat_id'] ?? null;
 
             if (!$chat_id) {
@@ -739,38 +713,34 @@ try {
                 exit;
             }
 
-            $chatConfig = new ChatConfig($chat_id);
-            if (!$chatConfig->exists()) {
+            $chat_config = new ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
                 http_response_code(404);
                 echo json_encode(['error' => 'Chat not found']);
                 exit;
             }
 
-            if (!checkChatAccess($chatConfig)) {
+            if (!checkChatAccess($chat_config)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Access denied']);
                 exit;
             }
 
-            $ai_service = getEffectiveAiService($chatConfig);
+            $ai_service = getEffectiveAiService($chat_config);
 
-            // Get LLM instance and check if RAG is enabled (service + global + chat)
             $llm = createLLMInstance($ai_service);
-            $rag_enabled = isRagEnabledForChat($chatConfig, $llm);
+            $rag_enabled = isRagEnabledForChat($chat_config, $llm);
 
-            // Get allowed file types from LLM service based on actual RAG mode
             $allowed_extensions = $llm->getAllowedFileTypes($rag_enabled);
 
-            // Convert extensions to MIME types for browser file input accept attribute
+            // MIME types for the accept attribute of the file input
             $allowed_mime_types = \ILIAS\Plugin\pcaic\Validation\FileUploadValidator::extensionsToMimeTypes($allowed_extensions);
 
-            // Also get combined accept values (MIME types + extensions) for maximum compatibility
+            // MIME types and extensions, because browsers do not recognise every MIME type
             $allowed_accept_values = \ILIAS\Plugin\pcaic\Validation\FileUploadValidator::extensionsToAcceptValues($allowed_extensions);
 
-            // Check hierarchical streaming settings (central → LLM → chat)
-            $streaming_enabled = isStreamingEnabledForChat($chatConfig, $ai_service);
+            $streaming_enabled = isStreamingEnabledForChat($chat_config, $ai_service);
 
-            // Check hierarchical file handling settings (central → LLM)
             $file_handling_enabled = isFileHandlingEnabledForService($ai_service);
 
             echo json_encode([
@@ -782,43 +752,37 @@ try {
                 'rag_mode' => $rag_enabled,
                 'streaming_enabled' => $streaming_enabled,
                 'file_handling_enabled' => $file_handling_enabled,
-                'max_file_size_mb' => (int)(\platform\AIChatPageComponentConfig::get('max_upload_size_mb') ?: 10),
-                'max_attachments_per_message' => (int)(\platform\AIChatPageComponentConfig::get('max_attachments_per_message') ?: 5),
-                'max_char_limit' => (int)(\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000),
-                'max_memory_limit' => (int)(\platform\AIChatPageComponentConfig::get('max_memory_messages') ?: 10)
+                'max_file_size_mb' => (int) (\platform\AIChatPageComponentConfig::get('max_file_size_mb') ?: 5),
+                'max_attachments_per_message' => (int) (\platform\AIChatPageComponentConfig::get('max_attachments_per_message') ?: 5),
+                'max_char_limit' => (int) (\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000),
+                'max_memory_limit' => (int) (\platform\AIChatPageComponentConfig::get('max_memory_messages') ?: 10)
             ]);
             break;
 
-        // ========================================
-        // Download Background File (secure, session-checked)
-        // ========================================
         case 'download_background_file':
-            // Must be logged in
             if ($is_anonymous) {
                 http_response_code(403);
                 exit;
             }
 
-            $attachment_id = (int)($data['attachment_id'] ?? 0);
+            $attachment_id = (int) ($data['attachment_id'] ?? 0);
             if (!$attachment_id || !$chat_id) {
                 http_response_code(400);
                 exit;
             }
 
-            // Permission: user must have read access to this chat
-            $dlChatConfig = new ChatConfig($chat_id);
-            if (!checkChatAccess($dlChatConfig, 'read')) {
+            $dl_chat_config = new ChatConfig($chat_id);
+            if (!checkChatAccess($dl_chat_config, 'read')) {
                 http_response_code(403);
                 exit;
             }
 
-            // Downloads must be enabled for this chat
-            if (!$dlChatConfig->isAllowSourceDownloads()) {
+            if (!$dl_chat_config->isAllowSourceDownloads()) {
                 http_response_code(403);
                 exit;
             }
 
-            // Load attachment and verify it belongs to this chat as a background file
+            // Only background files of this chat can be downloaded
             try {
                 $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
                 if (!$attachment->isBackgroundFile() || $attachment->getChatId() !== $chat_id) {
@@ -832,21 +796,18 @@ try {
                     exit;
                 }
 
-                // Deliver via IRSS download consumer (forces download disposition)
+                // Delivered as download via the Resource Storage
                 $download_consumer = $DIC->resourceStorage()->consume()->download($resource_id);
                 $download_consumer->run();
             } catch (\Exception $e) {
                 $logger->warning("Background file download failed", [
                     'attachment_id' => $attachment_id,
-                    'error'         => $e->getMessage()
+                    'error' => $e->getMessage()
                 ]);
                 http_response_code(500);
             }
             exit;
 
-        // ========================================
-        // Unknown Action
-        // ========================================
         default:
             header('Content-Type: application/json');
             http_response_code(400);
@@ -858,21 +819,33 @@ try {
 
 } catch (\Exception $e) {
     $is_no_service = ($e->getMessage() === 'no_service_available');
+    $is_rag_unavailable = ($e->getMessage() === \ai\AIChatPageComponentRAG::UNAVAILABLE);
+    $is_service_busy = ($e->getMessage() === \ai\AIChatPageComponentLLM::SERVICE_BUSY);
 
-    $logger->error("API Error", [
-        'action' => $action,
-        'chat_id' => $chat_id,
-        'error' => $e->getMessage(),
-        'trace' => $is_no_service ? '' : $e->getTraceAsString()
-    ]);
+    if ($is_rag_unavailable || $is_service_busy) {
+        $logger->warning("API Error: " . $e->getMessage() . " (HTTP " . $e->getCode() . ")", ['action' => $action, 'chat_id' => $chat_id]);
+    } else {
+        $logger->error("API Error: " . $e->getMessage() . " (" . basename($e->getFile()) . ":" . $e->getLine() . ")", [
+            'action' => $action,
+            'chat_id' => $chat_id,
+            'error' => $e->getMessage(),
+            'trace' => $is_no_service ? '' : $e->getTraceAsString()
+        ]);
+    }
 
-    $client_message = $is_no_service
-        ? 'no_service_available'
-        : 'An internal error occurred. Please try again.';
+    if ($is_no_service) {
+        $client_message = 'no_service_available';
+    } elseif ($is_rag_unavailable) {
+        $client_message = \ilAIChatPageComponentPlugin::getInstance()->txt('rag_unavailable');
+    } elseif ($is_service_busy) {
+        $client_message = \ilAIChatPageComponentPlugin::getInstance()->txt('ai_service_busy');
+    } else {
+        $client_message = 'An internal error occurred. Please try again.';
+    }
 
     if (!headers_sent()) {
         header('Content-Type: application/json');
-        http_response_code($is_no_service ? 503 : 500);
+        http_response_code(($is_no_service || $is_rag_unavailable || $is_service_busy) ? 503 : 500);
         echo json_encode(['error' => $client_message]);
     } else {
         echo "data: " . json_encode(['type' => 'error', 'error' => $client_message]) . "\n\n";
@@ -881,18 +854,13 @@ try {
 }
 
 /**
- * Check whether the authenticated user has exceeded their daily message limit.
+ * Daily message limit of logged-in users per chat (server date)
  *
- * Counts 'user' role messages sent today (UTC) for this user+chat combination.
- * Returns null when within limits, or a translated error string when exceeded.
- *
- * @param string $chat_id  Chat identifier
- * @param int    $user_id  Authenticated user ID
- * @return string|null     null = OK, string = error message to return to client
+ * @return string|null Error message, or null if the limit has not been reached
  */
 function checkDailyMessageLimit(string $chat_id, int $user_id): ?string
 {
-    $max = (int)(\platform\AIChatPageComponentConfig::get('max_messages_per_day') ?? 50);
+    $max = (int) (\platform\AIChatPageComponentConfig::get('max_messages_per_day') ?? 50);
     if ($max <= 0) {
         return null; // 0 = unlimited
     }
@@ -907,7 +875,7 @@ function checkDailyMessageLimit(string $chat_id, int $user_id): ?string
         "FROM pcaic_messages m " .
         "INNER JOIN pcaic_sessions s ON m.session_id = s.session_id " .
         "WHERE s.user_id = " . $db->quote($user_id, 'integer') . " " .
-        "AND s.chat_id = "  . $db->quote($chat_id, 'text')    . " " .
+        "AND s.chat_id = " . $db->quote($chat_id, 'text') . " " .
         "AND m.role = 'user' " .
         "AND DATE(m.timestamp) = " . $db->quote($today, 'text')
     );
@@ -924,34 +892,73 @@ function checkDailyMessageLimit(string $chat_id, int $user_id): ?string
 }
 
 /**
- * Check whether the current user has read access to the parent ILIAS object
- * that contains the given chat.
+ * Attachments the user may bind to a new message
  *
- * parent_id is stored as obj_id (ilPageObject::getParentId()).
- * All matching ref_ids are checked; access is granted if any passes.
+ * Only unsent chat uploads of the user in this chat are accepted; other IDs are
+ * ignored. Number and total size of the attachments are checked against the
+ * plugin configuration.
  *
- * @param ChatConfig $chatConfig Chat configuration with parent context
- * @return bool True if access is permitted
+ * @return array{ids: int[], error: string|null}
  */
-function checkChatAccess(ChatConfig $chatConfig, string $permission = 'read'): bool
+function validateAttachmentIds(array $attachment_ids, string $chat_id, int $user_id): array
+{
+    global $DIC;
+    $plugin = ilAIChatPageComponentPlugin::getInstance();
+
+    $ids = [];
+    $total_size = 0;
+    foreach (array_unique(array_map('intval', array_filter($attachment_ids, 'is_numeric'))) as $attachment_id) {
+        $attachment = Attachment::loadById($attachment_id);
+        if (
+            $attachment === null
+            || $attachment->getChatId() !== $chat_id
+            || $attachment->getUserId() !== $user_id
+            || $attachment->getMessageId() !== null
+            || $attachment->isBackgroundFile()
+        ) {
+            $DIC->logger()->pcaic()->warning("Attachment $attachment_id rejected for chat $chat_id and user $user_id");
+            continue;
+        }
+        $ids[] = $attachment_id;
+        $total_size += $attachment->getSize();
+    }
+
+    $max_attachments = (int) (\platform\AIChatPageComponentConfig::get('max_attachments_per_message') ?: 5);
+    if (count($ids) > $max_attachments) {
+        return ['ids' => [], 'error' => sprintf($plugin->txt('error_max_attachments'), $max_attachments)];
+    }
+
+    $max_total_mb = (int) (\platform\AIChatPageComponentConfig::get('max_total_upload_size_mb') ?: 25);
+    if ($total_size > $max_total_mb * 1024 * 1024) {
+        return ['ids' => [], 'error' => sprintf($plugin->txt('error_total_upload_too_large'), $max_total_mb)];
+    }
+
+    return ['ids' => $ids, 'error' => null];
+}
+
+/**
+ * Read permission on the object containing the chat
+ *
+ * parent_id is an obj_id; access is granted if any of its references is readable.
+ */
+function checkChatAccess(ChatConfig $chat_config, string $permission = 'read'): bool
 {
     global $DIC;
 
-    $parent_id = $chatConfig->getParentId();
+    $parent_id = $chat_config->getParentId();
     if ($parent_id <= 0) {
         return false;
     }
 
-    // parent_id is obj_id – resolve to ref_ids for the access check
     $refs = ilObject::_getAllReferences($parent_id);
 
     if (empty($refs)) {
-        // Fallback: treat parent_id directly as ref_id (some page types store it that way)
+        // Some page types store the ref_id
         $refs = [$parent_id];
     }
 
     foreach ($refs as $ref_id) {
-        if ($DIC->access()->checkAccess($permission, '', (int)$ref_id)) {
+        if ($DIC->access()->checkAccess($permission, '', (int) $ref_id)) {
             return true;
         }
     }
@@ -960,19 +967,14 @@ function checkChatAccess(ChatConfig $chatConfig, string $permission = 'read'): b
 }
 
 /**
- * Sanitize conversation history from anonymous frontend
+ * Limit and clean the history sent by the frontend for anonymous users
  *
- * Enforces hard limits to prevent memory exhaustion and token abuse.
- * Only 'user' and 'assistant' roles are allowed; each entry is truncated
- * to the configured character limit.
- *
- * @param array $history Raw history array from request
- * @return array Sanitized history
+ * Only user and assistant messages are kept, each shortened to the character limit.
  */
 function sanitizeConversationHistory(array $history): array
 {
-    $char_limit = (int)(\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000);
-    $max_entries = 40; // Hard cap: 20 exchanges max regardless of max_memory setting
+    $char_limit = (int) (\platform\AIChatPageComponentConfig::get('characters_limit') ?: 2000);
+    $max_entries = 40; // At most 20 exchanges, independent of the memory setting
 
     $sanitized = [];
     foreach (array_slice($history, -$max_entries) as $entry) {
@@ -996,52 +998,42 @@ function sanitizeConversationHistory(array $history): array
 }
 
 /**
- * Get effective AI service for a chat, respecting force default setting
- *
- * @param ChatConfig $chatConfig Chat configuration
- * @return string Service identifier (e.g., ramses, openai, claude, etc.)
+ * AI service of the chat, or the default service if the administrator enforces it
  */
-function getEffectiveAiService(ChatConfig $chatConfig): string
+function getEffectiveAiService(ChatConfig $chat_config): string
 {
-    // Check if force default service is enabled
     $force_default = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
 
     if ($force_default === '1') {
-        // Force default service for all chats
         return \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
     }
 
-    // Use chat's configured service
-    return $chatConfig->getAiService();
+    return $chat_config->getAiService();
 }
 
 /**
- * Create LLM instance based on service name using LLMRegistry
+ * Create an enabled service; falls back to the first enabled service
  *
- * @param string $service Service identifier (e.g., ramses, openai, claude, etc.)
- * @return \ai\AIChatPageComponentLLM LLM instance
- * @throws \Exception If service not found in registry
+ * @throws \Exception no_service_available if no service is enabled
  */
 function createLLMInstance(string $service): \ai\AIChatPageComponentLLM
 {
-    // Only use enabled services – disabled ones must not be instantiated
-    $enabledServices = \ai\AIChatPageComponentLLMRegistry::getEnabledServices();
+    // Disabled services must not be used
+    $enabled_services = \ai\AIChatPageComponentLLMRegistry::getEnabledServices();
 
-    if (empty($enabledServices)) {
+    if (empty($enabled_services)) {
         throw new \Exception("no_service_available");
     }
 
-    // Try requested service first (only if it is enabled)
-    if (isset($enabledServices[$service])) {
+    if (isset($enabled_services[$service])) {
         $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($service);
         if ($instance !== null) {
             return $instance;
         }
     }
 
-    // Fallback: first enabled service
-    $firstService = array_key_first($enabledServices);
-    $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService);
+    $first_service = array_key_first($enabled_services);
+    $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($first_service);
 
     if ($instance === null) {
         throw new \Exception("no_service_available");
@@ -1051,96 +1043,65 @@ function createLLMInstance(string $service): \ai\AIChatPageComponentLLM
 }
 
 /**
- * Check if streaming is enabled for this chat
- *
- * Streaming requires ALL three conditions to be met:
- * 1. Streaming globally enabled (central setting for all LLMs)
- * 2. Streaming enabled for the specific AI service (LLM-specific)
- * 3. Streaming enabled for the specific chat
- *
- * @param ChatConfig $chatConfig Chat configuration
- * @param string $aiService AI service identifier (e.g., ramses, openai, claude, etc.)
- * @return bool True if streaming should be used, false otherwise
+ * Streaming must be enabled globally, for the service and for the chat
  */
-function isStreamingEnabledForChat(ChatConfig $chatConfig, string $aiService): bool
+function isStreamingEnabledForChat(ChatConfig $chat_config, string $ai_service): bool
 {
-    // 1. Check central/global streaming setting (applies to all LLMs)
     $global_streaming = \platform\AIChatPageComponentConfig::get('enable_streaming') ?: '1';
     if ($global_streaming !== '1') {
-        return false; // Centrally disabled
+        return false;
     }
 
-    // 2. Check LLM-specific streaming setting
-    $llm_streaming_key = $aiService . '_streaming_enabled';
+    $llm_streaming_key = $ai_service . '_streaming_enabled';
     $llm_streaming = \platform\AIChatPageComponentConfig::get($llm_streaming_key);
 
-    // Default: enabled for all services (can be disabled per service in config)
+    // Enabled unless disabled for the service
     $llm_streaming = $llm_streaming ?? '1';
 
     if ($llm_streaming !== '1') {
-        return false; // LLM-specific disabled
+        return false;
     }
 
-    // 3. Check chat-specific streaming setting
-    if (!$chatConfig->isEnableStreaming()) {
-        return false; // Chat-specific disabled
+    if (!$chat_config->isEnableStreaming()) {
+        return false;
     }
 
-    return true; // All three conditions met
+    return true;
 }
 
 /**
- * Check if file handling is enabled for this AI service
- *
- * File handling requires both conditions to be met:
- * 1. File handling globally enabled (central setting for all services)
- * 2. File handling enabled for the specific AI service
- *
- * @param string $aiService AI service identifier (e.g., ramses, openai, claude, etc.)
- * @return bool True if file handling should be used, false otherwise
+ * File handling must be enabled globally and for the service
  */
-function isFileHandlingEnabledForService(string $aiService): bool
+function isFileHandlingEnabledForService(string $ai_service): bool
 {
-    // 1. Check central/global file handling setting
     $global_file_handling = \platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1';
     if ($global_file_handling !== '1') {
-        return false; // Centrally disabled
+        return false;
     }
 
-    // 2. Check service-specific file handling setting
-    $service_file_handling_key = $aiService . '_file_handling_enabled';
+    $service_file_handling_key = $ai_service . '_file_handling_enabled';
     $service_file_handling = \platform\AIChatPageComponentConfig::get($service_file_handling_key);
 
-    // Default values: Both RAMSES and OpenAI enabled by default
     $default_file_handling = '1';
     $service_file_handling = $service_file_handling ?? $default_file_handling;
 
     if ($service_file_handling !== '1') {
-        return false; // Service-specific disabled
+        return false;
     }
 
-    return true; // Both conditions met
+    return true;
 }
 
 /**
- * Check if RAG mode is enabled for chat
- *
- * RAG requires three conditions:
- * 1. Service supports RAG
- * 2. RAG globally enabled in plugin config
- * 3. RAG enabled for specific chat
- *
- * @param ChatConfig $chatConfig Chat configuration
- * @param \ai\AIChatPageComponentLLM $llm LLM instance
- * @return bool True if RAG enabled, false for multimodal mode
+ * RAG is used if the RAG service is available, allowed for the service and enabled in the chat
  */
-function isRagEnabledForChat(ChatConfig $chatConfig, \ai\AIChatPageComponentLLM $llm): bool
+function isRagEnabledForChat(ChatConfig $chat_config, \ai\AIChatPageComponentLLM $llm): bool
 {
     if (!$llm->supportsRAG()) {
         return false;
     }
 
-    $ai_service = getEffectiveAiService($chatConfig);
+    $ai_service = getEffectiveAiService($chat_config);
     $rag_config_key = $ai_service . '_enable_rag';
     $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
     $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
@@ -1149,31 +1110,28 @@ function isRagEnabledForChat(ChatConfig $chatConfig, \ai\AIChatPageComponentLLM 
         return false;
     }
 
-    return $chatConfig->isEnableRag();
+    return $chat_config->isEnableRag();
 }
 
 /**
- * Strip RAG source citations from an AI response text.
+ * Remove source references and source sections from an answer (used if sources are hidden)
  *
- * Removes:
- * - Inline footnote superscripts (¹²³⁴⁵⁶⁷⁸⁹⁰ and [1][2]… variants, ^N)
- * - The entire sources/references section at the end of the response
- *   (triggered by headings like "### Quellen", "### Sources", "### Références",
- *    "### References", optionally bold-wrapped, preceded by ---)
+ * Removes inline markers (superscripts, [1], ^1), trailing source sections in
+ * several languages and trailing lists of file citations.
  */
 function stripSourcesFromResponse(string $text): string
 {
-    // Remove trailing sources section (--- separator or heading variants, multilingual)
-    $sectionPattern = '/\s*(?:---\s*)?#{1,4}\s*\*{0,2}(?:'
+    // Trailing source section, with or without heading marker
+    $section_pattern = '/\s*(?:---\s*)?#{1,4}\s*\*{0,2}(?:'
         . 'Quellen|Literatur(?:verzeichnis)?'                   // DE
         . '|Sources?|R[eé]f[eé]rences?|Bibliography'           // EN / FR
         . '|Fuentes?|Referencias?|Bibliograf[ií]a'             // ES
         . '|Fonti|Riferimenti|Bibliograf[ií]a'                 // IT
         . '|Fontes?|Refer[eê]ncias?'                           // PT
         . ')\*{0,2}\s*:?.*$/us';
-    $text = preg_replace($sectionPattern, '', $text);
+    $text = preg_replace($section_pattern, '', $text);
 
-    // Remove bare citation headings without # marker (e.g. "\n\nQuellen:\n\n  file.pdf, pages [1]")
+    // Source heading without heading marker, followed by citation lines
     $text = preg_replace(
         '/\n{1,2}(?:Quellen|Literatur(?:verzeichnis)?'
         . '|Sources?|R[eé]f[eé]rences?|Bibliography'
@@ -1184,52 +1142,43 @@ function stripSourcesFromResponse(string $text): string
         $text
     );
 
-    // Remove bare --- horizontal rule followed by file citation lines (RAMSES RAG format)
-    // e.g. "---\n Filename.pdf, pages \n Filename.pdf, pages"
+    // Horizontal rule followed by file citation lines
     $text = preg_replace(
         '/\n+---\s*\n(?:\s*[^\n]*\.(?:pdf|txt|csv|xlsx?|docx?|pptx?)[^\n]*\n?)+\s*$/ui',
         '',
         $text
     );
 
-    // Remove trailing file citation lines without --- (e.g. "Filename.pdf, pages 1, 3" or "pages [1]")
+    // Trailing file citation lines without rule, e.g. "file.pdf, pages 1, 3"
     $text = preg_replace(
         '/(?:\n\s*[^\n]+\.(?:pdf|txt|csv|xlsx?|docx?|pptx?)\s*,\s*pages?[^\n]*)+\s*$/ui',
         '',
         $text
     );
 
-    // Remove numbered reference list at end (lines like "1. filename, S. 3")
-    // Only if they appear to be a citation block (number + dot + text pattern, multiple lines)
+    // Numbered reference list at the end (at least two lines)
     $text = preg_replace('/(?:\n\d+\.\s+[^\n]+){2,}\s*$/u', '', $text);
 
-    // Remove inline Unicode superscript footnote markers (¹²³⁴⁵⁶⁷⁸⁹⁰ combinations)
     $text = preg_replace('/[\x{00B9}\x{00B2}\x{00B3}\x{2070}-\x{2079}]+/u', '', $text);
 
-    // Remove [^N] footnote-style markers (e.g. [^2]) and bare ^N caret markers
     $text = preg_replace('/\[\^[\d,\s]+\]|\^[\d,\s]+/', '', $text);
 
-    // Remove [N] bracket-style markers
     $text = preg_replace('/\[\d+\]/', '', $text);
 
-    // Remove any leftover empty brackets []
     $text = preg_replace('/\[\s*\]/', '', $text);
 
-    // Convert markdown links [label](url) → label (keep readable text, drop URL)
+    // Markdown links: keep the text, drop the URL
     $text = preg_replace('/\[([^\]]+)\]\(https?:\/\/[^)]+\)/', '$1', $text);
 
-    // Remove bare URLs
     $text = preg_replace('/https?:\/\/\S+/', '', $text);
 
     return rtrim($text);
 }
 
 /**
- * Build a filename → attachment_id map for all background files of a chat.
- * Used to enrich RAG source citations with secure download links.
+ * Background files of the chat by file name, used for download links of sources
  *
- * @param string $chat_id
- * @return array<string, int>  e.g. ['report.pdf' => 42]
+ * @return array<string, int> file name => attachment ID
  */
 function getBackgroundFileDownloadUrls(string $chat_id): array
 {
@@ -1241,22 +1190,22 @@ function getBackgroundFileDownloadUrls(string $chat_id): array
                 continue;
             }
             $title = $attachment->getTitle();
-            $id    = $attachment->getId();
+            $id = $attachment->getId();
             if ($title && $id) {
                 $map[$title] = $id;
-                // RAMSES replaces spaces with underscores in filenames
+                // The RAG may replace spaces with underscores in file names
                 $map[str_replace(' ', '_', $title)] = $id;
             }
         }
     } catch (\Exception $e) {
-        // Non-critical – sources are still shown, just without download links
+        // Sources are shown without download links
     }
     return $map;
 }
 
 /**
- * Build a secure download URL for a background file attachment.
- * Routes through api.php so ILIAS session + read permission are enforced.
+ * Download URL of a background file; the download runs through api.php, so that
+ * session and read permission are checked
  */
 function buildSecureDownloadUrl(string $chat_id, int $attachment_id): string
 {
@@ -1266,5 +1215,5 @@ function buildSecureDownloadUrl(string $chat_id, int $attachment_id): string
     return $base . $plugin_path
         . '?action=download_background_file'
         . '&chat_id=' . urlencode($chat_id)
-        . '&attachment_id=' . (int)$attachment_id;
+        . '&attachment_id=' . (int) $attachment_id;
 }

@@ -1,24 +1,35 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 namespace ai;
+
 use platform\AIChatPageComponentException;
 
 /**
- * Class AIChatPageComponentOpenAI
- * Based on OpenAI from AIChat plugin, adapted for PageComponent
+ * OpenAI chat completions API
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
 {
-    /** @var string Chat completions endpoint */
     private const ENDPOINT_CHAT = '/v1/chat/completions';
 
-    /** @var string Models listing endpoint */
     private const ENDPOINT_MODELS = '/v1/models';
 
     private string $model;
-    private string $apiKey;
+    private string $api_key;
 
     public const MODEL_TYPES = [
         "gpt-4.5-preview" => "GPT-4.5 Preview",
@@ -32,10 +43,6 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         "gpt-4" => "GPT-4",
         "gpt-3.5-turbo" => "GPT-3.5 Turbo"
     ];
-
-    // ============================================
-    // Service Metadata Implementation
-    // ============================================
 
     public static function getServiceId(): string
     {
@@ -52,10 +59,6 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         return 'OpenAI GPT Service';
     }
 
-    // ============================================
-    // Configuration Management Implementation
-    // ============================================
-
     public function getConfigurationFormInputs(): array
     {
         global $DIC;
@@ -64,33 +67,28 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
 
         $inputs = [];
 
-        // Service enabled checkbox
         $openai_enabled = \platform\AIChatPageComponentConfig::get('openai_service_enabled') ?? '0';
         $inputs['openai_service_enabled'] = $ui_factory->input()->field()->checkbox(
             $plugin->txt('config_service_enabled'),
             $plugin->txt('config_service_enabled_info')
         )->withValue($openai_enabled === '1');
 
-        // API URL - ensure string
         $api_url = \platform\AIChatPageComponentConfig::get('openai_api_url');
         $inputs['openai_api_url'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_api_url'),
             $plugin->txt('config_api_url_info')
-        )->withMaxLength(500)->withValue((string)($api_url ?: 'https://api.openai.com'))->withRequired(true);
+        )->withMaxLength(500)->withValue((string) ($api_url ?: 'https://api.openai.com'))->withRequired(true);
 
-        // API Token - ensure string
         $api_token = \platform\AIChatPageComponentConfig::get('openai_api_token');
         $inputs['openai_api_token'] = $ui_factory->input()->field()->password(
             $plugin->txt('config_api_token'),
             $plugin->txt('config_api_token_info')
-        )->withValue((string)($api_token ?: ''))->withRequired(true);
+        )->withValue((string) ($api_token ?: ''))->withRequired(true);
 
-        // Model Selection - use cached models from API
         $selected_model = \platform\AIChatPageComponentConfig::get('openai_selected_model');
         $cached_models = \platform\AIChatPageComponentConfig::get('openai_cached_models');
 
         if (is_array($cached_models) && !empty($cached_models)) {
-            // Use cached models from API (already in correct format: ['model-id' => 'Display Name'])
             $model_options = $cached_models;
 
             $select_field = $ui_factory->input()->field()->select(
@@ -99,21 +97,19 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
                 $plugin->txt('config_selected_model_info')
             )->withRequired(true);
 
-            // Only set value if it exists in options
             if ($selected_model && isset($model_options[$selected_model])) {
                 $select_field = $select_field->withValue($selected_model);
             }
 
             $inputs['openai_selected_model'] = $select_field;
         } else {
-            // Fallback to hardcoded list if models not yet loaded
+            // Built-in list until the models have been loaded from the API
             $select_field = $ui_factory->input()->field()->select(
                 $plugin->txt('config_selected_model'),
                 self::MODEL_TYPES,
                 $plugin->txt('config_selected_model_info')
             )->withRequired(true);
 
-            // Set value: use saved value if exists in options, otherwise use default
             $value_to_use = ($selected_model && isset(self::MODEL_TYPES[$selected_model])) ? $selected_model : 'gpt-4o';
             $select_field = $select_field->withValue($value_to_use);
 
@@ -126,14 +122,18 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             $plugin->txt('config_force_model_info')
         )->withValue($force_model);
 
-        // Temperature - use text field with custom validation to support comma/dot
-        $temperature = \platform\AIChatPageComponentConfig::get('openai_temperature');
-        $temp_value = '0.7'; // default as string
-        if ($temperature !== null && $temperature !== '') {
-            $temp_value = (string)$temperature;
+        // Only available once the models have been loaded from the API
+        if (is_array($cached_models) && !empty($cached_models)) {
+            $inputs['openai_available_models'] = self::buildAvailableModelsInput($cached_models);
         }
 
-        // Create constraint that accepts comma or dot as decimal separator
+        // Text field, so that comma and dot are accepted as decimal separator
+        $temperature = \platform\AIChatPageComponentConfig::get('openai_temperature');
+        $temp_value = '0.7';
+        if ($temperature !== null && $temperature !== '') {
+            $temp_value = (string) $temperature;
+        }
+
         $refinery = $DIC->refinery();
         $temp_constraint = $refinery->custom()->constraint(
             function ($value) {
@@ -146,13 +146,12 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             'Must be a number (use comma or dot as decimal separator)'
         );
 
-        // Create transformation to convert to float
         $temp_trafo = $refinery->custom()->transformation(
             function ($value) {
                 if (is_string($value)) {
                     $value = str_replace(',', '.', $value);
                 }
-                return is_numeric($value) ? (float)$value : 0.7;
+                return is_numeric($value) ? (float) $value : 0.7;
             }
         );
 
@@ -169,32 +168,45 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             $plugin->txt('config_force_temperature_info')
         )->withValue($force_temperature);
 
-        // File handling enabled
+        $streaming_enabled = \platform\AIChatPageComponentConfig::get('openai_streaming_enabled') ?? '1';
+        $inputs['openai_streaming_enabled'] = $ui_factory->input()->field()->checkbox(
+            $plugin->txt('config_streaming'),
+            $plugin->txt('config_streaming_info')
+        )->withValue($streaming_enabled === '1');
+
         $file_handling_enabled = \platform\AIChatPageComponentConfig::get('openai_file_handling_enabled') ?? '1';
         $inputs['openai_file_handling_enabled'] = $ui_factory->input()->field()->checkbox(
             $plugin->txt('config_file_handling'),
             $plugin->txt('config_file_handling_info')
         )->withValue($file_handling_enabled === '1');
 
+        // Off by default: retrieved document passages are sent to OpenAI
+        $rag_enabled = \platform\AIChatPageComponentConfig::get('openai_enable_rag') ?? '0';
+        $inputs['openai_enable_rag'] = $ui_factory->input()->field()->checkbox(
+            $plugin->txt('config_enable_rag'),
+            $plugin->txt('config_enable_rag_external_info')
+        )->withValue($rag_enabled === '1');
+
         return $inputs;
     }
 
-    public function saveConfiguration(array $formData): void
+    public function saveConfiguration(array $form_data): void
     {
-        foreach ($formData as $key => $value) {
-            // Handle ILIAS Password object
+        foreach ($form_data as $key => $value) {
             if ($value instanceof \ILIAS\Data\Password) {
                 $value = $value->toString();
             }
 
-            // Handle checkbox boolean conversion
             if (is_bool($value)) {
                 $value = $value ? '1' : '0';
             }
 
-            // Handle numeric temperature with decimal separator normalization
             if ($key === 'openai_temperature' && is_numeric($value)) {
-                $value = (float)$value;
+                $value = (float) $value;
+            }
+
+            if ($key === 'openai_available_models') {
+                $value = self::normalizeAvailableModels($value, $form_data['openai_selected_model'] ?? null);
             }
 
             \platform\AIChatPageComponentConfig::set($key, $value);
@@ -212,28 +224,22 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             'openai_temperature' => 0.7,
             'openai_force_temperature' => '0',
             'openai_file_handling_enabled' => '1',
+            'openai_streaming_enabled' => '1',
+            'openai_enable_rag' => '0',
         ];
     }
-
-    // ============================================
-    // Service Capabilities Implementation
-    // ============================================
 
     public function getCapabilities(): array
     {
         return [
-            'streaming' => false, // OpenAI streaming not yet implemented
-            'rag' => false, // OpenAI doesn't support RAG in this plugin
+            'streaming' => true,
+            'rag' => true, // Provided by the separate RAG service
             'multimodal' => true,
             'file_types' => ['txt', 'csv', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
-            'rag_file_types' => [],
-            'max_tokens' => 128000, // GPT-4o context window
+            'rag_file_types' => AIChatPageComponentRAG::getFileTypes(),
+            'max_tokens' => 128000,
         ];
     }
-
-    // ============================================
-    // Existing OpenAI Methods
-    // ============================================
 
     public function __construct(string $model = null)
     {
@@ -246,35 +252,35 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         $this->model = $model;
     }
 
-    /**
-     * Construct full API endpoint URL from base URL and endpoint path
-     *
-     * @param string $endpoint Endpoint path constant (e.g., self::ENDPOINT_CHAT)
-     * @return string Complete API URL
-     */
     private function getEndpointUrl(string $endpoint): string
     {
-        $baseUrl = \platform\AIChatPageComponentConfig::get('openai_api_url') ?: 'https://api.openai.com';
+        $base_url = \platform\AIChatPageComponentConfig::get('openai_api_url') ?: 'https://api.openai.com';
 
-        // Remove trailing slash from base URL if present
-        $baseUrl = rtrim($baseUrl, '/');
+        $base_url = rtrim($base_url, '/');
 
-        // Ensure endpoint starts with slash
         if (!str_starts_with($endpoint, '/')) {
             $endpoint = '/' . $endpoint;
         }
 
-        return $baseUrl . $endpoint;
+        return $base_url . $endpoint;
+    }
+
+    public function setModelOverride(?string $model): void
+    {
+        parent::setModelOverride($model);
+        if ($this->model_override !== null) {
+            $this->model = $this->model_override;
+        }
     }
 
     public function getApiKey(): string
     {
-        return $this->apiKey;
+        return $this->api_key;
     }
 
-    public function setApiKey(string $apiKey): void
+    public function setApiKey(string $api_key): void
     {
-        $this->apiKey = $apiKey;
+        $this->api_key = $api_key;
     }
 
     public function setStreaming(bool $streaming): void
@@ -287,175 +293,179 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         return $this->streaming;
     }
 
-    /**
-     * Get model-specific API parameters
-     *
-     * OpenAI o1/o1-mini/o1-preview models don't support temperature parameter.
-     * Other models support temperature 0-2.
-     * Uses configured value from plugin settings.
-     *
-     * @return array Associative array of API parameters
-     */
+    public function supportsStreaming(): bool
+    {
+        return true;
+    }
+
+    public function supportsMultimodal(): bool
+    {
+        return true;
+    }
+
+    public function supportsBase64Images(): bool
+    {
+        return true;
+    }
+
     protected function getModelParameters(): array
     {
-        // Check if model is o1 series (doesn't support temperature)
-        if (str_starts_with($this->model, 'o1') || str_starts_with($this->model, 'o3')) {
-            // o1, o1-mini, o1-preview, o3 models don't support temperature
+        // Reasoning models (o-series, GPT-5 except the chat variant) only accept the default temperature
+        if (preg_match('/^o\d/', $this->model)
+            || (str_starts_with($this->model, 'gpt-5') && !str_contains($this->model, 'chat'))) {
             return [];
         }
 
-        // All other models support temperature - use configured value
-        $temperature = \platform\AIChatPageComponentConfig::get('openai_temperature') ?: 0.7;
+        // Per-chat override (unless forced by admin), otherwise the configured default
+        $temperature = $this->temperature_override
+            ?? (\platform\AIChatPageComponentConfig::get('openai_temperature') ?: 0.7);
 
         return [
-            'temperature' => (float)$temperature
+            'temperature' => (float) $temperature
         ];
     }
 
     /**
-     * Get allowed file types based on RAG mode
-     *
-     * OpenAI supports multimodal (vision) for all GPT-4 models.
-     * RAG would typically be implemented via Assistants API with file search.
-     *
-     * @param bool $ragEnabled Whether RAG mode is enabled
-     * @return array Array of allowed file extensions
+     * In RAG mode, RAG file types go to the RAG service, all other types are sent as images or text
      */
-    public function getAllowedFileTypes(bool $ragEnabled): array
+    public function getAllowedFileTypes(bool $rag_enabled): array
     {
-        if ($ragEnabled) {
-            // RAG Mode: Text-based files (would use Assistants API file search)
-            return ['txt', 'csv', 'pdf'];
-        } else {
-            // Multimodal Mode: Images supported by GPT-4 Vision
-            return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'csv'];
+        $multimodal = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'csv'];
+        if ($rag_enabled) {
+            return array_values(array_unique(array_merge($this->getRagFileTypes(), $multimodal)));
         }
+        return $multimodal;
     }
 
-    /**
-     * Send messages array directly
-     *
-     * @param array $messages Array of message objects
-     * @param array|null $contextResources Optional context resources
-     * @return string AI response
-     * @throws AIChatPageComponentException Not yet implemented
-     */
-    public function sendMessagesArray(array $messages, ?array $contextResources = null): string
+    public function sendMessagesArray(array $messages, ?array $context_resources = null): string
     {
-        $messagesArray = [];
+        $messages_array = [];
         if (!empty($this->prompt)) {
-            $messagesArray[] = [
+            $messages_array[] = [
                 'role' => 'system',
                 'content' => $this->prompt
             ];
         }
 
-        // Add optional context resources (background files, page context)
-        if (!empty($contextResources)) {
-            $contextContent = [];
+        // Add optional context resources (page context, background text files, images, PDF pages)
+        if (!empty($context_resources)) {
+            $context_content = [
+                ['type' => 'text', 'text' => "[BEGIN KNOWLEDGE BASE CONTEXT]"]
+            ];
 
-            foreach ($contextResources as $resource) {
-                if ($resource['kind'] === 'text_file') {
-                    $contextContent[] = [
-                        'type' => 'text',
-                        'text' => "**{$resource['title']}**\n{$resource['content']}"
-                    ];
-                } elseif ($resource['kind'] === 'image_url') {
-                    $contextContent[] = [
-                        'type' => 'image_url',
-                        'image_url' => [
-                            'url' => $resource['content']
-                        ]
-                    ];
+            foreach ($context_resources as $resource) {
+                $title = $resource['title'] ?? '';
+                switch ($resource['kind'] ?? '') {
+                    case 'page_context':
+                    case 'text_file':
+                        $context_content[] = [
+                            'type' => 'text',
+                            'text' => "**{$title}**\n" . ($resource['content'] ?? '')
+                        ];
+                        break;
+
+                    case 'image_file':
+                    case 'pdf_page':
+                        if (!empty($resource['url'])) {
+                            $context_content[] = ['type' => 'text', 'text' => "**{$title}**"];
+                            $context_content[] = [
+                                'type' => 'image_url',
+                                'image_url' => ['url' => $resource['url']]
+                            ];
+                        }
+                        break;
                 }
             }
 
-            if (!empty($contextContent)) {
-                $messagesArray[] = [
+            $context_content[] = [
+                'type' => 'text',
+                'text' => "[END KNOWLEDGE BASE CONTEXT]\nYou may refer to this context when answering future questions."
+            ];
+
+            if (count($context_content) > 2) {
+                $messages_array[] = [
                     'role' => 'user',
-                    'content' => $contextContent
+                    'content' => $context_content
                 ];
             }
         }
 
-        $messagesArray = array_merge($messagesArray, $messages);
+        $messages_array = array_merge($messages_array, $messages);
 
-        $apiUrl = $this->getEndpointUrl(self::ENDPOINT_CHAT);
+        $api_url = $this->getEndpointUrl(self::ENDPOINT_CHAT);
 
-        // Build payload with model-specific parameters
         $payload = [
-            "messages" => $messagesArray,
+            "messages" => $messages_array,
             "model" => $this->model,
             "stream" => $this->isStreaming()
         ];
 
-        // Add model-specific parameters (e.g., temperature, top_p)
-        $modelParams = $this->getModelParameters();
-        $payload = array_merge($payload, $modelParams);
-
-        // Log complete request for debugging
-        if ($this->logger) {
-            $this->logger->debug("OpenAI Chat Request: Model=" . $this->model .
-                               " | Messages=" . count($messagesArray) .
-                               " | Stream=" . ($this->isStreaming() ? 'yes' : 'no') .
-                               " | Parameters=" . json_encode($modelParams) .
-                               " | Full Payload: " . json_encode($payload, JSON_PRETTY_PRINT));
+        // Ask for token usage in the last streaming chunk
+        if ($this->isStreaming()) {
+            $payload['stream_options'] = ['include_usage' => true];
         }
 
-        return $this->executeApiRequest($apiUrl, json_encode($payload));
+        $model_params = $this->getModelParameters();
+        $payload = array_merge($payload, $model_params);
+
+        if ($this->logger) {
+            $this->logger->debug("OpenAI Chat Request: Model=" . $this->model .
+                               " | Messages=" . count($messages_array) .
+                               " | Stream=" . ($this->isStreaming() ? 'yes' : 'no') .
+                               " | Parameters=" . json_encode($model_params));
+        }
+
+        return $this->executeApiRequest($api_url, json_encode($payload));
     }
 
     /**
-     * Execute OpenAI API request with streaming support
+     * Send the request; in streaming mode each text fragment is forwarded as Server-Sent Event
      *
-     * @param string $apiUrl API endpoint URL
-     * @param string $payload JSON payload
-     * @return string AI response content
+     * @return string Complete answer text
      * @throws AIChatPageComponentException
      */
-    private function executeApiRequest(string $apiUrl, string $payload): string
+    private function executeApiRequest(string $api_url, string $payload): string
     {
-        $curlSession = curl_init();
+        $curl_session = curl_init();
 
-        curl_setopt($curlSession, CURLOPT_URL, $apiUrl);
-        curl_setopt($curlSession, CURLOPT_POST, true);
-        curl_setopt($curlSession, CURLOPT_POSTFIELDS, $payload);
-        curl_setopt($curlSession, CURLOPT_RETURNTRANSFER, !$this->isStreaming());
-        curl_setopt($curlSession, CURLOPT_HTTPHEADER, [
+        curl_setopt($curl_session, CURLOPT_URL, $api_url);
+        curl_setopt($curl_session, CURLOPT_POST, true);
+        curl_setopt($curl_session, CURLOPT_POSTFIELDS, $payload);
+        curl_setopt($curl_session, CURLOPT_RETURNTRANSFER, !$this->isStreaming());
+        curl_setopt($curl_session, CURLOPT_HTTPHEADER, [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $this->getApiKey()
         ]);
 
-        // Handle proxy settings
         if (class_exists('ilProxySettings') && \ilProxySettings::_getInstance()->isActive()) {
-            $proxyHost = \ilProxySettings::_getInstance()->getHost();
-            $proxyPort = \ilProxySettings::_getInstance()->getPort();
-            $proxyURL = $proxyHost . ":" . $proxyPort;
-            curl_setopt($curlSession, CURLOPT_PROXY, $proxyURL);
+            $proxy_host = \ilProxySettings::_getInstance()->getHost();
+            $proxy_port = \ilProxySettings::_getInstance()->getPort();
+            $proxy_url = $proxy_host . ":" . $proxy_port;
+            curl_setopt($curl_session, CURLOPT_PROXY, $proxy_url);
         }
 
-        $responseContent = '';
+        $response_content = '';
 
         if ($this->isStreaming()) {
-            curl_setopt($curlSession, CURLOPT_WRITEFUNCTION, function ($curlSession, $chunk) use (&$responseContent) {
-                $responseContent .= $chunk;
+            curl_setopt($curl_session, CURLOPT_WRITEFUNCTION, function ($curl_session, $chunk) use (&$response_content) {
+                $response_content .= $chunk;
 
-                // Parse and reformat the chunk for Server-Sent Events
                 $lines = explode("\n", $chunk);
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    if (empty($line)) continue;
+                    if (empty($line)) {
+                        continue;
+                    }
 
                     if (strpos($line, 'data: ') === 0) {
-                        $jsonData = substr($line, strlen('data: '));
-                        if ($jsonData === '[DONE]') {
-                            continue; // Skip [DONE] marker
+                        $json_data = substr($line, strlen('data: '));
+                        if ($json_data === '[DONE]') {
+                            continue;
                         }
 
-                        $json = json_decode($jsonData, true);
+                        $json = json_decode($json_data, true);
                         if ($json && isset($json['choices'][0]['delta']['content'])) {
                             $content = $json['choices'][0]['delta']['content'];
-                            // Output as Server-Sent Event format
                             echo "data: " . json_encode(['type' => 'chunk', 'content' => $content]) . "\n\n";
                             ob_flush();
                             flush();
@@ -467,63 +477,61 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             });
         }
 
-        $response = curl_exec($curlSession);
-        $httpcode = curl_getinfo($curlSession, CURLINFO_HTTP_CODE);
-        $totalTime = curl_getinfo($curlSession, CURLINFO_TOTAL_TIME);
-        $connectTime = curl_getinfo($curlSession, CURLINFO_CONNECT_TIME);
-        $errNo = curl_errno($curlSession);
-        $errMsg = curl_error($curlSession);
-        curl_close($curlSession);
+        $response = curl_exec($curl_session);
+        $httpcode = curl_getinfo($curl_session, CURLINFO_HTTP_CODE);
+        $total_time = curl_getinfo($curl_session, CURLINFO_TOTAL_TIME);
+        $connect_time = curl_getinfo($curl_session, CURLINFO_CONNECT_TIME);
+        $err_no = curl_errno($curl_session);
+        $err_msg = curl_error($curl_session);
+        curl_close($curl_session);
 
-        // Handle curl_exec returning false on failure
-        if ($response === false || $errNo) {
+        if ($response === false || $err_no) {
             if ($this->logger) {
                 $this->logger->error("OpenAI cURL execution failed", [
-                    'curl_error' => $errMsg,
-                    'curl_errno' => $errNo,
-                    'url' => $apiUrl,
-                    'total_time' => round($totalTime, 3),
-                    'connect_time' => round($connectTime, 3),
-                    'has_api_key' => !empty($this->apiKey)
+                    'curl_error' => $err_msg,
+                    'curl_errno' => $err_no,
+                    'url' => $api_url,
+                    'total_time' => round($total_time, 3),
+                    'connect_time' => round($connect_time, 3),
+                    'has_api_key' => !empty($this->api_key)
                 ]);
             }
-            throw new AIChatPageComponentException("cURL Error: " . $errMsg, $errNo);
+            throw new AIChatPageComponentException("cURL Error: " . $err_msg, $err_no);
         }
 
         if ($httpcode != 200) {
-            // In streaming mode, use captured response content
-            $errorBody = $this->isStreaming() ? $responseContent : $response;
-            $responsePreview = is_string($errorBody) && !empty($errorBody) ? substr($errorBody, 0, 500) : '(no body)';
+            $error_body = $this->isStreaming() ? $response_content : $response;
+            $response_preview = is_string($error_body) && !empty($error_body) ? substr($error_body, 0, 500) : '(no body)';
 
             if ($this->logger) {
-                $this->logger->error("OpenAI API request failed: HTTP " . $httpcode . " | URL: " . $apiUrl . " | Response: " . $responsePreview . " | Time: " . round($totalTime, 2) . "s");
+                $this->logger->error("OpenAI API request failed: HTTP " . $httpcode . " | URL: " . $api_url . " | Response: " . $response_preview . " | Time: " . round($total_time, 2) . "s");
 
                 $this->logger->error("OpenAI API Error Details", [
                     'http_code' => $httpcode,
-                    'total_time' => round($totalTime, 3),
-                    'connect_time' => round($connectTime, 3),
-                    'response' => $errorBody,
-                    'payload' => $payload,
-                    'api_url' => $apiUrl,
-                    'has_api_key' => !empty($this->apiKey),
+                    'total_time' => round($total_time, 3),
+                    'connect_time' => round($connect_time, 3),
+                    'api_url' => $api_url,
+                    'has_api_key' => !empty($this->api_key),
                     'streaming' => $this->isStreaming()
                 ]);
             }
 
-            // Try to parse error response for more details
-            $errorData = is_string($errorBody) ? json_decode($errorBody, true) : null;
-            $errorMessage = $errorData['error']['message'] ?? "HTTP Error: " . $httpcode;
+            $error_data = is_string($error_body) ? json_decode($error_body, true) : null;
+            $error_message = $error_data['error']['message'] ?? "HTTP Error: " . $httpcode;
 
+            if (in_array((int) $httpcode, self::SERVICE_BUSY_HTTP_CODES, true)) {
+                throw new AIChatPageComponentException(self::SERVICE_BUSY, (int) $httpcode);
+            }
             if ($httpcode === 401) {
-                throw new AIChatPageComponentException("Invalid OpenAI API key: " . $errorMessage, 401);
+                throw new AIChatPageComponentException("Invalid OpenAI API key: " . $error_message, 401);
             } else {
-                throw new AIChatPageComponentException("OpenAI API Error: " . $errorMessage, $httpcode);
+                throw new AIChatPageComponentException("OpenAI API Error: " . $error_message, $httpcode);
             }
         }
 
         if (!$this->isStreaming()) {
-            $decodedResponse = json_decode($response, true);
-            if ($decodedResponse === null && json_last_error() !== JSON_ERROR_NONE) {
+            $decoded_response = json_decode($response, true);
+            if ($decoded_response === null && json_last_error() !== JSON_ERROR_NONE) {
                 if ($this->logger) {
                     $this->logger->error("Invalid JSON response from OpenAI", [
                         'json_error' => json_last_error_msg(),
@@ -532,77 +540,74 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
                 }
                 throw new AIChatPageComponentException("Invalid JSON response from OpenAI API: " . json_last_error_msg());
             }
-            if (!isset($decodedResponse['choices'][0]['message']['content'])) {
+            if (!isset($decoded_response['choices'][0]['message']['content'])) {
                 if ($this->logger) {
-                    $this->logger->error("Unexpected OpenAI API response structure", [
-                        'response' => $decodedResponse
-                    ]);
+                    $this->logger->error("Unexpected OpenAI API response structure: " . substr((string) $response, 0, 200));
                 }
-                throw new AIChatPageComponentException("Unexpected API response structure from OpenAI: " . $response);
+                throw new AIChatPageComponentException("Unexpected API response structure from OpenAI");
             }
 
-            // Log complete response for debugging
-            $content = $decodedResponse['choices'][0]['message']['content'];
-            $usage = $decodedResponse['usage'] ?? [];
+            $content = $decoded_response['choices'][0]['message']['content'];
+            $usage = $decoded_response['usage'] ?? [];
+            if (is_array($usage) && !empty($usage)) {
+                $this->last_response_usage = $usage;
+            }
             if ($this->logger) {
                 $this->logger->debug("OpenAI Chat Response: HTTP " . $httpcode .
                                    " | Content Length=" . strlen($content) .
-                                   " | Tokens: " . json_encode($usage) .
-                                   " | Full Response: " . json_encode($decodedResponse, JSON_PRETTY_PRINT));
+                                   " | Tokens: " . json_encode($usage));
             }
 
             return $content;
         }
 
-        // Process streaming response
-        $messages = explode("\n", $responseContent);
-        $completeMessage = '';
+        $messages = explode("\n", $response_content);
+        $complete_message = '';
 
         foreach ($messages as $message) {
             if (trim($message) !== '' && strpos($message, 'data: ') === 0) {
-                $jsonData = substr($message, strlen('data: '));
-                if ($jsonData === '[DONE]') {
+                $json_data = substr($message, strlen('data: '));
+                if ($json_data === '[DONE]') {
                     continue;
                 }
-                $json = json_decode($jsonData, true);
+                $json = json_decode($json_data, true);
                 if ($json === null && json_last_error() !== JSON_ERROR_NONE) {
-                    continue; // Skip invalid JSON chunks
+                    continue;
                 }
                 if (is_array($json) && isset($json['choices'][0]['delta']['content'])) {
-                    $completeMessage .= $json['choices'][0]['delta']['content'];
+                    $complete_message .= $json['choices'][0]['delta']['content'];
+                }
+                if (is_array($json) && isset($json['usage']) && is_array($json['usage'])) {
+                    $this->last_response_usage = $json['usage'];
                 }
             }
         }
 
-        // Log complete streaming response
         if ($this->logger) {
             $this->logger->debug("OpenAI Chat Streaming Response: HTTP " . $httpcode .
-                               " | Content Length=" . strlen($completeMessage) .
-                               " | Time: " . round($totalTime, 2) . "s");
+                               " | Content Length=" . strlen($complete_message) .
+                               " | Time: " . round($total_time, 2) . "s");
         }
 
-        return $completeMessage;
+        return $complete_message;
     }
 
     /**
-     * Factory method to create OpenAI instance with plugin configuration
-     *
-     * @return self Configured OpenAI instance
-     * @throws AIChatPageComponentException If configuration loading fails
+     * @throws AIChatPageComponentException If no API token is configured
      */
     public static function fromConfig(): self
     {
         try {
             $model = \platform\AIChatPageComponentConfig::get('openai_selected_model') ?: 'gpt-3.5-turbo';
-            $apiKey = \platform\AIChatPageComponentConfig::get('openai_api_token') ?: '';
-            $streaming = (\platform\AIChatPageComponentConfig::get('openai_streaming_enabled') ?? '0') === '1';
+            $api_key = \platform\AIChatPageComponentConfig::get('openai_api_token') ?: '';
+            $streaming = (\platform\AIChatPageComponentConfig::get('openai_streaming_enabled') ?? '1') === '1';
 
-            if (empty($apiKey)) {
+            if (empty($api_key)) {
                 throw new AIChatPageComponentException("OpenAI API token not configured");
             }
 
             $openai = new self($model);
-            $openai->setApiKey($apiKey);
+            $openai->setApiKey($api_key);
             $openai->setStreaming($streaming);
 
             return $openai;
@@ -612,21 +617,19 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
     }
 
     /**
-     * Refresh available models from OpenAI API
+     * Load the model list from the API and update the selection for editors
      *
-     * @return array ['success' => bool, 'message' => string, 'models' => array|null]
+     * @return array{success: bool, message: string, models: array|null}
      */
     public function refreshModels(): array
     {
         $plugin = \ilAIChatPageComponentPlugin::getInstance();
 
         try {
-            // Use endpoint URL from constant
             $models_api_url = $this->getEndpointUrl(self::ENDPOINT_MODELS);
 
             $api_token = \platform\AIChatPageComponentConfig::get('openai_api_token');
 
-            // Handle potential Password object conversion
             if (is_object($api_token) && method_exists($api_token, 'toString')) {
                 $api_token = $api_token->toString();
             }
@@ -639,7 +642,6 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
                 ];
             }
 
-            // Fetch models from OpenAI API
             $ch = curl_init();
 
             curl_setopt($ch, CURLOPT_URL, $models_api_url);
@@ -650,20 +652,18 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             ]);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
-            // Handle proxy settings
             if (class_exists('ilProxySettings') && \ilProxySettings::_getInstance()->isActive()) {
-                $proxyHost = \ilProxySettings::_getInstance()->getHost();
-                $proxyPort = \ilProxySettings::_getInstance()->getPort();
-                $proxyURL = $proxyHost . ":" . $proxyPort;
-                curl_setopt($ch, CURLOPT_PROXY, $proxyURL);
+                $proxy_host = \ilProxySettings::_getInstance()->getHost();
+                $proxy_port = \ilProxySettings::_getInstance()->getPort();
+                $proxy_url = $proxy_host . ":" . $proxy_port;
+                curl_setopt($ch, CURLOPT_PROXY, $proxy_url);
             }
 
             $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $error = curl_error($ch);
             curl_close($ch);
 
-            // Handle curl_exec returning false on failure
             if ($response === false) {
                 if ($this->logger) {
                     $this->logger->error("OpenAI models API cURL execution failed", [
@@ -678,25 +678,22 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
                 ];
             }
 
-            if ($httpCode === 200 && $response) {
+            if ($http_code === 200 && $response) {
                 $models_response = json_decode($response, true);
 
-                // OpenAI uses format: {object: "list", data: [{id: "gpt-4", ...}, ...]}
                 if (isset($models_response['data']) && is_array($models_response['data'])) {
                     $models = [];
                     foreach ($models_response['data'] as $model) {
                         $model_id = $model['id'] ?? null;
-                        // Filter to only include GPT chat models
-                        if ($model_id && (strpos($model_id, 'gpt-') === 0 || strpos($model_id, 'chatgpt-') === 0)) {
-                            // Create human-readable name from ID
+                        // Only GPT and o-series models; non-chat variants are unchecked for editors by default
+                        if ($model_id && preg_match('/^(gpt-|chatgpt-|o\d)/', $model_id)) {
                             $model_name = ucwords(str_replace(['-', '_'], ' ', $model_id));
                             $models[$model_id] = $model_name;
                         }
                     }
 
                     if (!empty($models)) {
-                        // Cache models and timestamp
-                        \platform\AIChatPageComponentConfig::set('openai_cached_models', $models);
+                        self::storeRefreshedModels($models);
                         \platform\AIChatPageComponentConfig::set('openai_models_cache_time', time());
 
                         return [
@@ -719,19 +716,17 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
                     ];
                 }
             } else {
-                $error_msg = $plugin->txt('refresh_models_api_error') . ' (HTTP ' . $httpCode . ')';
+                $error_msg = $plugin->txt('refresh_models_api_error') . ' (HTTP ' . $http_code . ')';
                 if ($error) {
                     $error_msg .= ': ' . $error;
                 }
 
-                // Add debug information for HTTP 401
-                if ($httpCode === 401) {
+                if ($http_code === 401) {
                     $error_msg .= ' - ' . $plugin->txt('refresh_models_no_token');
                     if ($this->logger) {
                         $this->logger->error("OpenAI Models API 401 Error", [
                             'api_url' => $models_api_url,
-                            'token_length' => strlen($api_token),
-                            'token_starts_with' => substr($api_token, 0, 8) . '...'
+                            'token_length' => strlen($api_token)
                         ]);
                     }
                 }

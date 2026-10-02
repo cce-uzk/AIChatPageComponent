@@ -1,21 +1,24 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 use ILIAS\Plugin\pcaic\Model\ChatConfig;
 
 /**
- * AIChatPageComponent Exporter
+ * Export of chats: configuration and background files
  *
- * Exports AI chat PageComponent configurations and associated files during
- * ILIAS content export operations. Handles serialization of chat settings,
- * background files, and all configuration options to XML format.
- *
- * Exported data includes:
- * - Chat configuration (title, system prompt, AI service settings)
- * - Feature flags (persistence, streaming, RAG, uploads)
- * - Background files with IRSS resource references
- *
- * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.1
+ * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
 {
@@ -52,9 +55,6 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
         ];
     }
 
-    /**
-     * Generate XML representation of PageComponent data for export.
-     */
     public function getXmlRepresentation(string $a_entity, string $a_schema_version, string $a_id): string
     {
         if (ob_get_level()) {
@@ -73,12 +73,12 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
                 return $this->createEmptyXml();
             }
 
-            $chatId = $properties['chat_id'];
-            $chatConfig = new ChatConfig($chatId);
+            $chat_id = $properties['chat_id'];
+            $chat_config = new ChatConfig($chat_id);
 
-            if (!$chatConfig->exists()) {
+            if (!$chat_config->exists()) {
                 $DIC->logger()->pcaic()->warning('Export: Chat configuration not found', [
-                    'chat_id' => $chatId,
+                    'chat_id' => $chat_id,
                     'pc_id' => $a_id
                 ]);
                 return $this->createEmptyXml();
@@ -92,10 +92,10 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
             $root->setAttribute('export_date', date('Y-m-d H:i:s'));
             $xml->appendChild($root);
 
-            $this->addChatConfig($xml, $root, $chatConfig);
+            $this->addChatConfig($xml, $root, $chat_config);
 
             $DIC->logger()->pcaic()->info('Export completed', [
-                'chat_id' => $chatId,
+                'chat_id' => $chat_id,
                 'schema_version' => self::SCHEMA_VERSION
             ]);
 
@@ -110,102 +110,93 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
         }
     }
 
-    /**
-     * Serialize chat configuration to XML elements.
-     */
-    private function addChatConfig(DOMDocument $xml, DOMElement $root, ChatConfig $chatConfig): void
+    private function addChatConfig(DOMDocument $xml, DOMElement $root, ChatConfig $chat_config): void
     {
-        $configElement = $xml->createElement('chat_config');
-        $root->appendChild($configElement);
+        $config_element = $xml->createElement('chat_config');
+        $root->appendChild($config_element);
 
-        // Basic settings
-        $configElement->appendChild($xml->createElement('title', htmlspecialchars($chatConfig->getTitle())));
+        $config_element->appendChild($xml->createElement('title', htmlspecialchars($chat_config->getTitle())));
 
-        $systemPromptElement = $xml->createElement('system_prompt');
-        $systemPromptElement->appendChild($xml->createCDATASection($chatConfig->getSystemPrompt()));
-        $configElement->appendChild($systemPromptElement);
+        $system_prompt_element = $xml->createElement('system_prompt');
+        $system_prompt_element->appendChild($xml->createCDATASection($chat_config->getSystemPrompt()));
+        $config_element->appendChild($system_prompt_element);
 
-        $configElement->appendChild($xml->createElement('ai_service', htmlspecialchars($chatConfig->getAiService())));
-        $configElement->appendChild($xml->createElement('max_memory', (string)$chatConfig->getMaxMemory()));
-        $configElement->appendChild($xml->createElement('char_limit', (string)$chatConfig->getCharLimit()));
+        $config_element->appendChild($xml->createElement('ai_service', htmlspecialchars($chat_config->getAiService())));
+        $config_element->appendChild($xml->createElement('max_memory', (string) $chat_config->getMaxMemory()));
+        $config_element->appendChild($xml->createElement('char_limit', (string) $chat_config->getCharLimit()));
 
-        // Feature flags
-        $configElement->appendChild($xml->createElement('persistent', $chatConfig->isPersistent() ? '1' : '0'));
-        $configElement->appendChild($xml->createElement('include_page_context', $chatConfig->isIncludePageContext() ? '1' : '0'));
-        $configElement->appendChild($xml->createElement('enable_chat_uploads', $chatConfig->isEnableChatUploads() ? '1' : '0'));
-        $configElement->appendChild($xml->createElement('enable_streaming', $chatConfig->isEnableStreaming() ? '1' : '0'));
-        $configElement->appendChild($xml->createElement('enable_rag', $chatConfig->isEnableRag() ? '1' : '0'));
-        $configElement->appendChild($xml->createElement('show_sources', $chatConfig->isShowSources() ? '1' : '0'));
-        $configElement->appendChild($xml->createElement('allow_source_downloads', $chatConfig->isAllowSourceDownloads() ? '1' : '0'));
+        $config_element->appendChild($xml->createElement('persistent', $chat_config->isPersistent() ? '1' : '0'));
+        $config_element->appendChild($xml->createElement('include_page_context', $chat_config->isIncludePageContext() ? '1' : '0'));
+        $config_element->appendChild($xml->createElement('enable_chat_uploads', $chat_config->isEnableChatUploads() ? '1' : '0'));
+        $config_element->appendChild($xml->createElement('enable_streaming', $chat_config->isEnableStreaming() ? '1' : '0'));
+        $config_element->appendChild($xml->createElement('enable_rag', $chat_config->isEnableRag() ? '1' : '0'));
+        $config_element->appendChild($xml->createElement('show_sources', $chat_config->isShowSources() ? '1' : '0'));
+        $config_element->appendChild($xml->createElement('allow_source_downloads', $chat_config->isAllowSourceDownloads() ? '1' : '0'));
 
-        // Optional disclaimer
-        if ($chatConfig->getDisclaimer()) {
-            $disclaimerElement = $xml->createElement('disclaimer');
-            $disclaimerElement->appendChild($xml->createCDATASection($chatConfig->getDisclaimer()));
-            $configElement->appendChild($disclaimerElement);
+        if ($chat_config->getDisclaimer()) {
+            $disclaimer_element = $xml->createElement('disclaimer');
+            $disclaimer_element->appendChild($xml->createCDATASection($chat_config->getDisclaimer()));
+            $config_element->appendChild($disclaimer_element);
         }
 
-        // Background files from pcaic_attachments table
-        $this->addBackgroundFiles($xml, $configElement, $chatConfig);
+        $this->addBackgroundFiles($xml, $config_element, $chat_config);
     }
 
     /**
-     * Export background files and add references to XML.
+     * Copy the background files into the export directory and reference them in the XML
      */
-    private function addBackgroundFiles(DOMDocument $xml, DOMElement $configElement, ChatConfig $chatConfig): void
+    private function addBackgroundFiles(DOMDocument $xml, DOMElement $config_element, ChatConfig $chat_config): void
     {
-        $backgroundFiles = $chatConfig->getBackgroundFiles();
-        if (empty($backgroundFiles)) {
+        $background_files = $chat_config->getBackgroundFiles();
+        if (empty($background_files)) {
             return;
         }
 
-        $filesElement = $xml->createElement('background_files');
-        $configElement->appendChild($filesElement);
+        $files_element = $xml->createElement('background_files');
+        $config_element->appendChild($files_element);
 
         global $DIC;
         $irss = $DIC->resourceStorage();
 
-        foreach ($backgroundFiles as $resourceId) {
-            if (!is_string($resourceId) || empty($resourceId)) {
+        foreach ($background_files as $resource_id) {
+            if (!is_string($resource_id) || empty($resource_id)) {
                 continue;
             }
 
-            $fileMetadata = $this->loadFileMetadata($resourceId);
-            if (!$fileMetadata) {
+            $file_metadata = $this->loadFileMetadata($resource_id);
+            if (!$file_metadata) {
                 continue;
             }
 
-            $exportPath = null;
+            $export_path = null;
             try {
-                $identification = $irss->manage()->find($resourceId);
+                $identification = $irss->manage()->find($resource_id);
                 if ($identification) {
-                    $filename = $fileMetadata['filename'] ?: $irss->manage()->getCurrentRevision($identification)->getTitle();
-                    $exportPath = $this->exportFile($identification, $filename);
+                    $filename = $file_metadata['filename'] ?: $irss->manage()->getCurrentRevision($identification)->getTitle();
+                    $export_path = $this->exportFile($identification, $filename);
                 }
             } catch (Exception $e) {
                 $DIC->logger()->pcaic()->warning('Export: Failed to export background file', [
-                    'resource_id' => $resourceId,
+                    'resource_id' => $resource_id,
                     'error' => $e->getMessage()
                 ]);
             }
 
-            $fileElement = $xml->createElement('file');
-            $fileElement->setAttribute('resource_id', $fileMetadata['resource_id']);
-            $fileElement->setAttribute('filename', $fileMetadata['filename']);
-            $fileElement->setAttribute('mime_type', $fileMetadata['mime_type']);
-            $fileElement->setAttribute('description', $fileMetadata['description']);
-            if ($exportPath) {
-                $fileElement->setAttribute('original_path', $exportPath);
+            $file_element = $xml->createElement('file');
+            $file_element->setAttribute('resource_id', $file_metadata['resource_id']);
+            $file_element->setAttribute('filename', $file_metadata['filename']);
+            $file_element->setAttribute('mime_type', $file_metadata['mime_type']);
+            $file_element->setAttribute('description', $file_metadata['description']);
+            if ($export_path) {
+                $file_element->setAttribute('original_path', $export_path);
             }
-            $filesElement->appendChild($fileElement);
+            $files_element->appendChild($file_element);
         }
     }
 
     /**
-     * Copy file from IRSS to export directory.
-     *
      * @param mixed $identification IRSS resource identification
-     * @return string|null Filename on success, null on failure
+     * @return string|null File name, or null if the file could not be copied
      */
     private function exportFile($identification, string $filename): ?string
     {
@@ -216,19 +207,19 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
             $stream = $irss->consume()->stream($identification);
             $content = $stream->getStream()->getContents();
 
-            $exportDir = $this->getAbsoluteExportDirectory();
-            $exportPath = $exportDir . '/' . $filename;
+            $export_dir = $this->getAbsoluteExportDirectory();
+            $export_path = $export_dir . '/' . $filename;
 
-            if (!is_dir($exportDir) && !mkdir($exportDir, 0755, true)) {
-                throw new Exception('Cannot create export directory: ' . $exportDir);
+            if (!is_dir($export_dir) && !mkdir($export_dir, 0755, true)) {
+                throw new Exception('Cannot create export directory: ' . $export_dir);
             }
 
-            if (!is_writable($exportDir)) {
-                throw new Exception('Export directory not writable: ' . $exportDir);
+            if (!is_writable($export_dir)) {
+                throw new Exception('Export directory not writable: ' . $export_dir);
             }
 
-            if (file_put_contents($exportPath, $content) === false) {
-                throw new Exception('Failed to write file: ' . $exportPath);
+            if (file_put_contents($export_path, $content) === false) {
+                throw new Exception('Failed to write file: ' . $export_path);
             }
 
             return $filename;
@@ -243,7 +234,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
     }
 
     /**
-     * Create minimal XML for failed or empty exports.
+     * XML without chat data, used if the chat does not exist or the export fails
      */
     private function createEmptyXml(): string
     {
@@ -264,17 +255,15 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
     }
 
     /**
-     * Retrieve file metadata from IRSS.
-     *
      * @return array{resource_id: string, filename: string, mime_type: string, description: string}|null
      */
-    private function loadFileMetadata(string $resourceId): ?array
+    private function loadFileMetadata(string $resource_id): ?array
     {
         global $DIC;
 
         try {
             $irss = $DIC->resourceStorage();
-            $identification = $irss->manage()->find($resourceId);
+            $identification = $irss->manage()->find($resource_id);
 
             if (!$identification) {
                 return null;
@@ -284,7 +273,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
             $info = $revision->getInformation();
 
             return [
-                'resource_id' => $resourceId,
+                'resource_id' => $resource_id,
                 'filename' => $revision->getTitle(),
                 'mime_type' => $info->getMimeType(),
                 'description' => ''
@@ -292,7 +281,7 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
 
         } catch (Exception $e) {
             $DIC->logger()->pcaic()->warning('Export: Failed to load file metadata', [
-                'resource_id' => $resourceId,
+                'resource_id' => $resource_id,
                 'error' => $e->getMessage()
             ]);
             return null;

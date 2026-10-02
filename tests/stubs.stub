@@ -1,0 +1,72 @@
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Replacements for the plugin configuration and ILIAS base classes used by the tests
+ *
+ * The file extension .stub keeps this file out of Composer class maps; the ILIAS
+ * class map scans the plugin directory and must not find a second definition of
+ * these classes.
+ */
+
+namespace platform {
+    /**
+     * In-memory replacement for the database-backed plugin configuration
+     */
+    class AIChatPageComponentConfig
+    {
+        /** @var array<string, mixed> */
+        private static array $values = [];
+
+        /**
+         * @return mixed
+         */
+        public static function get(string $key)
+        {
+            return self::$values[$key] ?? null;
+        }
+
+        /**
+         * @param mixed $value
+         */
+        public static function set(string $key, $value): bool
+        {
+            self::$values[$key] = $value;
+            return true;
+        }
+
+        public static function reset(array $values = []): void
+        {
+            self::$values = $values;
+        }
+    }
+}
+
+namespace {
+    if (!class_exists('ilException')) {
+        class ilException extends Exception
+        {
+        }
+    }
+
+    if (!class_exists('ilLogger')) {
+        class ilLogger
+        {
+            public function __call(string $name, array $arguments): void
+            {
+            }
+        }
+    }
+}

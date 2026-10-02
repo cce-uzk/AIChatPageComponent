@@ -1,14 +1,24 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 use ILIAS\UI\Factory;
 use ILIAS\UI\Renderer;
 use ILIAS\HTTP\Services as HttpServices;
 
 /**
- * Statistics table for the AIChatPageComponent admin view.
- *
- * Lists all embedded chat instances on the ILIAS installation using the
- * modern ILIAS 9 UI Data Table framework (DataRetrieval / URLBuilder).
+ * Statistics table listing all chats of the installation
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
@@ -26,27 +36,24 @@ class AIChatStatisticsTableGUI
         global $DIC;
 
         $this->ui_factory = $DIC->ui()->factory();
-        $this->renderer   = $DIC->ui()->renderer();
-        $this->http       = $DIC->http();
-        $this->ctrl       = $DIC->ctrl();
-        $this->plugin     = ilAIChatPageComponentPlugin::getInstance();
+        $this->renderer = $DIC->ui()->renderer();
+        $this->http = $DIC->http();
+        $this->ctrl = $DIC->ctrl();
+        $this->plugin = ilAIChatPageComponentPlugin::getInstance();
         $this->parent_obj = $parent_obj;
     }
 
     /**
-     * @param array<string, mixed>|null $filter_data Resolved filter values from the filter bar
+     * @param array<string, mixed>|null $filter_data Values of the filter bar
      */
     public function getHTML(?array $filter_data = null): string
     {
         $data_retrieval = new AIChatStatisticsDataRetrieval($this->plugin);
-        $table          = $this->buildTable($data_retrieval, $filter_data);
+        $table = $this->buildTable($data_retrieval, $filter_data);
 
         return $this->renderer->render($table);
     }
 
-    /**
-     * @param array<string, mixed>|null $filter_data
-     */
     private function buildTable(
         AIChatStatisticsDataRetrieval $data_retrieval,
         ?array $filter_data
@@ -87,11 +94,10 @@ class AIChatStatisticsTableGUI
 
     private function buildActions(): array
     {
-        $f    = $this->ui_factory;
+        $f = $this->ui_factory;
         $base = ILIAS_HTTP_PATH . '/';
 
-        // Helper: build independent URLBuilder for a given command
-        $makeAction = function (string $cmd) use ($base): array {
+        $make_action = function (string $cmd) use ($base): array {
             $ub = new \ILIAS\UI\URLBuilder(
                 new \ILIAS\Data\URI($base . $this->ctrl->getLinkTarget($this->parent_obj, $cmd))
             );
@@ -99,11 +105,11 @@ class AIChatStatisticsTableGUI
             return [$ub, $at, $it];
         };
 
-        [$ub_goto,   $at_goto,   $it_goto]   = $makeAction('gotoPage');
-        [$ub_on,     $at_on,     $it_on]     = $makeAction('setChatOnline');
-        [$ub_off,    $at_off,    $it_off]    = $makeAction('setChatOffline');
-        [$ub_clear,  $at_clear,  $it_clear]  = $makeAction('clearChatHistory');
-        [$ub_delete, $at_delete, $it_delete] = $makeAction('deleteChat');
+        [$ub_goto,   $at_goto,   $it_goto] = $make_action('gotoPage');
+        [$ub_on,     $at_on,     $it_on] = $make_action('setChatOnline');
+        [$ub_off,    $at_off,    $it_off] = $make_action('setChatOffline');
+        [$ub_clear,  $at_clear,  $it_clear] = $make_action('clearChatHistory');
+        [$ub_delete, $at_delete, $it_delete] = $make_action('deleteChat');
 
         return [
             'goto' => $f->table()->action()->single(

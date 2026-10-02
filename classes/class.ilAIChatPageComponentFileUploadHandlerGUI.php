@@ -1,11 +1,23 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 use ILIAS\FileUpload\Handler\AbstractCtrlAwareIRSSUploadHandler;
 use ILIAS\ResourceStorage\Stakeholder\ResourceStakeholder;
 
 /**
- * IRSS-based file upload handler for AIChatPageComponent background files
- * Following ILIAS Core patterns like ilObjFileUploadHandlerGUI
+ * IRSS upload handler for background files of a chat
  *
  * @ilCtrl_isCalledBy ilAIChatPageComponentFileUploadHandlerGUI: ilAIChatPageComponentPluginGUI
  * @ilCtrl_IsCalledBy ilAIChatPageComponentFileUploadHandlerGUI: ilUIPluginRouterGUI

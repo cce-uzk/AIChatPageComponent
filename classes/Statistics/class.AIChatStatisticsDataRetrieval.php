@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 use ILIAS\UI\Component\Table\DataRetrieval;
 use ILIAS\UI\Component\Table\DataRowBuilder;
@@ -6,9 +19,7 @@ use ILIAS\Data\Range;
 use ILIAS\Data\Order;
 
 /**
- * Data retrieval for the AIChatPageComponent statistics table.
- *
- * Provides all chat instances on the installation with aggregated metrics.
+ * Data retrieval for the statistics table: all chats with aggregated metrics
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
@@ -31,7 +42,6 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
     ): Generator {
         $rows = $this->queryData($filter_data ?? []);
 
-        // Sorting
         [$sort_field, $sort_direction] = $order->join(
             [null, null],
             fn($carry, $field, $dir) => [$field, $dir]
@@ -45,18 +55,17 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
             });
         }
 
-        // Pagination
         $rows = array_slice($rows, $range->getStart(), $range->getLength());
 
         foreach ($rows as $row) {
             $data_row = $row_builder->buildDataRow($row['chat_id'], [
-                'title'                  => $row['title'],
-                'obj_id'                 => $row['obj_id'],
-                'ref_id'                 => $row['ref_id'],
-                'created_at'             => $row['created_at'],
-                'is_online'              => $row['is_online_icon'],
-                'session_count'          => $row['session_count'],
-                'enable_rag'             => $row['enable_rag_icon'],
+                'title' => $row['title'],
+                'obj_id' => $row['obj_id'],
+                'ref_id' => $row['ref_id'],
+                'created_at' => $row['created_at'],
+                'is_online' => $row['is_online_icon'],
+                'session_count' => $row['session_count'],
+                'enable_rag' => $row['enable_rag_icon'],
                 'background_files_count' => $row['background_files_count'],
             ]);
 
@@ -90,22 +99,21 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
         ";
 
         $result = $db->query($sql);
-        $row    = $db->fetchAssoc($result);
+        $row = $db->fetchAssoc($result);
         return (int) ($row['cnt'] ?? 0);
     }
 
     /**
-     * Load all chats with aggregated session and background-file counts,
-     * optionally filtered by title, obj_id, or ref_id.
+     * Load all chats with session and background file counts
      *
-     * @param  array<string, mixed> $filter
+     * @param array<string, mixed> $filter Title (LIKE), obj_id or ref_id
      * @return array<int, array<string, mixed>>
      */
     private function queryData(array $filter): array
     {
         global $DIC;
-        $db  = $DIC->database();
-        $ui  = $DIC->ui()->factory();
+        $db = $DIC->database();
+        $ui = $DIC->ui()->factory();
 
         $where = $this->buildWhereClause($filter, $db);
 
@@ -134,30 +142,30 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
         ";
 
         $result = $db->query($query);
-        $rows   = [];
+        $rows = [];
 
         while ($row = $db->fetchAssoc($result)) {
-            // Formatted display string and raw timestamp for correct sorting
-            $created_at    = '';
+            // Formatted value for display, raw timestamp for sorting
+            $created_at = '';
             $created_at_ts = 0;
             if (!empty($row['created_at'])) {
                 try {
-                    $dt            = new \DateTime($row['created_at']);
-                    $created_at    = $dt->format('d.m.Y H:i');
+                    $dt = new \DateTime($row['created_at']);
+                    $created_at = $dt->format('d.m.Y H:i');
                     $created_at_ts = $dt->getTimestamp();
                 } catch (\Exception $e) {
                     $created_at = (string) $row['created_at'];
                 }
             }
 
-            $is_rag      = (bool) $row['enable_rag'];
-            $rag_icon    = $ui->symbol()->icon()->custom(
+            $is_rag = (bool) $row['enable_rag'];
+            $rag_icon = $ui->symbol()->icon()->custom(
                 ilUtil::getImagePath($is_rag ? 'standard/icon_ok.svg' : 'standard/icon_not_ok.svg'),
                 $is_rag ? $this->plugin->txt('stat_yes') : $this->plugin->txt('stat_no'),
                 \ILIAS\UI\Component\Symbol\Icon\Icon::SMALL
             );
 
-            $is_online   = (bool) $row['is_online'];
+            $is_online = (bool) $row['is_online'];
             $online_icon = $ui->symbol()->icon()->custom(
                 ilUtil::getImagePath($is_online ? 'standard/icon_ok.svg' : 'standard/icon_not_ok.svg'),
                 $is_online ? $this->plugin->txt('stat_yes') : $this->plugin->txt('stat_no'),
@@ -165,16 +173,16 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
             );
 
             $rows[] = [
-                'chat_id'                => (string) $row['chat_id'],
-                'title'                  => $row['title'] ?: '(' . $this->plugin->txt('stat_no_title') . ')',
-                'obj_id'                 => (int) $row['parent_id'],
-                'ref_id'                 => (int) $row['ref_id'],
-                'created_at'             => $created_at,
-                'created_at_ts'          => $created_at_ts,
-                'session_count'          => (int) $row['session_count'],
-                'enable_rag_icon'        => $rag_icon,
-                'is_online'              => $is_online,
-                'is_online_icon'         => $online_icon,
+                'chat_id' => (string) $row['chat_id'],
+                'title' => $row['title'] ?: '(' . $this->plugin->txt('stat_no_title') . ')',
+                'obj_id' => (int) $row['parent_id'],
+                'ref_id' => (int) $row['ref_id'],
+                'created_at' => $created_at,
+                'created_at_ts' => $created_at_ts,
+                'session_count' => (int) $row['session_count'],
+                'enable_rag_icon' => $rag_icon,
+                'is_online' => $is_online,
+                'is_online_icon' => $online_icon,
                 'background_files_count' => (int) $row['background_files_count'],
             ];
         }
@@ -183,8 +191,7 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
     }
 
     /**
-     * Build SQL WHERE clause from filter data.
-     * Handles title (LIKE), obj_id (exact), ref_id (via object_reference subquery).
+     * Build the WHERE clause for the filter (title LIKE, obj_id, ref_id via object_reference)
      */
     private function buildWhereClause(array $filter, \ilDBInterface $db): string
     {

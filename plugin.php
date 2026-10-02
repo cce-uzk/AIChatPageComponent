@@ -1,22 +1,24 @@
 <?php
+
 /**
- * Copyright (c) 2025 University of Cologne
- * GPLv3, see LICENSE
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
  *
- * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
  */
 
-// alphanumerical ID of the plugin
+// Plugin ID
 $id = "pcaic";
 
-// code version
-$version = "1.8.0";
+$version = "1.10.0";
 
-// ilias min and max version
 $ilias_min_version = "9.0.0";
 $ilias_max_version = "9.999";
 
-// responsible persons and a contact email
 $responsible = "Nadimo Staszak";
 $responsible_mail = "nadimo.staszak@uni-koeln.de";
 

@@ -52,6 +52,8 @@ composer.lock
 
 # Test coverage
 /coverage/
+.phpunit.result.cache
+.php-cs-fixer.cache
 
 # Environment and configuration files
 .env
@@ -95,3 +97,6 @@ conversation_*.json
 ilias_*.log
 /Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent/data/
 /Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent/uploads/
+# Internal working documents (not part of the public repository)
+docs/ENCRYPTION_PLAN.md
+docs/plan_tabs_temperature.md

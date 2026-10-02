@@ -1,675 +1,398 @@
-# AI-Chat PageComponent
+# AI Chat PageComponent for ILIAS 9
 
-### University of Cologne - ILIAS AI Integration
+ILIAS 9 PageComponent plugin for embedding configurable AI chats into ILIAS pages. Each chat has its own system prompt, optional background files and its own settings, so that chats can be designed for a specific teaching purpose (e.g. a tutor for a course topic or an exercise on generative AI).
 
-A ILIAS 9 PageComponent plugin that enables embedding AI-powered chat interfaces directly into learning pages. Each chat instance can be configured with custom system prompts for educational purposes, such as interactive exercises in AI literacy or subject-specific tutoring.
+The plugin talks to OpenAI-compatible chat APIs. KI:connect.nrw and OpenAI are included; further services can be added. Retrieval-Augmented Generation (RAG) is provided by a separate RAG service that can be combined with any of the AI services.
 
-> **🎯 Modular Architecture**: This plugin features a **modular LLM service architecture** that supports multiple AI providers (RAMSES by OSKI.nrw, OpenAI, and easy integration of additional services). Organizations can configure their preferred AI service or add custom integrations.
+Developed by the CompetenceCenter E-Learning, University of Cologne.
+
+## Contents
+
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Updating](#updating)
+- [Configuration (administrators)](#configuration-administrators)
+- [Usage for editors](#usage-for-editors)
+- [Usage for learners](#usage-for-learners)
+- [Permissions](#permissions)
+- [Data protection and data storage](#data-protection-and-data-storage)
+- [How it works](#how-it-works)
+- [Adding an AI service (developers)](#adding-an-ai-service-developers)
+- [Troubleshooting](#troubleshooting)
+- [License and contact](#license-and-contact)
 
 ## Screenshots
 
-### Chat Interface in Action
-![AI Chat Overview](docs/ChatOverview.jpg)
+![Chat interface](docs/ChatOverview.jpg)
+*Chat interface*
 
-*AI chat interface showing conversation flow with multimodal capabilities*
- 
-### Embedded in ILIAS Pages
-![Chat Page Embedded](docs/ChatPageEmbedded.jpg)
- 
-*PageComponent seamlessly integrated into ILIAS learning content*
+![Chat embedded in an ILIAS page](docs/ChatPageEmbedded.jpg)
+*Chat embedded in an ILIAS page*
 
-### Administrative Configuration
-![Chat Settings](docs/ChatSettings.jpg)
- 
-*Comprehensive configuration options for educators*
+![Chat settings](docs/ChatSettings.jpg)
+*Chat settings for editors*
 
-### File Upload & Preview
-![Chat Upload Preview](docs/ChatUploadPreview.jpg)
- 
-*Multimodal file upload with image preview functionality*
+![File upload with preview](docs/ChatUploadPreview.jpg)
+*File upload with preview*
 
 ## Features
 
-### Core Functionality
-- **Multiple AI Chats per Page**: Embed unlimited AI chat instances on a single ILIAS page
-- **Custom System Prompts**: Configure each chat with specific educational contexts and roles
-- **Multimodal Support**: Full support for text, images, and PDF document analysis
-- **Background Files**: Upload context documents (text, images, PDFs) that inform AI responses
-- **Session Management**: User-specific chat sessions with message history persistence
-- **Export/Import Support**: Full ILIAS export/import compatibility with chat configurations and background files
-- **Responsive UI**: Modern, accessible interface using ILIAS 9 UI components
+**Chats on ILIAS pages**
+- Any number of chats per page, each with its own configuration
+- Supported page types: container pages (course, group, category, folder), learning modules, wiki pages, blog postings, question pools, SCORM editor pages, content pages, login pages and the imprint
+- Per chat: title, system prompt, disclaimer, online/offline status
+- Optionally includes the visible text of the page as context for the AI
 
-### AI Service Integration
-- **Modular LLM Architecture**: Easy integration of multiple AI service providers
-- **Built-in Services**: Pre-configured support for RAMSES (OSKI.nrw) and OpenAI GPT
-- **Service-Specific Configuration**: Independent settings per AI service (API endpoints, models, capabilities)
-- **Dynamic Model Selection**: Automatic model discovery from AI service APIs
-- **Flexible Routing**: Users can select AI service per chat instance (or enforce global default)
+**AI services**
+- KI:connect.nrw and OpenAI included; any OpenAI-compatible API can be used via the KI:connect.nrw service or added as a separate service
+- Default AI service for all chats, optionally enforced
+- Model list is loaded from the service; administrators choose which models editors may select
+- Default temperature and model per service, optionally enforced; otherwise editors can set them per chat
+- Streaming of responses (can be switched off globally, per service and per chat)
+- Token usage is recorded per response
 
-### Administration & Control
-- **Global Configuration**: Administrator limits override local chat settings
-- **Real-time Validation**: Limits with live feedback (character limits, upload limits)
-- **Session Detection**: Automatic ILIAS session validation with user-friendly expiration handling
-- **File Processing Pipeline**: Automatic image optimization, PDF-to-image conversion, multimodal AI integration
-- **Production Ready**: Comprehensive logging, error handling, and security measures
+**Files**
+- Background files per chat (added by editors) and file uploads in the chat (by learners, can be switched off)
+- Text files (TXT, CSV) are passed to the AI as text
+- Images (JPG, PNG, GIF, WebP) are compressed and sent to the AI as images
+- PDFs are converted page by page into images (configurable number of pages)
+- File handling can be switched off globally or per service; allowed file types and size limits are configurable
+
+**RAG (Retrieval-Augmented Generation)**
+- Separate RAG service, usable with every AI service
+- Files are stored in the RAG; for each question only the relevant excerpts are passed to the AI
+- Sources are shown below the answer and as inline references; background files cited as sources can be offered for download
+- Retrieval errors are reported to learners with a clear message
+
+**Conversation**
+- Chat history per user and chat, optionally persistent across visits
+- Configurable number of previous messages sent as context
+- Markdown rendering with code blocks, copying of answers, regenerating the last answer, clearing the chat
+- Light and dark mode
+
+**Operation**
+- Statistics tab listing all chats (sessions, messages, last activity) with actions: open page, set online/offline, clear history, delete chat
+- Daily message limit per user and chat
+- Automatic deletion of inactive sessions after a configurable number of days
+- Optional use by anonymous (not logged-in) users without storing their messages
+- ILIAS export/import and copying of pages including chat configuration and background files
+- German and English user interface
 
 ## Requirements
 
-### System Requirements
-- **ILIAS**: 9.x
-- **PHP**: 8.1 or higher
-- **MySQL**: 8.0 or higher
-- **Web Server**: Apache 2.4+ or Nginx 1.18+
+- ILIAS 9.x
+- PHP 8.1 or higher with `curl`, `gd` and `imagick`
+- MySQL 8.0 or MariaDB (as supported by ILIAS 9)
+- Ghostscript (used by ILIAS to convert PDF pages to images)
+- Access to at least one OpenAI-compatible chat API (e.g. KI:connect.nrw or OpenAI)
+- Optional: a RAG service compatible with the OSKI RAG WebGateway API (see [RAG](#rag-tab))
 
-### Dependencies
-- **AI Service**: Compatible with OpenAI-compatible API endpoints (e.g., RAMSES/OSKI.nrw, OpenAI, custom deployments)
-- **PHP Extensions**: `curl`, `gd`, `imagick` (recommended), `ghostscript` (for PDF processing)
-- **ILIAS ResourceStorage**: For secure file handling (built-in ILIAS 9)
-
-### Optional Dependencies
-- **AIChat Repository Plugin**: Provides enhanced RBAC permission control for AI chat component creation. Without this plugin, all content editors can create AI chat components. Recommended for institutions requiring granular access control.
-
-> **✅ Independent Plugin**: This plugin is **fully independent** and does **not require the AIChat base plugin**. All AI service integration is handled directly within this plugin.
-
-## Permissions & Access Control
-
-### Permission Strategy
-This plugin implements a **two-tier permission system** to control who can add AI chat components to pages:
-
-#### **Tier 1: Enhanced RBAC (Recommended)**
-When the **AIChat Repository Plugin** is installed and active:
-- Uses AIChat's `create_xaic` permission for access control
-- Administrators can precisely control which users/roles can create AI chat components
-- Provides granular permission management through ILIAS's standard role system
-
-#### **Tier 2: Content Editor Fallback**
-When AIChat plugin is **not available**:
-- Falls back to basic `write` permission check
-- Any user with content editing rights can add AI chat components
-- Less granular but ensures functionality for content creators
-
-### Technical Background
-PageComponent plugins cannot integrate directly into ILIAS's standard RBAC system due to technical limitations (only Repository Object plugins support full RBAC integration). This plugin works around this limitation by leveraging the AIChat plugin's existing RBAC implementation when available.
-
-### Security Considerations
-- **Recommended Setup**: Install AIChat plugin even if not directly used, to enable fine-grained permission control
-- **Fallback Risk**: Without AIChat plugin, all content editors can create AI chats - evaluate if this aligns with your institution's AI usage policies
-- **Administrator Control**: Global configuration settings always override individual chat configurations regardless of permission level
+The plugin does not require other ILIAS plugins.
 
 ## Installation
 
-### 1. Download and Extract
-1. Navigate to the root directory of your ILIAS installation
-2. Run the following commands to clone the plugin repository:
-```bash
-mkdir -p Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
-cd Customizing/global/plugins/Services/COPage/PageComponent/
-git clone https://github.com/cce-uzk/AIChatPageComponent.git ./AIChatPageComponent
-cd AIChatPageComponent
-git checkout main
-```
+1. Clone the plugin into the ILIAS directory:
+   ```bash
+   mkdir -p Customizing/global/plugins/Services/COPage/PageComponent
+   cd Customizing/global/plugins/Services/COPage/PageComponent
+   git clone https://github.com/cce-uzk/AIChatPageComponent.git AIChatPageComponent
+   ```
+2. In the ILIAS root directory, rebuild the artifacts and run the setup:
+   ```bash
+   composer du
+   php setup/setup.php update
+   ```
+3. In **Administration > Extending ILIAS > Plugins**, install and activate **AIChatPageComponent**.
+4. Configure at least one AI service (see below).
 
-### 2. Optional Plugin Dependencies
-- **For enhanced RBAC control**: Install the AIChat Repository Plugin before this plugin to enable granular permission management
-- **For basic functionality**: This plugin is self-contained and works without additional plugins (uses fallback permission system)
+The plugin creates its database tables automatically (`pcaic_chats`, `pcaic_sessions`, `pcaic_messages`, `pcaic_attachments`, `pcaic_config`).
 
-### 3. Install Composer Dependencies
-Navigate to the root directory of your ILIAS installation:
+TLS certificates of the AI services and the RAG service are always verified. If a service uses certificates that are not trusted by the system CA store, place the CA bundle as `certs/RAMSES.pem` in the plugin directory. This file is not part of the repository.
+
+## Updating
+
 ```bash
+cd Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
+git pull
+cd <ILIAS root>
 composer du
-npm install
 php setup/setup.php update
 ```
 
-### 4. Database Setup
-The plugin automatically creates required database tables via `sql/dbupdate.php`:
-- `pcaic_chats`: Chat configurations per PageComponent
-- `pcaic_sessions`: User sessions per chat
-- `pcaic_messages`: Messages bound to sessions
-- `pcaic_attachments`: File attachments
-- `pcaic_config`: Plugin-wide configuration settings
+Then run the plugin update in **Administration > Extending ILIAS > Plugins** if ILIAS shows it as pending.
 
-### 5. Install and Activate Plugin
-In ILIAS Administration:
-1. Navigate to **Administration > Extending ILIAS > Plugins**
-2. Find **AIChatPageComponent** in the list
-3. Click **Install**
-4. Click **Activate**
+### Notes on version 1.10.0
 
-## Configuration
+- The processing state of RAG files is now tracked. Files uploaded before this version are checked against the RAG service on the next chat request; files whose processing failed there are uploaded again.
 
-### AI Service Setup
-After plugin activation, configure your preferred AI service(s):
+### Notes on version 1.9.0
 
-1. Navigate to **Administration > Extending ILIAS > Plugins**
-2. Find **AIChatPageComponent** and click **Configure**
+- RAG is now a separate service with its own **RAG** tab. RAG settings of the former RAMSES service (application ID, instance ID, file types) are taken over. The RAG service is only enabled automatically if the former RAMSES URL did not point to the legacy RAMSES host; otherwise enter RAG URL and client key in the RAG tab. Until then, chats work without RAG.
+- The RAMSES service is now labelled **KI:connect.nrw**. Its internal ID (`ramses`) and all settings remain unchanged. Adjust the API URL and token to KI:connect.nrw if you still use the former RAMSES endpoint.
+- When the RAG URL or client key is changed, files are uploaded to the new RAG again on next use.
 
-#### General Configuration Tab
-- **Default AI Service**: Select which service to use by default for new chats
-- **Force Default Service**: Optionally enforce the default service (prevents users from selecting other services)
-- **Default Values**: Configure global defaults for chat instances
-- **File Upload Constraints**: Set limits for file sizes and attachments
+## Configuration (administrators)
 
-#### Service-Specific Configuration
-Each AI service has its own configuration tab:
+Open **Administration > Extending ILIAS > Plugins > AIChatPageComponent > Configure**. The configuration has the following tabs.
 
-##### RAMSES (OSKI.nrw) Tab
-- **Enable Service**: Activate RAMSES for use in chat instances
-- **API Base URL**: Set the base API endpoint (default: `https://ramses-oski.itcc.uni-koeln.de`)
-- **API Token**: Enter your API authentication token
-- **Selected Model**: Choose from available models
-- **Refresh Models**: Fetch latest models from API
-- **Temperature**: Control response randomness (0.0-2.0)
-- **Enable Streaming**: Real-time response streaming
-- **RAG Configuration**: Upload files to RAG collections for efficient retrieval
+### General
 
-##### OpenAI GPT Tab
-- **Enable Service**: Activate OpenAI for use in chat instances
-- **API Base URL**: Set the base API endpoint (default: `https://api.openai.com`)
-- **API Token**: Enter your OpenAI API key
-- **Selected Model**: Choose from available GPT models
-- **Refresh Models**: Fetch latest models from OpenAI API
-- **Temperature**: Control response randomness (0.0-2.0)
-- **Enable Streaming**: Real-time response streaming
+| Setting | Description |
+|---|---|
+| Default system prompt, default disclaimer | Prefilled for new chats |
+| Default character limit | Maximum length of a learner message |
+| Default memory messages | Number of previous messages sent as context |
+| PDF pages processed | Number of pages converted per PDF |
+| Maximum total image data | Upper limit for image data (images, PDF pages) per request to the AI service; further images are omitted and the AI service is told which ones |
+| Enable streaming responses | Global switch for streaming |
+| Max. messages per user/day/chat | Daily limit for logged-in users, `0` = unlimited |
+| Clean up inactive sessions after (days) | Sessions without activity are deleted including messages and attachments, `0` = off |
+| Default AI service / Force default AI service | Service for new chats; if forced, all chats use it and editors cannot choose |
+| Maximum file size, attachments per message, total upload size | Upload limits for chat uploads, checked in the browser and on the server |
+| Enable file handling for AI | Global switch; includes allowed file types and separate switches for background files and chat uploads |
+| Allow anonymous access | Allows use without login (see [Data protection](#data-protection-and-data-storage)) |
 
-### System Requirements Check
-Verify your system has required components:
-```bash
-# Check Ghostscript (for PDF processing)
-gs --version
+### AI service tabs (KI:connect.nrw, OpenAI)
 
-# Check ImageMagick
-identify -version
+Each AI service has its own tab with the same structure:
 
-# Check PHP extensions
-php -m | grep -E "(curl|gd|imagick)"
-```
+| Setting | Description |
+|---|---|
+| Enable service | Makes the service available |
+| API base URL | e.g. `https://chat.kiconnect.nrw/api/v1` or `https://api.openai.com`; URLs with or without `/v1` are accepted |
+| API token | Token of the service |
+| Default model / Force default model | Default model; if forced, editors cannot choose a model |
+| Models available to editors | Models that editors may select per chat (see below) |
+| Default temperature / Force default temperature | Default temperature; if forced, editors cannot change it |
+| Enable streaming | Streaming for this service |
+| Enable file handling | File handling for this service |
+| Allow RAG for this service | Chats of this service may use the RAG service |
 
-## Usage
+Use **Refresh models** below the form to load the model list from the API.
 
-### For Content Creators
+**Models available to editors.** The model endpoints of the APIs do not state whether a model is a chat model. After a refresh, models whose name indicates another purpose (embedding, reranking, speech, image, audio, realtime, transcription, moderation, instruct and codex models) are unchecked; all others are checked. Please verify the selection. New models are added automatically on later refreshes according to the same rule; models that no longer exist are removed. The default model is always available. Chats that use a model which is no longer available fall back to the default model.
 
-#### Adding AI Chats to Pages
-1. Edit any ILIAS page (Course, Learning Module, Wiki, etc.)
-2. Click **Insert > AI Chat**
-3. Configure the chat:
-   - **System Prompt**: Define the AI's role and behavior
-   - **Background Files**: Upload context documents (optional)
+**OpenAI and RAG.** "Allow RAG for this service" is off by default for OpenAI, because the retrieved document excerpts are then sent to OpenAI. Check whether this is permissible for the content concerned before enabling it.
 
-#### Configuration Options
-- **System Prompt**: Customize AI behavior and context
-  ```
-  You are a helpful tutor for organic chemistry. 
-  Help students understand molecular structures and reactions.
-  Always provide clear explanations with examples.
-  ```
-- **Background Files**: Upload supporting materials
-  - Text files (.txt, .md, .csv): Added to AI context
-  - Images (.jpg, .png, .gif, .webp): Visual analysis with automatic optimization
-  - PDFs (.pdf): Converted to images for multimodal analysis (default up to 20 pages)
-- **Memory Limit**: Number of previous messages to remember (default: 10)
-- **Global Overrides**: Administrator settings take precedence over local configuration
+For reasoning models (OpenAI o-series and GPT-5, except the GPT-5 chat variants) no temperature is sent, as these models only accept their default.
 
-### For Students
+### RAG tab
 
-#### Using AI Chats
-1. Navigate to any page containing AI chat components
-2. Type messages in the chat interface with real-time character counter
-3. Upload images or documents for AI analysis (drag & drop supported)
-4. View conversation history with copy/download functionality
-5. Each chat maintains separate user-specific session context
-6. Automatic session validation with user-friendly expiration handling
+The RAG service stores files and retrieves the passages relevant to a question. The answer itself is generated by the AI service of the chat.
 
-#### File Upload Support
-- **Images**: Direct multimodal analysis and discussion
-- **PDFs**: Automatic page-by-page conversion (ghostscript) and AI analysis
-- **Text Files**: Content integration into conversation context
-- **File Persistence**: Uploads survive page reloads and session changes
-- **Preview Support**: Image previews and download links for all file types
+| Setting | Description |
+|---|---|
+| Enable RAG service | RAG is only available if enabled and URL and client key are set |
+| RAG URL | Base URL of the RAG WebGateway |
+| Client key | Tenant-specific key of the RAG. The tenant is derived from the key; tenant ID or name are not entered in the plugin |
+| Application ID, Instance ID | Used to form the collection names within the tenant (converted to numbers internally) |
+| RAG allowed file types | File types uploaded to the RAG; other types are sent to the AI directly |
+| Maximum number of excerpts | Maximum number of passages per question (`top_k`, default 10) |
 
-#### Export/Import
-- **ILIAS Course Export**: AI chat components are automatically included in course exports
-- **Configuration Preservation**: System prompts, settings, and background files are fully preserved
-- **File Integrity**: Background files are exported and re-imported with proper ILIAS ResourceStorage integration
-- **Independent Instances**: Imported chats create new, independent configurations (no shared data with originals)
-- **Cross-Instance Compatibility**: Export from one ILIAS instance, import to another while maintaining full functionality
+The plugin uses the following endpoints of the RAG WebGateway, all with `Authorization: Bearer <client key>`:
 
-## Architecture
+| Endpoint | Purpose |
+|---|---|
+| `POST /v1/rag/upload` | Upload a file into a collection |
+| `POST /v1/rag/delete` | Delete a file |
+| `POST /v1/rag/augmentation` | Retrieve passages for a conversation (no answer generation) |
 
-### Plugin Structure
+If URL or client key are changed, the stored references to RAG files are reset, because the collections belong to the previous RAG or tenant. Background files are then uploaded again automatically when the chat is next used.
+
+### Statistics tab
+
+Lists all chats with page, number of sessions and messages, last activity and RAG usage. Available actions: open the page, set online/offline, clear the chat history (all sessions), delete the chat completely, and delete inactive sessions now.
+
+## Usage for editors
+
+### Adding a chat
+
+1. Edit an ILIAS page.
+2. Insert the **AI Chat** element.
+3. Enter at least a title and a system prompt and save.
+
+### Chat settings
+
+| Section | Setting | Description |
+|---|---|---|
+| General | Chat title, online | Title shown above the chat; offline chats are not shown to learners |
+| AI service | AI service, model, temperature | Only shown if not enforced by the administrator |
+| | System prompt | Role and behaviour of the AI |
+| | Include page context | Passes the visible text of the page to the AI (without embedded files or sub-objects) |
+| Behaviour | Max memory messages, character limit | Context size and maximum message length |
+| | Persistent chat | Keeps the history when learners return |
+| | Enable streaming | Answers appear while they are generated |
+| | Enable chat file uploads | Learners may attach files |
+| Background files | Upload background files | Files available to the AI in every conversation of this chat |
+| | Use RAG mode | Uses the RAG service for the files (see below) |
+| | Show sources, allow source downloads | Only in RAG mode |
+| Legal | Disclaimer | Text shown with the chat |
+
+Settings that the administrator has disabled or enforced are shown as disabled fields.
+
+### Background files with and without RAG
+
+**Without RAG** all background files are sent to the AI with every question: text files as text, images and PDF pages as images. This works well for a few short documents, but increases token usage with every message.
+
+**With RAG** files of the RAG file types are uploaded to the RAG service. For each question only the relevant passages are retrieved and passed to the AI. This is suitable for larger amounts of text. Images and other file types are still sent directly.
+
+In RAG mode:
+- With "Show sources", references such as `[1]` appear in the answer and the sources (file name, pages, excerpt, or link for web sources) are listed below it.
+- With "Allow source downloads", learners can download the cited background files. Access to the file is checked against the read permission of the page.
+- If the RAG finds no relevant passages, the AI answers without them and is instructed not to guess the content of the documents.
+- The RAG processes uploaded files asynchronously; large PDFs can take several minutes. While background files are not yet processed or their processing failed, learners see a note below the answer that the answer may be incomplete.
+- The processing state is queried from the RAG service at most once per minute and chat, triggered by chat requests, so the number of concurrent learners does not increase the load on the RAG service.
+- Files whose processing failed are uploaded again with increasing delay (5 minutes, doubled after each failure, at most 6 hours).
+- Files the RAG service cannot delete yet, because they are still being processed, are deleted later.
+- If the RAG service is not available, learners see the message "Document search is currently unavailable. Please try again later."
+
+## Usage for learners
+
+- Messages are entered in the input field; a counter shows the remaining characters.
+- Depending on the chat settings, files can be attached (images, PDFs, text files).
+- Answers can be copied, the last answer can be regenerated, and the chat can be cleared.
+- Each chat keeps its own history. If the chat is not persistent, the history starts again on each visit.
+- The daily message limit, if set, applies per chat.
+
+## Permissions
+
+- **Adding and editing chats** requires write permission on the object that contains the page. PageComponent plugins cannot have their own RBAC permissions in ILIAS, so every user who can edit the page can add chats.
+- **Using a chat** requires read permission on the object that contains the page. The check is done on the server for every request.
+- **Anonymous users** can only use chats if anonymous access is enabled in the plugin configuration (and the page is accessible to them in ILIAS).
+- **Downloads of source files** are checked against the read permission of the page.
+
+## Data protection and data storage
+
+**Stored in the ILIAS database**
+- Chat configuration per chat
+- Sessions and messages of logged-in users, including token usage and source references
+- File references; the files themselves are stored in the ILIAS Resource Storage
+
+Sessions are deleted automatically after the configured period of inactivity. Administrators can delete histories in the statistics tab.
+
+**Anonymous users** are not stored: the history is kept in the browser only and sent along with each message. File uploads are not available to anonymous users.
+
+**Sent to the AI service** with each message: system prompt, previous messages (up to the configured number), the new message, background files or RAG passages, and the page text if page context is enabled.
+
+**Sent to the RAG service**: background files and chat uploads of the RAG file types, and the conversation for retrieval.
+
+Details on stored, presented, deleted and exported data are listed in [PRIVACY.md](PRIVACY.md).
+
+Institutions should check, for each AI service and RAG service, whether a data processing agreement exists and where the data is processed, and inform users accordingly (e.g. via the disclaimer).
+
+## How it works
+
+### Request flow
+
+1. The browser sends only the chat ID, the message and, if applicable, attachment IDs to `api.php`. All settings are read on the server.
+2. The server checks the ILIAS session, read permission, online status and message limit.
+3. It builds the request: system prompt, page context, background files, recent messages.
+4. Without RAG, the request is sent to the chat API of the AI service.
+5. With RAG, the RAG service first returns the relevant passages and a prompt extended by them (`/v1/rag/augmentation`). This extended conversation is then sent to the AI service. The RAG references `[cit-N]` are converted to `[N+1]` and matched with the returned passages.
+6. The answer is stored with sources and token usage and returned to the browser (as a stream if enabled).
+
+### File processing
+
+| Type | Without RAG | With RAG |
+|---|---|---|
+| TXT, CSV | Content as text (converted to UTF-8) | Uploaded to the RAG if a RAG file type; background files are additionally sent as text, chat uploads only if they are not stored in the RAG |
+| JPG, PNG, GIF, WebP | Compressed via ILIAS flavours, sent as image | Sent as image |
+| PDF | Pages converted to images via ILIAS flavours, sent as images | Uploaded to the RAG; not sent as images (keep `pdf` in the RAG file types) |
+
+### Structure
+
 ```
 AIChatPageComponent/
-├── classes/                      # Core plugin classes
-│   ├── ai/                      # AI service integrations (modular LLM architecture)
-│   │   ├── class.AIChatPageComponentLLM.php              # Abstract base class
-│   │   ├── class.AIChatPageComponentLLMRegistry.php      # Service registry
-│   │   ├── class.AIChatPageComponentRAMSES.php          # RAMSES implementation
-│   │   └── class.AIChatPageComponentOpenAI.php          # OpenAI implementation
-│   ├── platform/                # Configuration bridge
-│   └── class.*.php              # ILIAS integration classes
-├── src/                         # Modern PHP 8+ classes
-│   └── Model/                   # Database models (ChatConfig, ChatSession, ChatMessage, Attachment)
-├── js/                          # Frontend JavaScript (ES6+ with comprehensive JSDoc)
-├── css/                         # Modern CSS with ILIAS 9 UI integration
-├── sql/                         # Database schema (dbupdate.php)
-├── lang/                        # Translations (DE/EN)
-└── vendor/                      # Composer dependencies
+├── api.php                      # Endpoint for the chat frontend
+├── classes/
+│   ├── ai/
+│   │   ├── class.AIChatPageComponentLLM.php          # Base class: message flow, files, RAG flow, model selection
+│   │   ├── class.AIChatPageComponentLLMRegistry.php  # Registered AI services
+│   │   ├── class.AIChatPageComponentRAMSES.php       # KI:connect.nrw (service ID "ramses")
+│   │   ├── class.AIChatPageComponentOpenAI.php       # OpenAI
+│   │   └── class.AIChatPageComponentRAG.php          # RAG service (upload, delete, retrieval)
+│   ├── platform/                                     # Plugin configuration
+│   ├── Statistics/                                   # Statistics tab
+│   └── class.ilAIChatPageComponent*.php              # ILIAS integration (plugin, GUI, config, export/import)
+├── src/Model/                   # ChatConfig, ChatSession, ChatMessage, Attachment
+├── js/, css/, templates/        # Frontend
+├── lang/                        # German and English
+└── sql/dbupdate.php             # Database schema and migrations
 ```
 
-### Modular LLM Architecture
+## Adding an AI service (developers)
 
-The plugin implements a **service registry pattern** for AI provider integration:
+A new service is a class in `classes/ai/` that extends `AIChatPageComponentLLM`. It is then registered in `AIChatPageComponentLLMRegistry::getAvailableServices()`. The configuration tab, service selection and routing are generated automatically.
 
-#### **Key Components**
-- **`AIChatPageComponentLLM`**: Abstract base class defining the service contract
-- **`AIChatPageComponentLLMRegistry`**: Central registry for service discovery and instantiation
-- **Service Implementations**: Each AI service extends the base class with provider-specific logic
+Methods to implement:
 
-#### **Adding New Services**
-New AI services are automatically integrated into:
-- Configuration GUI (dynamic tab generation)
-- Service selectors (admin and user-facing)
-- API routing and message handling
-- No core file modifications required!
+| Method | Purpose |
+|---|---|
+| `getServiceId()`, `getServiceName()`, `getServiceDescription()` | Identification; the ID is used as prefix for configuration keys (`<id>_...`) |
+| `getConfigurationFormInputs()`, `saveConfiguration()`, `getDefaultConfiguration()` | Configuration tab |
+| `getCapabilities()` | Description of supported features |
+| `sendMessagesArray(array $messages, ?array $contextResources)` | Sends the conversation to the API and returns the answer text |
+| `getAllowedFileTypes(bool $ragEnabled)` | Allowed file types |
 
-See the **Development** section below for step-by-step integration guide.
+Optional:
 
-### Database Architecture
-The plugin uses the following table structure with clean separation of concerns:
+| Method | Purpose |
+|---|---|
+| `refreshModels()` | Loads the model list; store it via `storeRefreshedModels()` so that the selection for editors is updated |
+| `supportsStreaming()`, `supportsMultimodal()` | Report capabilities |
+| `setModelOverride()` | Apply the per-chat model (call the parent method first) |
 
-#### **Core Tables**
-- **`pcaic_chats`**: PageComponent configuration (system_prompt, background_files, AI service, limits)
-- **`pcaic_sessions`**: User-specific chat sessions with automatic cleanup
-- **`pcaic_messages`**: Conversation history bound to sessions
-- **`pcaic_attachments`**: File attachments with ILIAS IRSS integration
-- **`pcaic_config`**: Global plugin configuration (per-service settings, admin overrides)
+Conventions:
+- In `sendMessagesArray()`, set `$this->lastResponseUsage` if the API returns token usage.
+- For streaming, write each text fragment as a Server-Sent Event `data: {"type":"chunk","content":"..."}` and return the complete text.
+- Context resources have the kinds `page_context` and `text_file` (text in `content`) as well as `image_file` and `pdf_page` (data URL in `url`).
+- Use `buildAvailableModelsInput()` and `normalizeAvailableModels()` for the model selection for editors.
+- RAG needs no service-specific code: the base class retrieves the passages and calls `sendMessagesArray()`.
 
-#### **API Architecture v2.0**
-- **Backend-Controlled**: All configuration managed server-side
-- **Clean Frontend**: Only sends `chat_id` + `message` + `attachment_ids`
-- **Session Management**: Automatic user session creation and management
-- **Service Routing**: Dynamic LLM selection based on chat configuration
-
-### AI Integration & File Processing
-
-#### **Supported AI Services**
-- **RAMSES (OSKI.nrw)** with RAG support
-- **OpenAI GPT**
-- **Custom Services**: Easy integration of additional providers
-
-#### **Advanced File Processing Pipeline**
-- **Text Files** (txt, md, csv): Direct content integration to system prompt
-- **Images** (jpg, png, gif, webp): ILIAS Flavours compression → Base64 → Multimodal AI
-- **PDFs**: Ghostscript page-wise conversion → PNG images → Base64 → Multimodal AI
-- **Optimization**: Size limits (default: 15MB image data, 20 pages per PDF), automatic compression
-- **Error Handling**: Fallbacks for failed conversions, graceful degradation
-
-## Development
-
-### Code Standards
-- **PHP 8.1+** with strict types and modern features
-- **PSR-4** autoloading via Composer
-- **ILIAS 9** UI components and services
-- **Comprehensive PHPDoc documentation** for all classes and methods
-- **Comprehensive JSDoc documentation** for all JavaScript functions
-- **Professional error handling** with session validation and user feedback
-- **Comprehensive logging** with structured context
-
----
-
-### 🚀 Adding New AI Services (LLM Providers)
-
-The plugin's modular architecture makes it easy to integrate new AI providers. Follow these steps:
-
-#### **Step 1: Create Service Class**
-
-Create a new PHP class in `classes/ai/` extending `AIChatPageComponentLLM`:
-
-```php
-<?php declare(strict_types=1);
-
-namespace ai;
-
-/**
- * Example AI Service Implementation
- *
- * @author Your Name <your.email@example.com>
- */
-class AIChatPageComponentExample extends AIChatPageComponentLLM
-{
-    // Service Metadata
-    public static function getServiceId(): string
-    {
-        return 'example';
-    }
-
-    public static function getServiceName(): string
-    {
-        return 'Example AI';
-    }
-
-    public static function getServiceDescription(): string
-    {
-        return 'Example AI Service';
-    }
-
-    // Configuration Management
-    public function getConfigurationFormInputs(): array
-    {
-        $ui_factory = $this->getDIC()->ui()->factory();
-        $plugin = \ilAIChatPageComponentPlugin::getInstance();
-        $inputs = [];
-
-        // Enable Service Checkbox
-        $enabled = \platform\AIChatPageComponentConfig::get('example_service_enabled') ?: '0';
-        $inputs['example_service_enabled'] = $ui_factory->input()->field()->checkbox(
-            $plugin->txt('config_service_enabled'),
-            $plugin->txt('config_service_enabled_info')
-        )->withValue($enabled === '1');
-
-        // API URL
-        $api_url = \platform\AIChatPageComponentConfig::get('example_api_url') ?: 'https://example.com';
-        $inputs['example_api_url'] = $ui_factory->input()->field()->text(
-            $plugin->txt('config_api_url'),
-            $plugin->txt('config_api_url_info')
-        )->withValue($api_url);
-
-        // API Token (Password field)
-        $inputs['example_api_token'] = $ui_factory->input()->field()->password(
-            $plugin->txt('config_api_token'),
-            $plugin->txt('config_api_token_info')
-        )->withRequired(true);
-
-        // Model Selection (with cached models from API)
-        $selected_model = \platform\AIChatPageComponentConfig::get('example_selected_model');
-        $cached_models = \platform\AIChatPageComponentConfig::get('example_cached_models');
-
-        if (is_array($cached_models) && !empty($cached_models)) {
-            $model_options = $cached_models; // ['example-1-alpha' => 'Example 1 Alpha']
-
-            $select_field = $ui_factory->input()->field()->select(
-                $plugin->txt('config_selected_model'),
-                $model_options,
-                $plugin->txt('config_selected_model_info')
-            )->withRequired(true);
-
-            if ($selected_model && isset($model_options[$selected_model])) {
-                $select_field = $select_field->withValue($selected_model);
-            }
-
-            $inputs['example_selected_model'] = $select_field;
-        }
-
-        // Add more service-specific fields as needed...
-
-        return $inputs;
-    }
-
-    public function saveConfiguration(array $formData): void
-    {
-        foreach ($formData as $key => $value) {
-            // Handle Password objects
-            if ($value instanceof \ILIAS\Data\Password) {
-                $value = $value->toString();
-            }
-
-            // Save to config
-            \platform\AIChatPageComponentConfig::set($key, $value);
-        }
-    }
-
-    public static function getDefaultConfiguration(): array
-    {
-        return [
-            'example_service_enabled' => '1',
-            'example_api_url' => 'https://example.com',
-            'example_selected_model' => 'example-1-alpha',
-            'example_streaming_enabled' => '1',
-            'example_file_handling_enabled' => '1',
-        ];
-    }
-
-    // Service Capabilities
-    public function getCapabilities(): array
-    {
-        return [
-            'streaming' => true,
-            'rag' => false,  // Set to true if your service supports RAG
-            'multimodal' => true,
-            'file_types' => ['pdf'],
-            'max_tokens' => 200000,
-        ];
-    }
-
-    // Message Sending Implementation
-    public function sendMessage(string $message, array $context = []): array
-    {
-        // Implement your service's API call here
-        // Return format: ['content' => 'AI response', 'model' => 'model-id']
-
-        $api_url = \platform\AIChatPageComponentConfig::get('example_api_url');
-        $api_token = \platform\AIChatPageComponentConfig::get('example_api_token');
-        $model = \platform\AIChatPageComponentConfig::get('example_selected_model');
-
-        // Build request payload according to your API spec
-        $payload = [
-            'model' => $model,
-            'messages' => $context,
-            'max_tokens' => 4096,
-        ];
-
-        // Make API call (use your service's endpoint and format)
-        $response = $this->makeApiCall($api_url . '/v1/messages', $api_token, $payload);
-
-        return [
-            'content' => $response['content'][0]['text'] ?? '',
-            'model' => $model
-        ];
-    }
-
-    // Optional: Implement streaming if supported
-    public function sendMessageStreaming(string $message, array $context = []): void
-    {
-        // Implement Server-Sent Events (SSE) streaming
-        // Similar to sendMessage but with chunk-by-chunk output
-    }
-
-    // Helper method for API calls
-    private function makeApiCall(string $url, string $token, array $payload): array
-    {
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: application/json',
-            'x-api-key: ' . $token,  // Adjust header based on your API
-            'example-version: 2026-01-01'  // API version
-        ]);
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($httpCode !== 200) {
-            throw new \Exception("API error: HTTP $httpCode");
-        }
-
-        return json_decode($response, true);
-    }
-}
-```
-
-#### **Step 2: Register Service**
-
-Add your service to the registry in `classes/ai/class.AIChatPageComponentLLMRegistry.php`:
-
-```php
-public static function getAvailableServices(): array
-{
-    return [
-        'ramses' => AIChatPageComponentRAMSES::class,
-        'openai' => AIChatPageComponentOpenAI::class,
-        'example' => AIChatPageComponentExample::class,  // <-- Add this line!
-    ];
-}
-```
-
-#### **Step 3: Update Composer Autoloader**
-
-Regenerate the Composer autoloader from your ILIAS root:
+After adding a class, regenerate the plugin autoloader in the plugin directory:
 
 ```bash
 composer dump-autoload
 ```
 
-#### **Step 4: Add Language Variables** *(Optional)*
+The implementations of KI:connect.nrw and OpenAI can serve as templates.
 
-If you need service-specific language strings, add them to `lang/ilias_en.lang` and `lang/ilias_de.lang`:
+### Tests and code style
 
+Unit tests (PHPUnit 9.5, as used by ILIAS 9) cover the RAG helpers and the model selection. They run without an ILIAS installation:
+
+```bash
+cd Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
+<path to>/phpunit -c phpunit.xml
 ```
-example_service#:#Example AI Service
+
+The code follows the ILIAS [PHP coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_9/docs/development/php-coding-style.md) (PSR-12 with ILIAS additions) and the [JavaScript coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_9/docs/development/js-coding-style.md). Checks from the ILIAS root directory:
+
+```bash
+libs/composer/vendor/bin/php-cs-fixer fix --dry-run --diff --config=./CI/PHP-CS-Fixer/code-format.php_cs <plugin directory>
+node_modules/.bin/eslint -c .eslintrc.json --no-eslintrc <plugin directory>/js/ai_chat.js
 ```
-
-#### **That's It! ✅**
-
-Your new AI service is now:
-- ✅ Available in **Administration > Configuration > Example AI Tab**
-- ✅ Selectable in **AI Service dropdowns** (General Config & Chat Settings)
-- ✅ Automatically **routed** in `api.php` for message handling
-- ✅ Fully **integrated** into the plugin ecosystem
-
-#### **Testing Your Service**
-
-1. Navigate to plugin configuration
-2. Enable your new service in its configuration tab
-3. Set it as the default AI service
-4. Create a new chat component and send a message
-5. Monitor logs for debugging: `/var/www/logs/ilias.log`
-
-#### **Best Practices**
-
-- **Error Handling**: Always catch and log API errors gracefully
-- **Logging**: Use `$this->logger->info()` for debugging
-- **Validation**: Validate all inputs and API responses
-- **Configuration**: Follow the same patterns as existing services (RAMSES/OpenAI)
-- **Capabilities**: Accurately report what your service supports
-- **API Compatibility**: Use OpenAI-compatible formats when possible for easier integration
-
----
-
-## Security
-
-This plugin implements comprehensive security measures:
-- **Input Validation**: All user inputs are validated and sanitized
-- **File Upload Security**: MIME type validation and size limits
-- **SQL Injection Prevention**: Prepared statements throughout
-- **XSS Protection**: Proper output encoding
-- **Access Control**: Integration with ILIAS permission system
-- **Secure Logging**: Sensitive data excluded from logs
 
 ## Troubleshooting
 
-### Common Issues
+| Symptom | Cause and solution |
+|---|---|
+| "An internal error occurred" | See the ILIAS log (component `pcaic`) for the cause, e.g. invalid token or unavailable model |
+| "The AI service is currently busy or unavailable" | The AI service returned HTTP 429, 502, 503 or 504, e.g. because of a limit on concurrent requests |
+| "Document search is currently unavailable" | The RAG service returned a server error or was not reachable; the log contains the HTTP status and response |
+| Files are not uploaded to the RAG, log shows HTTP 413 | Upload limit of a proxy in front of the RAG (e.g. `client_max_body_size` / `nginx.ingress.kubernetes.io/proxy-body-size`) |
+| Learners see "Some background files have not been processed yet" | Processing in the RAG service is still running or has failed. The log (component `pcaic`) contains the error reported by the RAG service; failed files are uploaded again automatically |
+| Text files are rejected by the RAG | The OSKI RAG WebGateway currently only accepts TXT/CSV files with ASCII characters |
+| Model list is empty | Check URL and token, then use "Refresh models" |
+| API token field is empty after opening a service tab | Enter the token again before saving |
+| PDFs are not processed | Check that Ghostscript and the PHP extension `imagick` are installed |
+| Chat element is not available in the page editor | Check that the plugin is active and the page type is supported |
 
-#### Plugin Not Visible
-- Ensure AIChat plugin is installed and activated
-- Check ILIAS permissions for PageComponent access
-- Verify PHP version compatibility (8.1+)
-- Ensure database tables were created via dbupdate.php
+## License and contact
 
-#### File Upload Failures
-```bash
-# Check PHP upload settings
-php -i | grep -E "(upload_max_filesize|post_max_size|max_file_uploads)"
+GNU General Public License v3.0, the same license as ILIAS. See [LICENSE](LICENSE).
 
-# Verify directory permissions
-ls -la /var/www/html/ilias/data/
-```
-
-#### AI Response Errors
-- Check OSKI.nrw endpoint connectivity
-- Verify API token in plugin configuration
-- Review ILIAS logs: `/var/www/logs/ilias.log`
-- Check plugin debug logs for detailed error information
-- Ensure selected model exists in OSKI.nrw API response
-
-#### Session Expiration Issues
-- Plugin automatically detects ILIAS session expiration
-- Users receive user-friendly session expired messages
-- No data loss - messages are preserved until proper logout
-
-### Log Locations
-- **ILIAS Component Log**: Component-specific logging (`comp.pcaic`)
-- **Application Log**: ILIAS data directory logs
-- **Debug Log**: Plugin directory `debug.log` (development)
-
-## License
-
-This project is licensed under the GPL-3.0 License - see the [LICENSE](LICENSE) file for details.
-
-## Credits
-- **Development**: University of Cologne, CompetenceCenter E-Learning
-- **AI Service**: [OSKI.nrw](https://oski.nrw/) by Ruhr-University Bochum and University of Cologne
-
-## Support
-
-For support and questions:
-- Create an issue in this repository
-- Contact: [nadimo.staszak@uni-koeln.de]
-
----
-
-## Customization for External Use
-
-### Using with Existing AI Services
-
-This plugin works out-of-the-box with:
-
-1. **RAMSES (OSKI.nrw)**: Pre-configured RAMSES Service API
-2. **OpenAI GPT**: Pre-configured for OpenAI Service API
-3. **OpenAI-Compatible Services**: Any service with OpenAI-compatible endpoints
-
-#### Configuration Steps
-1. Navigate to plugin configuration
-2. Select your AI service tab (RAMSES or OpenAI)
-3. Enter your API endpoint and token
-4. Test connection by refreshing models
-5. Set as default service in General Configuration
-
-### Integrating Custom AI Services
-
-To add your organization's AI service:
-
-1. **Check API Compatibility**: Ensure your service provides OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/models`)
-2. **Create Service Class**: Follow the detailed guide in the **Development** section above
-3. **Register Service**: Add to `LLMRegistry::getAvailableServices()`
-4. **Configure**: Set API URL, token, and model selection
-5. **Test**: Verify message sending and file handling work correctly
-
-### Requirements for Custom Services
-
-Your AI service should provide:
-- **Chat Completions Endpoint**: `POST /v1/chat/completions`
-  - Accept messages array in OpenAI format
-  - Support system/user/assistant roles
-  - Return JSON with `choices[0].message.content`
-- **Models Endpoint**: `GET /v1/models` *(optional, for auto-discovery)*
-  - Return array of available models
-  - Format: `{data: [{id: 'model-id', name: 'Model Name'}]}`
-- **Authentication**: Bearer token via `Authorization` header
-- **Multimodal Support**: *(optional)* Accept `image_url` content types for file analysis
-
-### File Processing Compatibility
-
-- **Ghostscript**: Required for PDF processing (`gs --version`)
-- **ImageMagick**: Recommended for image optimization (`identify -version`)
-- **PHP Extensions**: Ensure `curl`, `gd`, and `imagick` are enabled
-
-### Support & Community
-
-For integration assistance:
-- Review existing service implementations (RAMSES, OpenAI) as templates
-- Check comprehensive code documentation in abstract base class
-- Create issues for bugs or feature requests
-- Contact: nadimo.staszak@uni-koeln.de
+Developed by the CompetenceCenter E-Learning, University of Cologne.
+Issues and questions: [GitHub issues](https://github.com/cce-uzk/AIChatPageComponent/issues) or nadimo.staszak@uni-koeln.de.

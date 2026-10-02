@@ -1,26 +1,27 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 use ILIAS\Plugin\pcaic\Model\ChatConfig;
 use ILIAS\Plugin\pcaic\Model\Attachment;
 
 /**
- * AIChatPageComponent Importer
+ * Import of chats: creates a new chat with its own chat ID and background files
  *
- * Imports AI chat PageComponent configurations and associated files during
- * ILIAS content import operations. Handles deserialization of chat settings,
- * background files, and recreation of all configuration options from XML.
+ * Missing values of older export files are filled with defaults.
  *
- * Import process:
- * 1. Parse XML and upload background files to IRSS
- * 2. Create new ChatConfig with unique chat_id
- * 3. Create Attachment records for background files
- * 4. Update PageComponent properties with new references
- *
- * Supports backward compatibility with older export formats by providing
- * sensible defaults for missing configuration values.
- *
- * @author  Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * @version 1.1
+ * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
 {
@@ -42,9 +43,7 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
     }
 
     /**
-     * Import PageComponent data from XML representation.
-     *
-     * @throws ilImportException On import failure
+     * @throws ilImportException
      */
     public function importXmlRepresentation(string $a_entity, string $a_id, string $a_xml, ilImportMapping $a_mapping): void
     {
@@ -56,18 +55,18 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
                 throw new Exception('Invalid XML structure');
             }
 
-            $mappedId = self::getPCMapping($a_id, $a_mapping);
+            $mapped_id = self::getPCMapping($a_id, $a_mapping);
 
             $this->importBackgroundFiles($xml, $a_mapping);
-            $newChatId = $this->createChatFromImport($xml, $a_mapping);
-            $this->updatePageComponentProperties($mappedId, $xml, $newChatId);
+            $new_chat_id = $this->createChatFromImport($xml, $a_mapping);
+            $this->updatePageComponentProperties($mapped_id, $xml, $new_chat_id);
 
             $DIC->logger()->pcaic()->info('Import completed', [
                 'entity' => $a_entity,
                 'original_id' => $a_id,
-                'mapped_id' => $mappedId,
-                'new_chat_id' => $newChatId,
-                'schema' => (string)($xml['schema_version'] ?? 'unknown')
+                'mapped_id' => $mapped_id,
+                'new_chat_id' => $new_chat_id,
+                'schema' => (string) ($xml['schema_version'] ?? 'unknown')
             ]);
 
         } catch (Exception $e) {
@@ -81,7 +80,7 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
     }
 
     /**
-     * Upload background files from export package to IRSS and create resource mappings.
+     * Store the exported background files in the IRSS and map old to new resource IDs
      */
     private function importBackgroundFiles(\SimpleXMLElement $xml, ilImportMapping $a_mapping): void
     {
@@ -92,27 +91,27 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
         global $DIC;
         $irss = $DIC->resourceStorage();
 
-        foreach ($xml->chat_config->background_files->file as $fileXml) {
-            $originalPath = (string)$fileXml['original_path'];
-            $filename = (string)$fileXml['filename'];
+        foreach ($xml->chat_config->background_files->file as $file_xml) {
+            $original_path = (string) $file_xml['original_path'];
+            $filename = (string) $file_xml['filename'];
 
-            $importFile = $this->findImportFile($filename);
-            if (!$importFile) {
+            $import_file = $this->findImportFile($filename);
+            if (!$import_file) {
                 $DIC->logger()->pcaic()->warning('Import: Background file not found', [
                     'filename' => $filename,
-                    'original_path' => $originalPath
+                    'original_path' => $original_path
                 ]);
                 continue;
             }
 
             try {
-                $stream = \ILIAS\Filesystem\Stream\Streams::ofResource(fopen($importFile, 'r'));
+                $stream = \ILIAS\Filesystem\Stream\Streams::ofResource(fopen($import_file, 'r'));
                 $stakeholder = new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder();
                 $identifier = $irss->manage()->stream($stream, $stakeholder, $filename);
 
-                if (isset($fileXml['resource_id'])) {
-                    $oldResourceId = (string)$fileXml['resource_id'];
-                    $a_mapping->addMapping('Services/ResourceStorage', 'resource_id', $oldResourceId, $identifier->serialize());
+                if (isset($file_xml['resource_id'])) {
+                    $old_resource_id = (string) $file_xml['resource_id'];
+                    $a_mapping->addMapping('Services/ResourceStorage', 'resource_id', $old_resource_id, $identifier->serialize());
                 }
 
                 $DIC->logger()->pcaic()->info('Import: Background file uploaded', [
@@ -129,32 +128,26 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
         }
     }
 
-    /**
-     * Locate file in import directory structure.
-     */
     private function findImportFile(string $filename): ?string
     {
-        $importDir = $this->getImportDirectory();
+        $import_dir = $this->getImportDirectory();
 
-        $searchPaths = [
-            $importDir . '/AIChatPageComponent/' . $filename,
-            $importDir . '/ai_chat_page_component/' . $filename,
-            $importDir . '/background_files/' . $filename,
-            $importDir . '/' . $filename
+        $search_paths = [
+            $import_dir . '/AIChatPageComponent/' . $filename,
+            $import_dir . '/ai_chat_page_component/' . $filename,
+            $import_dir . '/background_files/' . $filename,
+            $import_dir . '/' . $filename
         ];
 
-        foreach ($searchPaths as $path) {
+        foreach ($search_paths as $path) {
             if (file_exists($path)) {
                 return $path;
             }
         }
 
-        return $this->recursiveFileSearch($importDir, $filename);
+        return $this->recursiveFileSearch($import_dir, $filename);
     }
 
-    /**
-     * Recursively search directory tree for file.
-     */
     private function recursiveFileSearch(string $dir, string $filename): ?string
     {
         if (!is_dir($dir)) {
@@ -175,70 +168,58 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
     }
 
     /**
-     * Create new ChatConfig from imported XML data.
-     *
-     * Applies sensible defaults for missing values to ensure backward
-     * compatibility with older export formats.
+     * Create the chat configuration; missing values of older export files get defaults
      */
     private function createChatFromImport(\SimpleXMLElement $xml, ilImportMapping $a_mapping): string
     {
         global $DIC;
 
-        $newChatId = 'chat_' . uniqid() . '.' . time();
+        $new_chat_id = 'chat_' . uniqid() . '.' . time();
 
         if (!isset($xml->chat_config)) {
             $DIC->logger()->pcaic()->warning('Import: No chat_config in XML');
-            return $newChatId;
+            return $new_chat_id;
         }
 
         $cfg = $xml->chat_config;
-        $newChat = new ChatConfig($newChatId);
+        $new_chat = new ChatConfig($new_chat_id);
 
-        // Text fields with empty string defaults
-        $newChat->setTitle(isset($cfg->title) ? (string)$cfg->title : '');
-        $newChat->setSystemPrompt(isset($cfg->system_prompt) ? (string)$cfg->system_prompt : '');
-        $newChat->setAiService(isset($cfg->ai_service) ? (string)$cfg->ai_service : 'ramses');
+        $new_chat->setTitle(isset($cfg->title) ? (string) $cfg->title : '');
+        $new_chat->setSystemPrompt(isset($cfg->system_prompt) ? (string) $cfg->system_prompt : '');
+        $new_chat->setAiService(isset($cfg->ai_service) ? (string) $cfg->ai_service : 'ramses');
 
-        // Numeric fields with sensible defaults
-        $newChat->setMaxMemory(isset($cfg->max_memory) ? (int)(string)$cfg->max_memory : 10);
-        $newChat->setCharLimit(isset($cfg->char_limit) ? (int)(string)$cfg->char_limit : 2000);
+        $new_chat->setMaxMemory(isset($cfg->max_memory) ? (int) (string) $cfg->max_memory : 10);
+        $new_chat->setCharLimit(isset($cfg->char_limit) ? (int) (string) $cfg->char_limit : 2000);
 
-        // Boolean flags with appropriate defaults
-        $newChat->setPersistent(isset($cfg->persistent) ? (string)$cfg->persistent === '1' : true);
-        $newChat->setIncludePageContext(isset($cfg->include_page_context) ? (string)$cfg->include_page_context === '1' : true);
-        $newChat->setEnableChatUploads(isset($cfg->enable_chat_uploads) ? (string)$cfg->enable_chat_uploads === '1' : false);
-        $newChat->setEnableStreaming(isset($cfg->enable_streaming) ? (string)$cfg->enable_streaming === '1' : true);
-        $newChat->setEnableRag(isset($cfg->enable_rag) ? (string)$cfg->enable_rag === '1' : false);
-        $newChat->setShowSources(isset($cfg->show_sources) ? (string)$cfg->show_sources === '1' : true);
-        $newChat->setAllowSourceDownloads(isset($cfg->allow_source_downloads) ? (string)$cfg->allow_source_downloads === '1' : true);
+        $new_chat->setPersistent(isset($cfg->persistent) ? (string) $cfg->persistent === '1' : true);
+        $new_chat->setIncludePageContext(isset($cfg->include_page_context) ? (string) $cfg->include_page_context === '1' : true);
+        $new_chat->setEnableChatUploads(isset($cfg->enable_chat_uploads) ? (string) $cfg->enable_chat_uploads === '1' : false);
+        $new_chat->setEnableStreaming(isset($cfg->enable_streaming) ? (string) $cfg->enable_streaming === '1' : true);
+        $new_chat->setEnableRag(isset($cfg->enable_rag) ? (string) $cfg->enable_rag === '1' : false);
+        $new_chat->setShowSources(isset($cfg->show_sources) ? (string) $cfg->show_sources === '1' : true);
+        $new_chat->setAllowSourceDownloads(isset($cfg->allow_source_downloads) ? (string) $cfg->allow_source_downloads === '1' : true);
 
-        // Optional disclaimer
         if (isset($cfg->disclaimer)) {
-            $newChat->setDisclaimer((string)$cfg->disclaimer);
+            $new_chat->setDisclaimer((string) $cfg->disclaimer);
         }
 
-        $newChat->save();
+        $new_chat->save();
 
-        $backgroundFilesCount = $this->createBackgroundFileAttachments($newChatId, $xml, $a_mapping);
+        $background_files_count = $this->createBackgroundFileAttachments($new_chat_id, $xml, $a_mapping);
 
         $DIC->logger()->pcaic()->info('Import: Chat configuration created', [
-            'new_chat_id' => $newChatId,
-            'title' => $newChat->getTitle(),
-            'background_files_count' => $backgroundFilesCount
+            'new_chat_id' => $new_chat_id,
+            'title' => $new_chat->getTitle(),
+            'background_files_count' => $background_files_count
         ]);
 
-        return $newChatId;
+        return $new_chat_id;
     }
 
     /**
-     * Create Attachment records for imported background files.
-     *
-     * Background files are stored in pcaic_attachments with background_file=1
-     * and linked to the chat via chat_id.
-     *
-     * @return int Number of attachments created
+     * @return int Number of created attachments
      */
-    private function createBackgroundFileAttachments(string $chatId, \SimpleXMLElement $xml, ilImportMapping $a_mapping): int
+    private function createBackgroundFileAttachments(string $chat_id, \SimpleXMLElement $xml, ilImportMapping $a_mapping): int
     {
         global $DIC;
 
@@ -247,24 +228,24 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
         }
 
         $count = 0;
-        $userId = $DIC->user()->getId();
+        $user_id = $DIC->user()->getId();
 
-        foreach ($xml->chat_config->background_files->file as $fileXml) {
-            $oldResourceId = (string)$fileXml['resource_id'];
-            $newResourceId = $a_mapping->getMapping('Services/ResourceStorage', 'resource_id', $oldResourceId);
+        foreach ($xml->chat_config->background_files->file as $file_xml) {
+            $old_resource_id = (string) $file_xml['resource_id'];
+            $new_resource_id = $a_mapping->getMapping('Services/ResourceStorage', 'resource_id', $old_resource_id);
 
-            if (!$newResourceId) {
+            if (!$new_resource_id) {
                 $DIC->logger()->pcaic()->warning('Import: No resource mapping for background file', [
-                    'old_resource_id' => $oldResourceId
+                    'old_resource_id' => $old_resource_id
                 ]);
                 continue;
             }
 
             try {
                 $attachment = new Attachment();
-                $attachment->setChatId($chatId);
-                $attachment->setUserId($userId);
-                $attachment->setResourceId($newResourceId);
+                $attachment->setChatId($chat_id);
+                $attachment->setUserId($user_id);
+                $attachment->setResourceId($new_resource_id);
                 $attachment->setBackgroundFile(true);
                 $attachment->setTimestamp(date('Y-m-d H:i:s'));
                 $attachment->save();
@@ -272,15 +253,15 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
                 $count++;
 
                 $DIC->logger()->pcaic()->debug('Import: Background file attachment created', [
-                    'chat_id' => $chatId,
-                    'resource_id' => $newResourceId,
+                    'chat_id' => $chat_id,
+                    'resource_id' => $new_resource_id,
                     'attachment_id' => $attachment->getId()
                 ]);
 
             } catch (\Exception $e) {
                 $DIC->logger()->pcaic()->error('Import: Failed to create background file attachment', [
-                    'chat_id' => $chatId,
-                    'resource_id' => $newResourceId,
+                    'chat_id' => $chat_id,
+                    'resource_id' => $new_resource_id,
                     'error' => $e->getMessage()
                 ]);
             }
@@ -290,26 +271,26 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
     }
 
     /**
-     * Update PageComponent XML properties with new chat_id reference.
+     * Set the new chat ID in the properties of the page element
      */
-    private function updatePageComponentProperties(string $mappedId, \SimpleXMLElement $xml, string $newChatId): void
+    private function updatePageComponentProperties(string $mapped_id, \SimpleXMLElement $xml, string $new_chat_id): void
     {
         global $DIC;
 
-        $currentProperties = self::getPCProperties($mappedId) ?? [];
+        $current_properties = self::getPCProperties($mapped_id) ?? [];
 
-        $updatedProperties = $currentProperties;
-        $updatedProperties['chat_id'] = $newChatId;
+        $updated_properties = $current_properties;
+        $updated_properties['chat_id'] = $new_chat_id;
 
         if (isset($xml->chat_config->title)) {
-            $updatedProperties['chat_title'] = (string)$xml->chat_config->title;
+            $updated_properties['chat_title'] = (string) $xml->chat_config->title;
         }
 
-        self::setPCProperties($mappedId, $updatedProperties);
+        self::setPCProperties($mapped_id, $updated_properties);
 
         $DIC->logger()->pcaic()->info('Import: PageComponent properties updated', [
-            'mapped_id' => $mappedId,
-            'new_chat_id' => $newChatId
+            'mapped_id' => $mapped_id,
+            'new_chat_id' => $new_chat_id
         ]);
     }
 }

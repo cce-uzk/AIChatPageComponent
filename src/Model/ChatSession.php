@@ -1,166 +1,144 @@
 <?php
 
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
 namespace ILIAS\Plugin\pcaic\Model;
 
 /**
- * Chat session model
- *
- * Represents a user's chat session. Each user-chat combination has its own session
- * that stores message history and activity tracking.
+ * Chat session of a user in a chat, holding the message history
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 class ChatSession
 {
-    private string $sessionId;
-    private string $chatId;
-    private int $userId;
-    private string $sessionName = '';
-    private ?\DateTime $createdAt = null;
-    private ?\DateTime $lastActivity = null;
-    private bool $isActive = true;
+    private string $session_id;
+    private string $chat_id;
+    private int $user_id;
+    private string $session_name = '';
+    private ?\DateTime $created_at = null;
+    private ?\DateTime $last_activity = null;
+    private bool $is_active = true;
 
     /**
-     * Constructor
-     *
-     * @param string|null $sessionId Optional session ID to load existing session
+     * @param string|null $session_id Loads this session if given
      */
-    public function __construct(string $sessionId = null)
+    public function __construct(string $session_id = null)
     {
-        if ($sessionId) {
-            $this->sessionId = $sessionId;
+        if ($session_id) {
+            $this->session_id = $session_id;
             $this->load();
         } else {
-            $this->sessionId = uniqid('session_', true);
-            $this->createdAt = new \DateTime();
-            $this->lastActivity = new \DateTime();
+            $this->session_id = uniqid('session_', true);
+            $this->created_at = new \DateTime();
+            $this->last_activity = new \DateTime();
         }
     }
 
-    /**
-     * Factory method to create new session
-     *
-     * @param int $userId User ID
-     * @param string $chatId Chat ID
-     * @param string $sessionName Optional session name
-     * @return self New ChatSession instance
-     */
-    public static function createForUserAndChat(int $userId, string $chatId, string $sessionName = ''): self
+    public static function createForUserAndChat(int $user_id, string $chat_id, string $session_name = ''): self
     {
         $session = new self();
-        $session->userId = $userId;
-        $session->chatId = $chatId;
-        $session->sessionName = $sessionName;
+        $session->user_id = $user_id;
+        $session->chat_id = $chat_id;
+        $session->session_name = $session_name;
         return $session;
     }
 
     /**
-     * Find active session for user and chat
-     *
-     * Returns the most recently active session for the given user-chat combination.
-     *
-     * @param int $userId User ID
-     * @param string $chatId Chat ID
-     * @return self|null ChatSession instance or null if not found
+     * Most recently active session of the user in the chat
      */
-    public static function findForUserAndChat(int $userId, string $chatId): ?self
+    public static function findForUserAndChat(int $user_id, string $chat_id): ?self
     {
         global $DIC;
         $db = $DIC->database();
 
         $query = "SELECT session_id FROM pcaic_sessions 
-                  WHERE user_id = " . $db->quote($userId, 'integer') . "
-                  AND chat_id = " . $db->quote($chatId, 'text') . "
+                  WHERE user_id = " . $db->quote($user_id, 'integer') . "
+                  AND chat_id = " . $db->quote($chat_id, 'text') . "
                   AND is_active = 1
                   ORDER BY last_activity DESC LIMIT 1";
-        
+
         $result = $db->query($query);
         if ($row = $db->fetchAssoc($result)) {
             return new self($row['session_id']);
         }
-        
+
         return null;
     }
 
     /**
-     * Get existing or create new session
-     *
-     * Retrieves active session for user-chat combination, creates new one if none exists.
-     *
-     * @param int $userId User ID
-     * @param string $chatId Chat ID
-     * @param string $sessionName Optional session name for new sessions
-     * @return self ChatSession instance
+     * Active session of the user in the chat; a new one is created if none exists
      */
-    public static function getOrCreateForUserAndChat(int $userId, string $chatId, string $sessionName = ''): self
+    public static function getOrCreateForUserAndChat(int $user_id, string $chat_id, string $session_name = ''): self
     {
-        $session = self::findForUserAndChat($userId, $chatId);
+        $session = self::findForUserAndChat($user_id, $chat_id);
         if (!$session) {
-            $session = self::createForUserAndChat($userId, $chatId, $sessionName);
+            $session = self::createForUserAndChat($user_id, $chat_id, $session_name);
             $session->save();
         }
         return $session;
     }
 
     /**
-     * Load session data from database
-     *
-     * @return bool True if session was found and loaded, false otherwise
+     * @return bool True if the session was found
      */
     private function load(): bool
     {
         global $DIC;
         $db = $DIC->database();
 
-        $query = "SELECT * FROM pcaic_sessions WHERE session_id = " . $db->quote($this->sessionId, 'text');
+        $query = "SELECT * FROM pcaic_sessions WHERE session_id = " . $db->quote($this->session_id, 'text');
         $result = $db->query($query);
-        
+
         if ($row = $db->fetchAssoc($result)) {
-            $this->chatId = $row['chat_id'];
-            $this->userId = (int)$row['user_id'];
-            $this->sessionName = $row['session_name'] ?? '';
-            $this->createdAt = $row['created_at'] ? new \DateTime($row['created_at']) : null;
-            $this->lastActivity = $row['last_activity'] ? new \DateTime($row['last_activity']) : null;
-            $this->isActive = (bool)$row['is_active'];
-            
+            $this->chat_id = $row['chat_id'];
+            $this->user_id = (int) $row['user_id'];
+            $this->session_name = $row['session_name'] ?? '';
+            $this->created_at = $row['created_at'] ? new \DateTime($row['created_at']) : null;
+            $this->last_activity = $row['last_activity'] ? new \DateTime($row['last_activity']) : null;
+            $this->is_active = (bool) $row['is_active'];
+
             return true;
         }
-        
+
         return false;
     }
 
     /**
-     * Save session to database
-     *
-     * Performs INSERT for new sessions or UPDATE for existing ones.
-     * Automatically updates last_activity timestamp.
-     *
-     * @return bool Always returns true
+     * Insert or update the session and set last_activity to now
      */
     public function save(): bool
     {
         global $DIC;
         $db = $DIC->database();
 
-        $this->lastActivity = new \DateTime();
+        $this->last_activity = new \DateTime();
 
-        $query = "SELECT session_id FROM pcaic_sessions WHERE session_id = " . $db->quote($this->sessionId, 'text');
+        $query = "SELECT session_id FROM pcaic_sessions WHERE session_id = " . $db->quote($this->session_id, 'text');
         $result = $db->query($query);
         $exists = $db->fetchAssoc($result);
 
         $values = [
-            'chat_id' => ['text', $this->chatId],
-            'user_id' => ['integer', $this->userId],
-            'session_name' => ['text', $this->sessionName],
-            'last_activity' => ['timestamp', $this->lastActivity->format('Y-m-d H:i:s')],
-            'is_active' => ['integer', $this->isActive ? 1 : 0]
+            'chat_id' => ['text', $this->chat_id],
+            'user_id' => ['integer', $this->user_id],
+            'session_name' => ['text', $this->session_name],
+            'last_activity' => ['timestamp', $this->last_activity->format('Y-m-d H:i:s')],
+            'is_active' => ['integer', $this->is_active ? 1 : 0]
         ];
 
         if ($exists) {
-            $db->update('pcaic_sessions', $values, ['session_id' => ['text', $this->sessionId]]);
+            $db->update('pcaic_sessions', $values, ['session_id' => ['text', $this->session_id]]);
         } else {
-            $values['session_id'] = ['text', $this->sessionId];
-            $values['created_at'] = ['timestamp', $this->createdAt->format('Y-m-d H:i:s')];
+            $values['session_id'] = ['text', $this->session_id];
+            $values['created_at'] = ['timestamp', $this->created_at->format('Y-m-d H:i:s')];
             $db->insert('pcaic_sessions', $values);
         }
 
@@ -168,94 +146,66 @@ class ChatSession
     }
 
     /**
-     * Delete session from database
-     *
-     * Cascades to associated messages via foreign key constraints.
-     *
-     * @return bool Always returns true
+     * Delete the session row only; messages are not deleted
      */
     public function delete(): bool
     {
         global $DIC;
         $db = $DIC->database();
 
-        $query = "DELETE FROM pcaic_sessions WHERE session_id = " . $db->quote($this->sessionId, 'text');
+        $query = "DELETE FROM pcaic_sessions WHERE session_id = " . $db->quote($this->session_id, 'text');
         $db->manipulate($query);
 
         return true;
     }
 
-    /**
-     * Mark session as inactive
-     *
-     * @return bool Always returns true
-     */
     public function deactivate(): bool
     {
-        $this->isActive = false;
+        $this->is_active = false;
         return $this->save();
     }
 
-    /**
-     * Update last activity timestamp
-     *
-     * @return bool Always returns true
-     */
     public function touch(): bool
     {
-        $this->lastActivity = new \DateTime();
+        $this->last_activity = new \DateTime();
         return $this->save();
     }
 
-    /**
-     * Check if session exists in database
-     *
-     * @return bool True if session exists, false otherwise
-     */
     public function exists(): bool
     {
         global $DIC;
         $db = $DIC->database();
 
-        $query = "SELECT session_id FROM pcaic_sessions WHERE session_id = " . $db->quote($this->sessionId, 'text');
+        $query = "SELECT session_id FROM pcaic_sessions WHERE session_id = " . $db->quote($this->session_id, 'text');
         $result = $db->query($query);
         return $db->fetchAssoc($result) !== null;
     }
 
     /**
-     * Get all messages for this session
-     *
-     * @return ChatMessage[] Array of all messages in chronological order
+     * @return ChatMessage[] All messages in chronological order
      */
     public function getMessages(): array
     {
-        return ChatMessage::getForSession($this->sessionId);
+        return ChatMessage::getForSession($this->session_id);
     }
 
     /**
-     * Get recent messages with limit
-     *
-     * @param int $limit Maximum number of messages to retrieve
-     * @return ChatMessage[] Array of recent messages in chronological order
+     * @return ChatMessage[] The last $limit messages in chronological order
      */
     public function getRecentMessages(int $limit = 10): array
     {
-        return ChatMessage::getRecentForSession($this->sessionId, $limit);
+        return ChatMessage::getRecentForSession($this->session_id, $limit);
     }
 
     /**
-     * Add new message to session
+     * Add a message and update the activity timestamp of the session
      *
-     * Automatically updates session activity timestamp.
-     *
-     * @param string $role Message role (user|assistant|system)
-     * @param string $content Message content
-     * @return ChatMessage The created message object
+     * @param string $role user|assistant|system
      */
     public function addMessage(string $role, string $content): ChatMessage
     {
         $message = new ChatMessage();
-        $message->setSessionId($this->sessionId);
+        $message->setSessionId($this->session_id);
         $message->setRole($role);
         $message->setMessage($content);
         $message->save();
@@ -265,43 +215,66 @@ class ChatSession
         return $message;
     }
 
-    /**
-     * Get chat configuration
-     *
-     * @return ChatConfig|null Chat configuration instance
-     */
     public function getChatConfig(): ?ChatConfig
     {
-        return new ChatConfig($this->chatId);
+        return new ChatConfig($this->chat_id);
     }
 
-    public function getSessionId(): string { return $this->sessionId; }
-    public function getChatId(): string { return $this->chatId; }
-    public function setChatId(string $chatId): void { $this->chatId = $chatId; }
-    public function getUserId(): int { return $this->userId; }
-    public function setUserId(int $userId): void { $this->userId = $userId; }
-    public function getSessionName(): string { return $this->sessionName; }
-    public function setSessionName(string $sessionName): void { $this->sessionName = $sessionName; }
-    public function getCreatedAt(): ?\DateTime { return $this->createdAt; }
-    public function getLastActivity(): ?\DateTime { return $this->lastActivity; }
-    public function isActive(): bool { return $this->isActive; }
-    public function setActive(bool $isActive): void { $this->isActive = $isActive; }
+    public function getSessionId(): string
+    {
+        return $this->session_id;
+    }
+    public function getChatId(): string
+    {
+        return $this->chat_id;
+    }
+    public function setChatId(string $chat_id): void
+    {
+        $this->chat_id = $chat_id;
+    }
+    public function getUserId(): int
+    {
+        return $this->user_id;
+    }
+    public function setUserId(int $user_id): void
+    {
+        $this->user_id = $user_id;
+    }
+    public function getSessionName(): string
+    {
+        return $this->session_name;
+    }
+    public function setSessionName(string $session_name): void
+    {
+        $this->session_name = $session_name;
+    }
+    public function getCreatedAt(): ?\DateTime
+    {
+        return $this->created_at;
+    }
+    public function getLastActivity(): ?\DateTime
+    {
+        return $this->last_activity;
+    }
+    public function isActive(): bool
+    {
+        return $this->is_active;
+    }
+    public function setActive(bool $is_active): void
+    {
+        $this->is_active = $is_active;
+    }
 
-    /**
-     * Convert session to array representation
-     *
-     * @return array Associative array containing all session properties
-     */
     public function toArray(): array
     {
         return [
-            'session_id' => $this->sessionId,
-            'chat_id' => $this->chatId,
-            'user_id' => $this->userId,
-            'session_name' => $this->sessionName,
-            'created_at' => $this->createdAt?->format('Y-m-d H:i:s'),
-            'last_activity' => $this->lastActivity?->format('Y-m-d H:i:s'),
-            'is_active' => $this->isActive
+            'session_id' => $this->session_id,
+            'chat_id' => $this->chat_id,
+            'user_id' => $this->user_id,
+            'session_name' => $this->session_name,
+            'created_at' => $this->created_at?->format('Y-m-d H:i:s'),
+            'last_activity' => $this->last_activity?->format('Y-m-d H:i:s'),
+            'is_active' => $this->is_active
         ];
     }
 }

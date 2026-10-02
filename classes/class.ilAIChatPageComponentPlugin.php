@@ -1,36 +1,43 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 require_once __DIR__ . "/../vendor/autoload.php";
 
 /**
- * ilAIChatPageComponentPlugin
+ * PageComponent plugin for AI chats on ILIAS pages
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
 {
-    /** @var string */
-    const PLUGIN_ID = "pcaic";
+    public const PLUGIN_ID = "pcaic";
 
-    /** @var string */
-    const PLUGIN_NAME = "AIChatPageComponent";
+    /** @var string Session key for cut/paste markers, see onDelete() and onClone() */
+    private const SESSION_CUT_PASTE_OPERATIONS = 'pcaic_cut_paste_operations';
 
-    /** @var string */
-    const CTYPE = "Services";
+    public const PLUGIN_NAME = "AIChatPageComponent";
 
-    /** @var string */
-    const CNAME = "COPage";
+    public const CTYPE = "Services";
 
-    /** @var string */
-    const SLOT_ID = "pgcp";
+    public const CNAME = "COPage";
+
+    public const SLOT_ID = "pgcp";
 
     private static ?self $instance = null;
 
-	/**
-     * Get plugin instance
-     * @return self
-     */
-    public static function getInstance() : self
+    public static function getInstance(): self
     {
         if (!isset(self::$instance)) {
             global $DIC;
@@ -49,62 +56,46 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         return self::$instance;
     }
 
-    /**
-     * Get plugin name
-     * @return string
-     */
-    public function getPluginName() : string
+    public function getPluginName(): string
     {
         return self::PLUGIN_NAME;
     }
 
-    /**
-     * Get plugin id
-     * @return string
-     */
     public static function getPluginId(): string
     {
         return self::PLUGIN_ID;
     }
 
-	/**
-	 * Absolute filesystem directory of this plugin.
-	 * e.g. Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
-	 */
-	public function getPluginBaseDir() : string
-	{
-		return rtrim($this->getDirectory(), '/');
-	}
+    /**
+     * Plugin directory relative to the ILIAS root
+     */
+    public function getPluginBaseDir(): string
+    {
+        return rtrim($this->getDirectory(), '/');
+    }
 
     /**
-	 * Base url of this plugin.
-	 * e.g. https://ilias.example.org/ilias/Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
-	 */
-    public function getPluginBaseUrl() : string
+     * Absolute URL of the plugin directory
+     */
+    public function getPluginBaseUrl(): string
     {
-        $base = rtrim(ILIAS_HTTP_PATH, '/'); // e.g. https://ilias.example.org/ilias
-        $rel  = $this->getPluginBaseDir(); // Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
+        $base = rtrim(ILIAS_HTTP_PATH, '/');
+        $rel = $this->getPluginBaseDir();
 
         return $base . '/' . $rel;
     }
 
     /**
-     * Check if parent type is valid and user has permissions to create AI Chat Page Components
+     * Whether the chat element may be added to a page of this type by the current user
      *
-     * This method checks both the parent object type compatibility and user permissions.
-     * Since PageComponent plugins cannot integrate into ILIAS's standard permission system
-     * (they are not processed as CreatableSubObjects), we fall back to checking permissions
-     * of the AIChat Repository Plugin if it exists, otherwise allow access for content editors.
-     *
-     * @param string $a_parent_type The parent object type (e.g., 'crs', 'lm', 'grp')
-     * @return bool True if the parent type is supported and user has permissions
+     * PageComponent plugins cannot have own RBAC permissions, so write permission on
+     * the object containing the page is required.
      */
-    public function isValidParentType(string $a_parent_type) : bool
+    public function isValidParentType(string $a_parent_type): bool
     {
         global $DIC;
         $logger = $DIC->logger()->pcaic();
 
-        // First check if parent type is supported for AI Chat Page Components
         $supported_types = $this->getParentTypes();
         $logger->debug('parent_type: ' . $a_parent_type);
         if (!in_array($a_parent_type, $supported_types)) {
@@ -112,46 +103,14 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
             return false;
         }
 
-        // Get current parent object reference ID for permission checks
         $parent_ref_id = $this->getCurrentParentRefId();
         if (!$parent_ref_id) {
             $logger->warning("PageComponent access denied: No parent context found");
             return false;
         }
 
-        /** @var ilComponentRepository $component_repository */
-        $component_repository = $DIC['component.repository'];
         $access = $DIC->access();
 
-        // Strategy 1: Check if AIChat Repository Plugin is available and use its permissions
-        /*try {
-            $ai_chat_plugin = $component_repository->getPluginById("xaic");
-
-            if (false && $ai_chat_plugin && $ai_chat_plugin->isActive()) {
-                // AIChat plugin is active - use its creation permission
-                $has_create_access = $access->checkAccess('create_xaic', '', $parent_ref_id);
-
-                if (!$has_create_access) {
-                    $logger->info("PageComponent access denied: User lacks AIChat creation permission", [
-                        'ref_id' => $parent_ref_id,
-                        'parent_type' => $a_parent_type,
-                        'required_permission' => 'create_xaic'
-                    ]);
-                    return false;
-                }
-
-                $logger->debug("PageComponent access granted via AIChat plugin permissions", [
-                    'ref_id' => $parent_ref_id,
-                    'parent_type' => $a_parent_type
-                ]);
-                return true;
-            }
-        } catch (Exception $e) {
-            $logger->debug("AIChat plugin not found or inactive", ['error' => $e->getMessage()]);
-        }*/
-
-        // Strategy 2: Fallback - check if user can edit content (write permission)
-        // This ensures content editors can add AI Chat components even without AIChat plugin
         $has_write_access = $access->checkAccess('write', '', $parent_ref_id);
 
         if (!$has_write_access) {
@@ -170,34 +129,31 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         return true;
     }
 
-    /**
-     * Get current parent object reference ID for permission checks
-     */
     private function getCurrentParentRefId(): ?int
     {
         global $DIC;
         $logger = $DIC->logger()->pcaic();
 
-        // Strategy 1: Direct GET parameter (most common case)
-        if (isset($_GET['ref_id']) && is_numeric($_GET['ref_id'])) {
-            return (int)$_GET['ref_id'];
+        $query = $DIC->http()->wrapper()->query();
+        if ($query->has('ref_id')) {
+            $ref_id = $query->retrieve(
+                'ref_id',
+                $DIC->refinery()->byTrying([
+                    $DIC->refinery()->kindlyTo()->int(),
+                    $DIC->refinery()->always(0)
+                ])
+            );
+            if ($ref_id > 0) {
+                return $ref_id;
+            }
         }
 
-        // Strategy 2: HTTP request object query parameters
-        $request = $DIC->http()->request();
-        $query_params = $request->getQueryParams();
-
-        if (isset($query_params['ref_id']) && is_numeric($query_params['ref_id'])) {
-            return (int)$query_params['ref_id'];
-        }
-
-        // Strategy 3: Extract from page object context
+        // Fall back to the page object
         if (isset($this->page_obj)) {
             try {
                 $parent_id = $this->page_obj->getParentId();
                 $parent_type = $this->page_obj->getParentType();
 
-                // Convert object_id to ref_id based on parent type
                 $ref_id = $this->getRefIdFromObjectId($parent_id, $parent_type);
                 return $ref_id;
             } catch (\Exception $e) {
@@ -209,16 +165,13 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         return null;
     }
 
-    /**
-     * Convert object_id to ref_id for permission checks
-     */
     private function getRefIdFromObjectId(int $obj_id, string $obj_type): ?int
     {
         try {
             $ref_ids = ilObject::_getAllReferences($obj_id);
 
             if (!empty($ref_ids)) {
-                return (int)array_shift($ref_ids);
+                return (int) array_shift($ref_ids);
             }
         } catch (\Exception $e) {
             global $DIC;
@@ -234,27 +187,18 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Handle an event
-     * @param string $a_component
-     * @param string $a_event
-     * @param mixed  $a_parameter
+     * Called when a page element is copied or cut and pasted
+     *
+     * A real copy gets a new chat with its own configuration and background files;
+     * cut and paste keeps the chat.
+     *
+     * @param array $a_properties Properties of the page element, modified for the copy
      */
-    public function handleEvent(string $a_component, string $a_event, $a_parameter) : void
-    {
-        $_SESSION['pcaic_listened_event'] = array('time' => time(), 'event' => $a_event);
-    }
-
-    /**
-     * This function is called when the page content is cloned
-     * @param array  $a_properties     properties saved in the page, (should be modified if neccessary)
-     * @param string $a_plugin_version plugin version of the properties
-     */
-    public function onClone(array &$a_properties, string $a_plugin_version) : void
+    public function onClone(array &$a_properties, string $a_plugin_version): void
     {
         global $DIC;
         $logger = $DIC->logger()->pcaic();
 
-        // Clone additional data if it exists
         if ($additional_data_id = ($a_properties['additional_data_id'] ?? null)) {
             $data = $this->getData($additional_data_id);
             if ($data) {
@@ -263,7 +207,6 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
             }
         }
 
-        // Handle ChatConfig for cloned component
         if (isset($a_properties['chat_id'])) {
             $old_chat_id = $a_properties['chat_id'];
 
@@ -271,36 +214,34 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                 require_once(__DIR__ . '/../src/bootstrap.php');
 
                 $is_cut_paste = $this->isCutPasteOperation($old_chat_id);
-                $oldConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($old_chat_id);
+                $old_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($old_chat_id);
 
-                if ($oldConfig->exists()) {
+                if ($old_config->exists()) {
                     if ($is_cut_paste) {
-                        // Cut/paste: Keep the same chat_id and all data intact
                         $logger->debug("PageComponent moved - preserving chat data");
                     } else {
-                        // Real copy: Create new chat_id and clone all data
                         $new_chat_id = uniqid('chat_', true);
 
-                        $cloned_background_files = $this->cloneBackgroundFiles($oldConfig->getBackgroundFiles());
+                        $cloned_background_files = $this->cloneBackgroundFiles($old_config->getBackgroundFiles());
 
-                        $newConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($new_chat_id);
-                        $newConfig->setPageId($oldConfig->getPageId());
-                        $newConfig->setParentId($oldConfig->getParentId());
-                        $newConfig->setParentType($oldConfig->getParentType());
-                        $newConfig->setTitle($oldConfig->getTitle());
-                        $newConfig->setSystemPrompt($oldConfig->getSystemPrompt());
-                        $newConfig->setAiService($oldConfig->getAiService());
-                        $newConfig->setMaxMemory($oldConfig->getMaxMemory());
-                        $newConfig->setCharLimit($oldConfig->getCharLimit());
-                        $newConfig->setBackgroundFiles($cloned_background_files);
-                        $newConfig->setPersistent($oldConfig->isPersistent());
-                        $newConfig->setIncludePageContext($oldConfig->isIncludePageContext());
-                        $newConfig->setEnableChatUploads($oldConfig->isEnableChatUploads());
-                        $newConfig->setEnableStreaming($oldConfig->isEnableStreaming());
-                        $newConfig->setEnableRag($oldConfig->isEnableRag());
-                        $newConfig->setIsOnline($oldConfig->isOnline());
-                        $newConfig->setDisclaimer($oldConfig->getDisclaimer());
-                        $newConfig->save();
+                        $new_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($new_chat_id);
+                        $new_config->setPageId($old_config->getPageId());
+                        $new_config->setParentId($old_config->getParentId());
+                        $new_config->setParentType($old_config->getParentType());
+                        $new_config->setTitle($old_config->getTitle());
+                        $new_config->setSystemPrompt($old_config->getSystemPrompt());
+                        $new_config->setAiService($old_config->getAiService());
+                        $new_config->setMaxMemory($old_config->getMaxMemory());
+                        $new_config->setCharLimit($old_config->getCharLimit());
+                        $new_config->setBackgroundFiles($cloned_background_files);
+                        $new_config->setPersistent($old_config->isPersistent());
+                        $new_config->setIncludePageContext($old_config->isIncludePageContext());
+                        $new_config->setEnableChatUploads($old_config->isEnableChatUploads());
+                        $new_config->setEnableStreaming($old_config->isEnableStreaming());
+                        $new_config->setEnableRag($old_config->isEnableRag());
+                        $new_config->setIsOnline($old_config->isOnline());
+                        $new_config->setDisclaimer($old_config->getDisclaimer());
+                        $new_config->save();
 
                         $a_properties['chat_id'] = $new_chat_id;
                         $logger->info("PageComponent copied - created new chat configuration", [
@@ -322,21 +263,17 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                     'chat_id' => $old_chat_id,
                     'error' => $e->getMessage()
                 ]);
-                // Leave $a_properties['chat_id'] unchanged so the copy points to
-                // the original config rather than becoming an immediate orphan.
+                // Keep the chat ID: the copy uses the original chat instead of pointing to none
             }
         }
     }
 
     /**
-     * Called after an entire repository object (course, group, …) has been copied.
-     * Works identically to onClone() for real copies: creates a new chat config
-     * so the copied object gets its own independent chat instances.
+     * Called after a repository object (course, group, ...) has been copied
      *
-     * @param array  $a_properties     page component properties (chat_id, chat_title, …)
-     * @param array  $mapping          ref_id mapping from old to new repository objects
-     * @param int    $source_ref_id    ref_id of the source object
-     * @param string $a_plugin_version plugin version string
+     * Like onClone(): the copied object gets its own chats.
+     *
+     * @param array $mapping ref_id mapping from the source to the copied objects
      */
     public function afterRepositoryCopy(
         array &$a_properties,
@@ -356,9 +293,9 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         try {
             require_once(__DIR__ . '/../src/bootstrap.php');
 
-            $oldConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($old_chat_id);
+            $old_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($old_chat_id);
 
-            if (!$oldConfig->exists()) {
+            if (!$old_config->exists()) {
                 $logger->warning("afterRepositoryCopy: source chat config not found", [
                     'chat_id' => $old_chat_id
                 ]);
@@ -366,62 +303,59 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
             }
 
             $new_chat_id = uniqid('chat_', true);
-            $cloned_background_files = $this->cloneBackgroundFiles($oldConfig->getBackgroundFiles());
+            $cloned_background_files = $this->cloneBackgroundFiles($old_config->getBackgroundFiles());
 
-            $newConfig = new \ILIAS\Plugin\pcaic\Model\ChatConfig($new_chat_id);
-            // Page context will be updated on first render via updateChatConfigPageContext()
-            $newConfig->setPageId($oldConfig->getPageId());
-            $newConfig->setParentId($oldConfig->getParentId());
-            $newConfig->setParentType($oldConfig->getParentType());
-            $newConfig->setTitle($oldConfig->getTitle());
-            $newConfig->setSystemPrompt($oldConfig->getSystemPrompt());
-            $newConfig->setAiService($oldConfig->getAiService());
-            $newConfig->setMaxMemory($oldConfig->getMaxMemory());
-            $newConfig->setCharLimit($oldConfig->getCharLimit());
-            $newConfig->setBackgroundFiles($cloned_background_files);
-            $newConfig->setPersistent($oldConfig->isPersistent());
-            $newConfig->setIncludePageContext($oldConfig->isIncludePageContext());
-            $newConfig->setEnableChatUploads($oldConfig->isEnableChatUploads());
-            $newConfig->setEnableStreaming($oldConfig->isEnableStreaming());
-            $newConfig->setEnableRag($oldConfig->isEnableRag());
-            $newConfig->setIsOnline($oldConfig->isOnline());
-            $newConfig->setDisclaimer($oldConfig->getDisclaimer());
-            $newConfig->save();
+            $new_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($new_chat_id);
+            // The page context is updated on first rendering (updateChatConfigPageContext())
+            $new_config->setPageId($old_config->getPageId());
+            $new_config->setParentId($old_config->getParentId());
+            $new_config->setParentType($old_config->getParentType());
+            $new_config->setTitle($old_config->getTitle());
+            $new_config->setSystemPrompt($old_config->getSystemPrompt());
+            $new_config->setAiService($old_config->getAiService());
+            $new_config->setMaxMemory($old_config->getMaxMemory());
+            $new_config->setCharLimit($old_config->getCharLimit());
+            $new_config->setBackgroundFiles($cloned_background_files);
+            $new_config->setPersistent($old_config->isPersistent());
+            $new_config->setIncludePageContext($old_config->isIncludePageContext());
+            $new_config->setEnableChatUploads($old_config->isEnableChatUploads());
+            $new_config->setEnableStreaming($old_config->isEnableStreaming());
+            $new_config->setEnableRag($old_config->isEnableRag());
+            $new_config->setIsOnline($old_config->isOnline());
+            $new_config->setDisclaimer($old_config->getDisclaimer());
+            $new_config->save();
 
             $a_properties['chat_id'] = $new_chat_id;
 
             $logger->info("afterRepositoryCopy: created new chat config for copied object", [
                 'source_chat' => $old_chat_id,
-                'new_chat'    => $new_chat_id,
-                'source_ref'  => $source_ref_id,
+                'new_chat' => $new_chat_id,
+                'source_ref' => $source_ref_id,
             ]);
 
         } catch (\Exception $e) {
             $logger->error("afterRepositoryCopy: cloning failed – keeping original chat_id", [
                 'chat_id' => $old_chat_id,
-                'error'   => $e->getMessage()
+                'error' => $e->getMessage()
             ]);
-            // Do NOT update chat_id – the copy falls back to the original config
-            // rather than pointing to a non-existent one.
+            // Keep the chat ID: the copy uses the original chat instead of pointing to none
         }
     }
 
     /**
-     * This function is called before the page content is deleted
-     * @param array  $a_properties     properties saved in the page (will be deleted afterwards)
-     * @param string $a_plugin_version plugin version of the properties
+     * Called before a page element is deleted
+     *
+     * On cut (move operation) the chat is kept for the following paste.
      */
-    public function onDelete(array $a_properties, string $a_plugin_version, bool $move_operation = false) : void
+    public function onDelete(array $a_properties, string $a_plugin_version, bool $move_operation = false): void
     {
         if ($move_operation) {
-            // Mark cut/paste operation for later detection
             if ($chat_id = ($a_properties['chat_id'] ?? null)) {
                 $this->markCutPasteOperation($chat_id);
             }
             return;
         }
 
-        // Real delete operation - clean up all data
         if ($additional_data_id = ($a_properties['additional_data_id'] ?? null)) {
             $this->deleteData($additional_data_id);
         }
@@ -431,37 +365,10 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         }
     }
 
-    /**
-     * Recursively copy directory (taken from php manual)
-     * @param string $src
-     * @param string $dst
-     */
-    private function rCopy(string $src, string $dst) : void
-    {
-        $dir = opendir($src);
-        if (!is_dir($dst)) {
-            mkdir($dst);
-        }
-        while (false !== ($file = readdir($dir))) {
-            if (($file != '.') && ($file != '..')) {
-                if (is_dir($src . '/' . $file)) {
-                    $this->rCopy($src . '/' . $file, $dst . '/' . $file);
-                } else {
-                    copy($src . '/' . $file, $dst . '/' . $file);
-                }
-            }
-        }
-        closedir($dir);
-    }
-
-    /**
-     * Get additional data by id
-     */
-    public function getData(int $id) : ?string
+    public function getData(int $id): ?string
     {
         global $DIC;
         $db = $DIC->database();
-
 
         $query = "SELECT data FROM pcaic_data WHERE id = " . $db->quote($id, 'integer');
         $result = $db->query($query);
@@ -471,10 +378,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         return null;
     }
 
-    /**
-     * Save new additional data
-     */
-    public function saveData(string $data) : int
+    public function saveData(string $data): int
     {
         global $DIC;
         $db = $DIC->database();
@@ -490,29 +394,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         return $id;
     }
 
-    /**
-     * Update additional data
-     */
-    public function updateData(int $id, string $data) : void
-    {
-        global $DIC;
-        $db = $DIC->database();
-
-        $db->update(
-            'pcaic_data',
-            array(
-                'data' => array('text', $data)
-            ),
-            array(
-                'id' => array('integer', $id)
-            )
-        );
-    }
-
-    /**
-     * Delete additional data
-     */
-    public function deleteData(int $id) : void
+    public function deleteData(int $id): void
     {
         global $DIC;
         $db = $DIC->database();
@@ -522,21 +404,10 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Delete chat and all associated data.
+     * Delete a chat completely: attachments (incl. RAG and Resource Storage), messages,
+     * sessions and configuration
      *
-     * Performs cascading deletion in dependency order:
-     * 1. Attachments (with RAG and IRSS file cleanup)
-     * 2. Messages
-     * 3. Sessions
-     * 4. Chat configuration
-     *
-     * Uses Attachment::delete() for proper cleanup of:
-     * - IRSS stored files
-     * - RAG collection entries
-     * - Database records
-     *
-     * @param string $chat_id Unique chat identifier
-     * @throws ilException On deletion failure
+     * @throws ilException
      */
     public function deleteCompleteChat(string $chat_id): void
     {
@@ -546,41 +417,38 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
 
         $logger->info('Delete: Starting chat deletion', ['chat_id' => $chat_id]);
 
-        $attachmentCount = 0;
-        $ragCount = 0;
+        $attachment_count = 0;
+        $rag_count = 0;
 
         try {
-            // Collect session IDs
-            $sessionIds = [];
+            $session_ids = [];
             $result = $db->query(
                 "SELECT session_id FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text')
             );
             while ($row = $db->fetchAssoc($result)) {
-                $sessionIds[] = $row['session_id'];
+                $session_ids[] = $row['session_id'];
             }
 
-            // Collect message IDs
-            $messageIds = [];
-            if (!empty($sessionIds)) {
-                $quotedSessionIds = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $sessionIds));
-                $result = $db->query("SELECT message_id FROM pcaic_messages WHERE session_id IN ($quotedSessionIds)");
+            $message_ids = [];
+            if (!empty($session_ids)) {
+                $quoted_session_ids = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $session_ids));
+                $result = $db->query("SELECT message_id FROM pcaic_messages WHERE session_id IN ($quoted_session_ids)");
                 while ($row = $db->fetchAssoc($result)) {
-                    $messageIds[] = (int)$row['message_id'];
+                    $message_ids[] = (int) $row['message_id'];
                 }
             }
 
-            // Delete message attachments
-            if (!empty($messageIds)) {
-                $quotedMessageIds = implode(',', array_map(fn($id) => $db->quote($id, 'integer'), $messageIds));
-                $result = $db->query("SELECT id FROM pcaic_attachments WHERE message_id IN ($quotedMessageIds)");
+            if (!empty($message_ids)) {
+                $quoted_message_ids = implode(',', array_map(fn($id) => $db->quote($id, 'integer'), $message_ids));
+                $result = $db->query("SELECT id FROM pcaic_attachments WHERE message_id IN ($quoted_message_ids)");
                 while ($row = $db->fetchAssoc($result)) {
                     try {
-                        $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int)$row['id']);
+                        $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int) $row['id']);
                         if ($attachment->getRAGRemoteFileId()) {
-                            $ragCount++;
+                            $rag_count++;
                         }
                         $attachment->delete();
-                        $attachmentCount++;
+                        $attachment_count++;
                     } catch (\Exception $e) {
                         $logger->warning('Delete: Attachment cleanup failed', [
                             'attachment_id' => $row['id'],
@@ -590,18 +458,18 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                 }
             }
 
-            // Delete chat-level attachments (background files, pending uploads)
+            // Background files and uploads not yet sent
             $result = $db->query(
                 "SELECT id FROM pcaic_attachments WHERE chat_id = " . $db->quote($chat_id, 'text')
             );
             while ($row = $db->fetchAssoc($result)) {
                 try {
-                    $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int)$row['id']);
+                    $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment((int) $row['id']);
                     if ($attachment->getRAGRemoteFileId()) {
-                        $ragCount++;
+                        $rag_count++;
                     }
                     $attachment->delete();
-                    $attachmentCount++;
+                    $attachment_count++;
                 } catch (\Exception $e) {
                     $logger->warning('Delete: Chat attachment cleanup failed', [
                         'attachment_id' => $row['id'],
@@ -610,24 +478,21 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                 }
             }
 
-            // Delete messages
-            if (!empty($sessionIds)) {
-                $quotedSessionIds = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $sessionIds));
-                $db->manipulate("DELETE FROM pcaic_messages WHERE session_id IN ($quotedSessionIds)");
+            if (!empty($session_ids)) {
+                $quoted_session_ids = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $session_ids));
+                $db->manipulate("DELETE FROM pcaic_messages WHERE session_id IN ($quoted_session_ids)");
             }
 
-            // Delete sessions
             $db->manipulate("DELETE FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text'));
 
-            // Delete chat configuration
             $db->manipulate("DELETE FROM pcaic_chats WHERE chat_id = " . $db->quote($chat_id, 'text'));
 
             $logger->info('Delete: Chat deleted successfully', [
                 'chat_id' => $chat_id,
-                'attachments' => $attachmentCount,
-                'rag_files' => $ragCount,
-                'sessions' => count($sessionIds),
-                'messages' => count($messageIds)
+                'attachments' => $attachment_count,
+                'rag_files' => $rag_count,
+                'sessions' => count($session_ids),
+                'messages' => count($message_ids)
             ]);
 
         } catch (\Exception $e) {
@@ -640,47 +505,43 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Delete sessions that have had no activity for more than $days days.
-     * Cascades to messages and user-uploaded attachments (with RAG cleanup).
-     * Background files (message_id IS NULL) are NOT touched.
+     * Delete sessions without activity for more than $days days, including messages
+     * and uploaded files; background files are kept
      *
-     * @param int $days Inactivity threshold in days
-     * @return array{sessions: int, messages: int, attachments: int} Deletion counts
+     * @return array{sessions: int, messages: int, attachments: int}
      */
     public function cleanupInactiveSessions(int $days): array
     {
         global $DIC;
         $logger = $DIC->logger()->pcaic();
-        $db     = $DIC->database();
+        $db = $DIC->database();
 
         $stats = ['sessions' => 0, 'messages' => 0, 'attachments' => 0];
 
         try {
-            // Find stale session IDs
             $cutoff = date('Y-m-d H:i:s', strtotime("-{$days} days"));
             $result = $db->query(
                 "SELECT session_id FROM pcaic_sessions " .
                 "WHERE last_activity < " . $db->quote($cutoff, 'timestamp')
             );
 
-            $sessionIds = [];
+            $session_ids = [];
             while ($row = $db->fetchAssoc($result)) {
-                $sessionIds[] = $row['session_id'];
+                $session_ids[] = $row['session_id'];
             }
 
-            if (empty($sessionIds)) {
+            if (empty($session_ids)) {
                 return $stats;
             }
 
-            $quoted = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $sessionIds));
+            $quoted = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $session_ids));
 
-            // Delete message attachments (user uploads only)
-            $attResult = $db->query(
+            $att_result = $db->query(
                 "SELECT a.id FROM pcaic_attachments a " .
                 "INNER JOIN pcaic_messages m ON a.message_id = m.message_id " .
                 "WHERE m.session_id IN ($quoted)"
             );
-            while ($row = $db->fetchAssoc($attResult)) {
+            while ($row = $db->fetchAssoc($att_result)) {
                 try {
                     $att = new \ILIAS\Plugin\pcaic\Model\Attachment((int) $row['id']);
                     $att->delete();
@@ -690,17 +551,16 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                 }
             }
 
-            // Count messages before deleting
-            $countResult = $db->query(
+            $count_result = $db->query(
                 "SELECT COUNT(*) AS cnt FROM pcaic_messages WHERE session_id IN ($quoted)"
             );
-            $countRow = $db->fetchAssoc($countResult);
-            $stats['messages'] = (int) ($countRow['cnt'] ?? 0);
+            $count_row = $db->fetchAssoc($count_result);
+            $stats['messages'] = (int) ($count_row['cnt'] ?? 0);
 
             $db->manipulate("DELETE FROM pcaic_messages WHERE session_id IN ($quoted)");
             $db->manipulate("DELETE FROM pcaic_sessions WHERE session_id IN ($quoted)");
 
-            $stats['sessions'] = count($sessionIds);
+            $stats['sessions'] = count($session_ids);
 
             $logger->info('cleanupInactiveSessions: done', $stats + ['threshold_days' => $days]);
 
@@ -713,33 +573,31 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Clear all sessions, messages, and user-uploaded attachments for a chat.
-     * Keeps the chat configuration and background files intact.
+     * Delete all sessions, messages and uploaded files of a chat; configuration and
+     * background files are kept
      */
     public function clearChatHistory(string $chat_id): void
     {
         global $DIC;
         $logger = $DIC->logger()->pcaic();
-        $db     = $DIC->database();
+        $db = $DIC->database();
 
         try {
-            // Collect session IDs
-            $sessionIds = [];
+            $session_ids = [];
             $result = $db->query(
                 "SELECT session_id FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text')
             );
             while ($row = $db->fetchAssoc($result)) {
-                $sessionIds[] = $row['session_id'];
+                $session_ids[] = $row['session_id'];
             }
 
-            if (!empty($sessionIds)) {
-                $quotedSessionIds = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $sessionIds));
+            if (!empty($session_ids)) {
+                $quoted_session_ids = implode(',', array_map(fn($id) => $db->quote($id, 'text'), $session_ids));
 
-                // Delete message attachments (user uploads only, not background files)
                 $result = $db->query(
                     "SELECT a.id FROM pcaic_attachments a
                      INNER JOIN pcaic_messages m ON a.message_id = m.message_id
-                     WHERE m.session_id IN ($quotedSessionIds)"
+                     WHERE m.session_id IN ($quoted_session_ids)"
                 );
                 while ($row = $db->fetchAssoc($result)) {
                     try {
@@ -750,13 +608,12 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                     }
                 }
 
-                // Delete messages and sessions
-                $db->manipulate("DELETE FROM pcaic_messages WHERE session_id IN ($quotedSessionIds)");
+                $db->manipulate("DELETE FROM pcaic_messages WHERE session_id IN ($quoted_session_ids)");
             }
 
             $db->manipulate("DELETE FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text'));
 
-            $logger->info('clearChatHistory: done', ['chat_id' => $chat_id, 'sessions' => count($sessionIds)]);
+            $logger->info('clearChatHistory: done', ['chat_id' => $chat_id, 'sessions' => count($session_ids)]);
 
         } catch (\Exception $e) {
             $logger->error('clearChatHistory failed', ['chat_id' => $chat_id, 'error' => $e->getMessage()]);
@@ -765,72 +622,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Delete chat messages for a specific chat ID (legacy function)
-     */
-    public function deleteChatMessages(string $chat_id) : void
-    {
-        global $DIC;
-        $db = $DIC->database();
-
-        // Delete messages via session_id since messages don't have direct chat_id
-        $query = "DELETE FROM pcaic_messages WHERE session_id IN (
-            SELECT session_id FROM pcaic_sessions WHERE chat_id = " . $db->quote($chat_id, 'text') . "
-        )";
-        $db->manipulate($query);
-    }
-
-    /**
-     * Plugin activation - create database tables
-     *
-     * @return bool True if activation was successful, false otherwise
-     */
-    protected function beforeActivation(): bool
-    {
-        global $DIC;
-        $logger = $DIC->logger()->pcaic();
-
-        try {
-            // Create/update database tables
-            $this->executeDatabaseUpdate();
-            $logger->info("Database tables created/updated successfully");
-
-            /**
-             * Note: RBAC permission setup has been disabled because PageComponent plugins
-             * cannot integrate into ILIAS's standard permission system. ILIAS currently only
-             * processes Repository Object Plugins (robj) and OrgUnit Extension Plugins (orguext)
-             * through parsePluginData(), but not PageComponent Plugins (pgcp).
-             *
-             * Technical explanation:
-             * - ILIAS's permission UI (ilObjectRolePermissionTableGUI) only shows "create"
-             * permissions for objects listed as CreatableSubObjects
-             * - CreatableSubObjects are populated by parsePluginData() in ilObjectDefinition
-             * - parsePluginData() only processes "robj" and "orguext" plugin slots
-             * - PageComponent plugins ("pgcp") are not processed and thus never appear
-             * in the permission interface
-             *
-             * Workaround: This plugin now uses the AIChat Repository Plugin's permissions
-             * when available, if not it is always accessible.
-             */
-            // $this->setupRBACPermissions();
-
-            $logger->info("Plugin activated successfully - database ready");
-            return true;
-
-        } catch (Exception $e) {
-            $logger->error("Plugin activation failed", ['error' => $e->getMessage()]);
-            return false;
-        }
-    }
-
-    /**
-     * Plugin uninstallation - cleanup database tables and RBAC permissions
-     *
-     * This method is called before plugin uninstall and handles:
-     * 1. Cleanup of all plugin data and files
-     * 2. Database table removal
-     * 3. RBAC object type and permissions cleanup
-     *
-     * @return bool True if uninstallation cleanup was successful, false otherwise
+     * Delete all chat data and files, then drop the plugin tables
      */
     protected function beforeUninstall(): bool
     {
@@ -839,12 +631,13 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
         $logger = $DIC->logger()->pcaic();
 
         try {
-            // Step 1: Cleanup all chat data and IRSS files
             $this->cleanupAllPluginData();
             $logger->info("All plugin data and files cleaned up successfully");
 
-            // Step 2: Drop database tables
-            $tables = ['pcaic_attachments', 'pcaic_messages', 'pcaic_sessions', 'pcaic_chats', 'pcaic_config', 'pcaic_data'];
+            $tables = [
+                'pcaic_attachments', 'pcaic_messages', 'pcaic_sessions', 'pcaic_chats',
+                'pcaic_config', 'pcaic_data', 'pcaic_rag_deletions'
+            ];
             $dropped_tables = [];
 
             foreach ($tables as $table) {
@@ -852,22 +645,10 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                     $db->dropTable($table);
                     $dropped_tables[] = $table;
                 }
+                if ($db->sequenceExists($table)) {
+                    $db->dropSequence($table);
+                }
             }
-
-            /**
-             * Note: RBAC permission cleanup has been disabled because PageComponent plugins
-             * cannot integrate into ILIAS's standard permission system. The system only
-             * processes Repository Object Plugins (robj) and OrgUnit Extension Plugins (orguext)
-             * through parsePluginData(), but not PageComponent Plugins (pgcp).
-             *
-             * Technical explanation:
-             * - parsePluginData() in ilObjectDefinition only handles 'robj' and 'orguext' plugins
-             * - PageComponent plugins (pgcp) are never processed for CreatableSubObjects
-             * - Without CreatableSubObjects, permissions don't appear in the permission UI
-             * - Access control is handled via isValidParentType() using AIChat permissions or write permissions
-             */
-            // $this->cleanupRBACPermissions();
-            // $logger->info("RBAC permissions cleaned up successfully");
 
             $logger->info("Plugin uninstalled successfully", [
                 'tables_dropped' => $dropped_tables
@@ -881,73 +662,50 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Execute database update script
-     */
-    private function executeDatabaseUpdate(): void
-    {
-        $sql_file = $this->getPluginBaseDir() . '/sql/dbupdate.php';
-
-        if (!file_exists($sql_file)) {
-            throw new Exception('Database update script not found: ' . $sql_file);
-        }
-
-        global $DIC;
-        $ilDB = $DIC->database();
-        require_once $sql_file;
-    }
-
-    /**
-     * Mark a cut/paste operation for a specific chat_id
-     * This is called from onDelete() with move_operation=true
+     * Remember a cut operation (onDelete() with move operation) for the following onClone()
      */
     private function markCutPasteOperation(string $chat_id): void
     {
-        // Store in session with timestamp for later detection
-        if (!isset($_SESSION['pcaic_cut_paste_operations'])) {
-            $_SESSION['pcaic_cut_paste_operations'] = [];
-        }
+        $operations = $this->getCutPasteOperations();
+        $operations[$chat_id] = time();
 
-        $_SESSION['pcaic_cut_paste_operations'][$chat_id] = time();
-
-        // Clean up old entries (older than 60 seconds)
+        // Markers older than 60 seconds are outdated
         $current_time = time();
-        foreach ($_SESSION['pcaic_cut_paste_operations'] as $stored_chat_id => $timestamp) {
+        foreach ($operations as $stored_chat_id => $timestamp) {
             if ($current_time - $timestamp > 60) {
-                unset($_SESSION['pcaic_cut_paste_operations'][$stored_chat_id]);
+                unset($operations[$stored_chat_id]);
             }
         }
+
+        ilSession::set(self::SESSION_CUT_PASTE_OPERATIONS, $operations);
+    }
+
+    private function getCutPasteOperations(): array
+    {
+        $operations = ilSession::get(self::SESSION_CUT_PASTE_OPERATIONS);
+        return is_array($operations) ? $operations : [];
     }
 
     /**
-     * Check if this is a cut/paste operation for a specific chat_id
-     * This is called from onClone() to detect if it's cut/paste vs real copy
+     * Whether onClone() belongs to a cut and paste of this chat
      */
     private function isCutPasteOperation(string $chat_id): bool
     {
-        if (!isset($_SESSION['pcaic_cut_paste_operations'])) {
+        $operations = $this->getCutPasteOperations();
+        if (!isset($operations[$chat_id])) {
             return false;
         }
 
-        if (isset($_SESSION['pcaic_cut_paste_operations'][$chat_id])) {
-            $timestamp = $_SESSION['pcaic_cut_paste_operations'][$chat_id];
-            $current_time = time();
+        // A marker younger than 30 seconds belongs to the current paste; it is used only once
+        $is_cut_paste = (time() - (int) $operations[$chat_id]) <= 30;
+        unset($operations[$chat_id]);
+        ilSession::set(self::SESSION_CUT_PASTE_OPERATIONS, $operations);
 
-            // Consider it cut/paste if it happened within the last 30 seconds
-            if ($current_time - $timestamp <= 30) {
-                // Remove the marker after use
-                unset($_SESSION['pcaic_cut_paste_operations'][$chat_id]);
-                return true;
-            } else {
-                // Clean up old marker
-                unset($_SESSION['pcaic_cut_paste_operations'][$chat_id]);
-            }
-        }
-
-        return false;
+        return $is_cut_paste;
     }
 
     /**
-     * Clone background files in IRSS for real copy operations
+     * Copy the background files for a real copy of the chat
      */
     private function cloneBackgroundFiles(array $file_ids): array
     {
@@ -984,26 +742,12 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Valid types for page component.
-     * https://docu.ilias.de/ilias.php?baseClass=illmpresentationgui&obj_id=56942&ref_id=42
-     * Blog Postings: "blp"
-     * Data Collection Detailed Views: "dclf"
-     * Glossary Definitions: "gdf"
-     * ILIAS Learning Module Pages: "lm"
-     * Media Pool Content Snippets: "mep"
-     * Portfolio Pages: "prtf"
-     * Portfolio Template Pages: "prtt"
-     * SCORM Editor Pages: "sahs"
-     * Test Question Hint Pages: "qht"
-     * Test Question Pages: "qpl"
-     * Test Generic Feedback Pages: "qfbg"
-     * Test Specific Feedback Pages: "qfbs"
-     * Wiki Pages: "wpg"
-     * Login Pages: "auth"
-     * Container (Course, Group, Folder, Category) Pages: "cont"
-     * Imprint: "impr"
-     * Shop Page: "shop"
-     * Page Template Page: "stys"
+     * Page types the chat can be inserted into
+     *
+     * blp: blog postings, lm: learning modules, sahs: SCORM editor, qpl: question pools,
+     * wpg: wiki pages, auth: login pages, cont: container pages, copa: content pages,
+     * impr: imprint
+     *
      * @return string[]
      */
     public function getParentTypes(): array
@@ -1013,7 +757,6 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Valid parent types.
      * @return string[]
      */
     public function getParentObjectTypes(): array
@@ -1023,240 +766,17 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Setup RBAC permissions for AI Chat Page Components
-     *
-     * This method creates the necessary RBAC object type and permissions for the plugin.
-     * It follows the same pattern as ilRepositoryObjectPlugin but adapted for PageComponent plugins.
-     *
-     * Creates:
-     * - Object type entry in object_data table
-     * - Standard RBAC operations (read, write, delete, edit_permissions, visible)
-     * - Creation permission (create_pcaic)
-     * - Associates creation permission with supported parent types
-     *
-     * @throws Exception If RBAC setup fails
-     */
-    private function setupRBACPermissions(): void
-    {
-        global $DIC;
-        $ilDB = $DIC->database();
-        $logger = $DIC->logger()->pcaic();
-
-        $type = self::PLUGIN_ID; // 'pcaic'
-
-        // Ensure plugin type starts with 'x' (not required for PageComponents, but good practice)
-        // Note: PageComponent plugins don't require 'x' prefix like RepositoryObject plugins
-
-        // Step 1: Create object type entry if it doesn't exist
-        $set = $ilDB->query(
-            "SELECT * FROM object_data " .
-            " WHERE type = " . $ilDB->quote("typ", "text") .
-            " AND title = " . $ilDB->quote($type, "text")
-        );
-
-        if ($rec = $ilDB->fetchAssoc($set)) {
-            $t_id = (int)$rec["obj_id"];
-            $logger->debug("Object type already exists", ['type' => $type, 'obj_id' => $t_id]);
-        } else {
-            $t_id = $ilDB->nextId("object_data");
-            $ilDB->manipulate("INSERT INTO object_data " .
-                "(obj_id, type, title, description, owner, create_date, last_update) VALUES (" .
-                $ilDB->quote($t_id, "integer") . "," .
-                $ilDB->quote("typ", "text") . "," .
-                $ilDB->quote($type, "text") . "," .
-                $ilDB->quote("AI Chat Page Component Plugin", "text") . "," .
-                $ilDB->quote(-1, "integer") . "," .
-                $ilDB->quote(ilUtil::now(), "timestamp") . "," .
-                $ilDB->quote(ilUtil::now(), "timestamp") .
-                ")");
-            $logger->info("Object type created", ['type' => $type, 'obj_id' => $t_id]);
-        }
-
-        // Step 2: Add standard RBAC operations
-        // Standard operations: 1=edit_permissions, 2=visible, 3=read, 4=write, 6=delete
-        $ops = [1, 2, 3, 4, 6];
-
-        foreach ($ops as $op) {
-            $set = $ilDB->query(
-                "SELECT * FROM rbac_ta " .
-                " WHERE typ_id = " . $ilDB->quote($t_id, "integer") .
-                " AND ops_id = " . $ilDB->quote($op, "integer")
-            );
-
-            if (!$ilDB->fetchAssoc($set)) {
-                $ilDB->manipulate("INSERT INTO rbac_ta " .
-                    "(typ_id, ops_id) VALUES (" .
-                    $ilDB->quote($t_id, "integer") . "," .
-                    $ilDB->quote($op, "integer") .
-                    ")");
-                $logger->debug("RBAC operation added", ['type' => $type, 'operation_id' => $op]);
-            }
-        }
-
-        // Step 3: Create creation permission operation
-        $create_operation = "create_" . $type;
-        $set = $ilDB->query(
-            "SELECT * FROM rbac_operations " .
-            " WHERE class = " . $ilDB->quote("create", "text") .
-            " AND operation = " . $ilDB->quote($create_operation, "text")
-        );
-
-        if ($rec = $ilDB->fetchAssoc($set)) {
-            $create_ops_id = (int)$rec["ops_id"];
-            $logger->debug("Creation operation already exists", ['operation' => $create_operation, 'ops_id' => $create_ops_id]);
-        } else {
-            $create_ops_id = $ilDB->nextId("rbac_operations");
-            $ilDB->manipulate("INSERT INTO rbac_operations " .
-                "(ops_id, operation, description, class) VALUES (" .
-                $ilDB->quote($create_ops_id, "integer") . "," .
-                $ilDB->quote($create_operation, "text") . "," .
-                $ilDB->quote("Create AI Chat Page Component", "text") . "," .
-                $ilDB->quote("create", "text") .
-                ")");
-            $logger->info("Creation operation created", ['operation' => $create_operation, 'ops_id' => $create_ops_id]);
-        }
-
-        // Step 4: Assign creation operation to supported parent types
-        $parent_types = $this->getParentObjectTypes();
-
-        foreach ($parent_types as $par_type) {
-            // Get parent type object ID
-            $set = $ilDB->query(
-                "SELECT obj_id FROM object_data " .
-                " WHERE type = " . $ilDB->quote("typ", "text") .
-                " AND title = " . $ilDB->quote($par_type, "text")
-            );
-
-            if ($rec = $ilDB->fetchAssoc($set)) {
-                $par_type_id = (int)$rec["obj_id"];
-
-                // Check if association already exists
-                $set = $ilDB->query(
-                    "SELECT * FROM rbac_ta " .
-                    " WHERE typ_id = " . $ilDB->quote($par_type_id, "integer") .
-                    " AND ops_id = " . $ilDB->quote($create_ops_id, "integer")
-                );
-
-                if (!$ilDB->fetchAssoc($set)) {
-                    $ilDB->manipulate("INSERT INTO rbac_ta " .
-                        "(typ_id, ops_id) VALUES (" .
-                        $ilDB->quote($par_type_id, "integer") . "," .
-                        $ilDB->quote($create_ops_id, "integer") .
-                        ")");
-                    $logger->debug("Creation permission assigned to parent type", [
-                        'parent_type' => $par_type,
-                        'parent_type_id' => $par_type_id
-                    ]);
-                }
-            } else {
-                $logger->warning("Parent type not found in object_data", ['parent_type' => $par_type]);
-            }
-        }
-
-        $logger->info("RBAC permissions setup completed", ['plugin_type' => $type]);
-    }
-
-    /**
-     * Cleanup RBAC permissions for AI Chat Page Components
-     *
-     * This method removes all RBAC-related entries for the plugin during uninstallation.
-     * It's the counterpart to setupRBACPermissions() and ensures clean removal.
-     *
-     * Removes:
-     * - Creation permission associations from parent types
-     * - Creation operation from rbac_operations
-     * - Standard operation associations from rbac_ta
-     * - Object type entry from object_data
-     *
-     * @throws Exception If RBAC cleanup fails
-     */
-    private function cleanupRBACPermissions(): void
-    {
-        global $DIC;
-        $ilDB = $DIC->database();
-        $logger = $DIC->logger()->pcaic();
-
-        $type = self::PLUGIN_ID; // 'pcaic'
-        $create_operation = "create_" . $type;
-
-        try {
-            // Step 1: Get object type ID
-            $set = $ilDB->query(
-                "SELECT obj_id FROM object_data " .
-                " WHERE type = " . $ilDB->quote("typ", "text") .
-                " AND title = " . $ilDB->quote($type, "text")
-            );
-
-            if ($rec = $ilDB->fetchAssoc($set)) {
-                $t_id = (int)$rec["obj_id"];
-
-                // Step 2: Remove standard RBAC operation associations
-                $ilDB->manipulate(
-                    "DELETE FROM rbac_ta WHERE typ_id = " . $ilDB->quote($t_id, "integer")
-                );
-                $logger->debug("Removed RBAC operation associations", ['type_id' => $t_id]);
-
-                // Step 3: Remove object type entry
-                $ilDB->manipulate(
-                    "DELETE FROM object_data WHERE obj_id = " . $ilDB->quote($t_id, "integer")
-                );
-                $logger->debug("Removed object type entry", ['type_id' => $t_id]);
-            }
-
-            // Step 4: Get and remove creation operation
-            $set = $ilDB->query(
-                "SELECT ops_id FROM rbac_operations " .
-                " WHERE class = " . $ilDB->quote("create", "text") .
-                " AND operation = " . $ilDB->quote($create_operation, "text")
-            );
-
-            if ($rec = $ilDB->fetchAssoc($set)) {
-                $create_ops_id = (int)$rec["ops_id"];
-
-                // Remove creation operation associations from all parent types
-                $ilDB->manipulate(
-                    "DELETE FROM rbac_ta WHERE ops_id = " . $ilDB->quote($create_ops_id, "integer")
-                );
-                $logger->debug("Removed creation operation associations", ['ops_id' => $create_ops_id]);
-
-                // Remove creation operation itself
-                $ilDB->manipulate(
-                    "DELETE FROM rbac_operations WHERE ops_id = " . $ilDB->quote($create_ops_id, "integer")
-                );
-                $logger->debug("Removed creation operation", ['operation' => $create_operation]);
-            }
-
-            $logger->info("RBAC permissions cleanup completed", ['plugin_type' => $type]);
-
-        } catch (Exception $e) {
-            $logger->error("RBAC cleanup failed", [
-                'plugin_type' => $type,
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
-        }
-    }
-
-    /**
-     * Cleanup all plugin data during uninstallation
-     *
-     * This method removes all chat configurations, sessions, messages, attachments,
-     * and associated files from IRSS before database tables are dropped.
-     *
-     * @throws Exception If data cleanup fails
+     * Delete all chats including sessions, messages and files (used on uninstall)
      */
     private function cleanupAllPluginData(): void
     {
         global $DIC;
         $db = $DIC->database();
         $logger = $DIC->logger()->pcaic();
-        $irss = $DIC->resourceStorage();
 
         try {
-            $total_files_deleted = 0;
             $total_chats_deleted = 0;
 
-            // Get all chat IDs for cleanup
             if ($db->tableExists('pcaic_chats')) {
                 $result = $db->query("SELECT chat_id FROM pcaic_chats");
 
@@ -1271,15 +791,6 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
                         ]);
                     }
                 }
-            }
-
-            // Cleanup any remaining IRSS resources associated with this plugin
-            try {
-                $stakeholder = new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder();
-                // Note: IRSS doesn't have a direct "cleanup all by stakeholder" method,
-                // but the individual chat cleanups above should handle all files
-            } catch (Exception $e) {
-                $logger->warning("IRSS cleanup warning", ['error' => $e->getMessage()]);
             }
 
             $logger->info("Plugin data cleanup completed", [

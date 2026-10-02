@@ -1,55 +1,59 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 namespace ai;
 
 /**
- * LLM Service Registry
- *
- * Central registry for all available LLM services.
- * Provides service discovery, registration, and instantiation.
+ * Registry of the available AI services
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 class AIChatPageComponentLLMRegistry
 {
     /**
-     * Get all available LLM services (registered in the system)
+     * All registered AI services
      *
-     * To add a new service:
-     * 1. Create a new class extending AIChatPageComponentLLM
-     * 2. Add it to this array with a unique service ID
-     * 3. The system will automatically:
-     *    - Add a configuration tab in ConfigGUI
-     *    - Add the service to AI Service selection
-     *    - Handle service-specific settings
+     * A new service is added here; configuration tab, service selection and routing
+     * are derived from this list.
      *
-     * @return array<string, class-string> Array of service_id => class_name
+     * @return array<string, class-string<AIChatPageComponentLLM>> service ID => class name
      */
     public static function getAvailableServices(): array
     {
         return [
             'ramses' => AIChatPageComponentRAMSES::class,
             'openai' => AIChatPageComponentOpenAI::class,
-            // Add new services here - that's all you need to do!
         ];
     }
 
     /**
-     * Get only enabled LLM services (based on configuration)
+     * Services enabled in the plugin configuration
      *
-     * @return array<string, class-string> Array of service_id => class_name
+     * @return array<string, class-string<AIChatPageComponentLLM>> service ID => class name
      */
     public static function getEnabledServices(): array
     {
         $available = self::getAvailableServices();
         $enabled = [];
 
-        foreach ($available as $serviceId => $serviceClass) {
-            $configKey = $serviceId . '_service_enabled';
-            $isEnabled = \platform\AIChatPageComponentConfig::get($configKey);
+        foreach ($available as $service_id => $service_class) {
+            $config_key = $service_id . '_service_enabled';
+            $is_enabled = \platform\AIChatPageComponentConfig::get($config_key);
 
-            if ($isEnabled === '1') {
-                $enabled[$serviceId] = $serviceClass;
+            if ($is_enabled === '1') {
+                $enabled[$service_id] = $service_class;
             }
         }
 
@@ -57,98 +61,68 @@ class AIChatPageComponentLLMRegistry
     }
 
     /**
-     * Get service class by service ID
-     *
-     * @param string $serviceId Service identifier (e.g., 'ramses', 'openai')
-     * @return class-string|null Service class name or null if not found
+     * @return class-string<AIChatPageComponentLLM>|null
      */
-    public static function getServiceClass(string $serviceId): ?string
+    public static function getServiceClass(string $service_id): ?string
     {
         $services = self::getAvailableServices();
-        return $services[$serviceId] ?? null;
+        return $services[$service_id] ?? null;
     }
 
-    /**
-     * Check if a service is registered
-     *
-     * @param string $serviceId Service identifier
-     * @return bool True if service exists
-     */
-    public static function serviceExists(string $serviceId): bool
+    public static function serviceExists(string $service_id): bool
     {
-        return isset(self::getAvailableServices()[$serviceId]);
+        return isset(self::getAvailableServices()[$service_id]);
     }
 
-    /**
-     * Check if a service is enabled
-     *
-     * @param string $serviceId Service identifier
-     * @return bool True if service is enabled
-     */
-    public static function isServiceEnabled(string $serviceId): bool
+    public static function isServiceEnabled(string $service_id): bool
     {
-        if (!self::serviceExists($serviceId)) {
+        if (!self::serviceExists($service_id)) {
             return false;
         }
 
-        $configKey = $serviceId . '_service_enabled';
-        $isEnabled = \platform\AIChatPageComponentConfig::get($configKey);
+        $config_key = $service_id . '_service_enabled';
+        $is_enabled = \platform\AIChatPageComponentConfig::get($config_key);
 
-        return $isEnabled === '1';
+        return $is_enabled === '1';
     }
 
     /**
-     * Create a service instance from config
-     *
-     * @param string $serviceId Service identifier
-     * @return AIChatPageComponentLLM|null Service instance or null if not found
+     * Create a configured service instance (via fromConfig() if available)
      */
-    public static function createServiceInstance(string $serviceId): ?AIChatPageComponentLLM
+    public static function createServiceInstance(string $service_id): ?AIChatPageComponentLLM
     {
-        $serviceClass = self::getServiceClass($serviceId);
+        $service_class = self::getServiceClass($service_id);
 
-        if ($serviceClass === null) {
+        if ($service_class === null) {
             return null;
         }
 
-        // Use static factory method if available
-        if (method_exists($serviceClass, 'fromConfig')) {
-            return $serviceClass::fromConfig();
+        if (method_exists($service_class, 'fromConfig')) {
+            return $service_class::fromConfig();
         }
 
-        // Fallback to constructor
-        return new $serviceClass();
+        return new $service_class();
     }
 
     /**
-     * Create a bare service instance without configuration
+     * Create a service instance without requiring a complete configuration
      *
-     * Used for configuration forms where the service isn't configured yet.
-     *
-     * @param string $serviceId Service identifier
-     * @return AIChatPageComponentLLM|null Service instance or null if not found
+     * Used by the configuration forms, where the service may not be configured yet.
      */
-    public static function createBareServiceInstance(string $serviceId): ?AIChatPageComponentLLM
+    public static function createBareServiceInstance(string $service_id): ?AIChatPageComponentLLM
     {
-        $serviceClass = self::getServiceClass($serviceId);
+        $service_class = self::getServiceClass($service_id);
 
-        if ($serviceClass === null) {
+        if ($service_class === null) {
             return null;
         }
 
-        // Always use constructor, never fromConfig()
-        return new $serviceClass();
+        return new $service_class();
     }
 
-    /**
-     * Get service capabilities
-     *
-     * @param string $serviceId Service identifier
-     * @return array Service capabilities or empty array if service not found
-     */
-    public static function getServiceCapabilities(string $serviceId): array
+    public static function getServiceCapabilities(string $service_id): array
     {
-        $instance = self::createServiceInstance($serviceId);
+        $instance = self::createServiceInstance($service_id);
 
         if ($instance === null) {
             return [];
@@ -158,18 +132,17 @@ class AIChatPageComponentLLMRegistry
     }
 
     /**
-     * Get all services as options for select field (ID => Name)
+     * Services as select options
      *
-     * @param bool $onlyEnabled If true, only return enabled services
-     * @return array<string, string> Array of service_id => service_name
+     * @return array<string, string> service ID => service name
      */
-    public static function getServiceOptions(bool $onlyEnabled = false): array
+    public static function getServiceOptions(bool $only_enabled = false): array
     {
-        $services = $onlyEnabled ? self::getEnabledServices() : self::getAvailableServices();
+        $services = $only_enabled ? self::getEnabledServices() : self::getAvailableServices();
         $options = [];
 
-        foreach ($services as $serviceId => $serviceClass) {
-            $options[$serviceId] = $serviceClass::getServiceName();
+        foreach ($services as $service_id => $service_class) {
+            $options[$service_id] = $service_class::getServiceName();
         }
 
         return $options;

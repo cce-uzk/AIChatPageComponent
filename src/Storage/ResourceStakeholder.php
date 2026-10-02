@@ -1,12 +1,24 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 namespace ILIAS\Plugin\pcaic\Storage;
 
 use ILIAS\ResourceStorage\Stakeholder\AbstractResourceStakeholder;
 
 /**
- * ResourceStakeholder for AIChatPageComponent Plugin
- * Required Class for Integrated-Resource-Storage-Service (IRSS) usage
+ * Resource Storage stakeholder of the plugin
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
@@ -17,16 +29,13 @@ class ResourceStakeholder extends AbstractResourceStakeholder
         global $DIC;
     }
 
-    /**
-     * Get IRSS-ProviderId (in this case: PluginId)
-     */
     public function getId(): string
     {
         return \ilAIChatPageComponentPlugin::getPluginId();
     }
 
     /**
-     * Get ResourceOwnerId (in this case: Current-User-Id)
+     * The current user is the owner of new resources
      */
     public function getOwnerOfNewResources(): int
     {

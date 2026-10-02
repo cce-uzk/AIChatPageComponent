@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 namespace ai;
 
@@ -8,33 +21,43 @@ use ILIAS\Plugin\pcaic\Model\ChatMessage;
 use ILIAS\Plugin\pcaic\Model\Attachment;
 use platform\AIChatPageComponentException;
 
+require_once __DIR__ . '/class.AIChatPageComponentRAG.php';
+require_once __DIR__ . '/class.AIChatPageComponentRAGStatus.php';
+
 /**
- * Abstract LLM base class
+ * Base class of the AI services
  *
- * Provides core functionality for AI language model integrations.
- * Handles message processing, file attachments, RAG mode, and multimodal interactions.
- *
- * To add a new LLM service:
- * 1. Create a new class extending this abstract class
- * 2. Implement all abstract methods (metadata, configuration, capabilities)
- * 3. Add the class to AIChatPageComponentLLMRegistry::getAvailableServices()
- * 4. The system will automatically add configuration tab and service selector
+ * Implements the message flow (session, context, files, RAG) independently of a
+ * specific API. A service implements the API call in sendMessagesArray() and is
+ * registered in AIChatPageComponentLLMRegistry.
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
 abstract class AIChatPageComponentLLM
 {
+    /** @var string Exception message if the AI service is overloaded or temporarily unavailable */
+    public const SERVICE_BUSY = 'ai_service_busy';
+
+    /** @var int[] HTTP status codes of the AI service that are reported as SERVICE_BUSY */
+    public const SERVICE_BUSY_HTTP_CODES = [429, 502, 503, 504];
+
     protected ?int $max_memory_messages = null;
     protected ?string $prompt = null;
     protected bool $streaming = false;
     protected \ilLogger $logger;
-    protected ?float $temperatureOverride = null;
-    protected ?string $modelOverride = null;
+    protected ?float $temperature_override = null;
+    protected ?string $model_override = null;
 
-    // Last response metadata (RAG sources, etc.)
-    protected ?array $lastResponseMetadata = null;
-    // Last response token usage
-    protected ?array $lastResponseUsage = null;
+    // Sources of the last answer (RAG)
+    protected ?array $last_response_metadata = null;
+    // Token usage of the last answer
+    protected ?array $last_response_usage = null;
+    // Remaining image data (bytes) of the current request, see max_image_data_mb
+    protected int $image_data_budget = PHP_INT_MAX;
+    /** @var array<string, bool> Titles of images omitted because of the limit */
+    protected array $omitted_images = [];
+    // Background files of the chat are not (yet) usable in the RAG
+    protected bool $rag_incomplete = false;
 
     public function __construct()
     {
@@ -44,104 +67,177 @@ abstract class AIChatPageComponentLLM
 
     public function setTemperatureOverride(?float $temperature): void
     {
-        $this->temperatureOverride = $temperature;
+        $this->temperature_override = $temperature;
     }
-
-    public function setModelOverride(?string $model): void
-    {
-        $this->modelOverride = $model;
-    }
-
-    // ============================================
-    // Service Metadata (MUST be implemented by each service)
-    // ============================================
 
     /**
-     * Get unique service identifier
+     * Set the per-chat model
      *
-     * Used for configuration keys, routing, and service selection.
-     * Must be unique across all services.
+     * A model the admin no longer offers to editors falls back to the default model.
+     */
+    public function setModelOverride(?string $model): void
+    {
+        $available = static::getAvailableModels();
+        if ($model !== null && $model !== '' && !empty($available) && !isset($available[$model])) {
+            $this->logger->debug("Chat model is not available for editors, using default model", ['model' => $model]);
+            $model = null;
+        }
+
+        $this->model_override = ($model === '') ? null : $model;
+    }
+
+    /**
+     * Config key of the model list (model ID => name) from the last refresh
+     */
+    protected static function getModelCacheKey(): string
+    {
+        return static::getServiceId() . '_cached_models';
+    }
+
+    /**
+     * @return array<string, string> model ID => name
+     */
+    public static function getCachedModels(): array
+    {
+        $models = \platform\AIChatPageComponentConfig::get(static::getModelCacheKey());
+        return is_array($models) ? $models : [];
+    }
+
+    /**
+     * Models offered to editors (admin selection in the service configuration)
      *
-     * @return string Service ID (e.g., 'ramses', 'openai', 'gemini')
+     * Without a saved selection, all models except those that look like
+     * non-chat models (embedding, reranking, speech, image, ...) are offered.
+     *
+     * @return array model_id => display name
+     */
+    public static function getAvailableModels(): array
+    {
+        $all = static::getCachedModels();
+        $selected = \platform\AIChatPageComponentConfig::get(static::getServiceId() . '_available_models');
+
+        if (!is_array($selected) || empty($selected)) {
+            return array_filter($all, fn($id) => !self::looksLikeNonChatModel((string) $id), ARRAY_FILTER_USE_KEY);
+        }
+
+        return array_intersect_key($all, array_flip($selected));
+    }
+
+    /**
+     * Guess from the model ID whether it is not a chat model
+     *
+     * Model list endpoints do not provide a model type, so only the name can be used.
+     */
+    public static function looksLikeNonChatModel(string $model_id): bool
+    {
+        return (bool) preg_match(
+            '/embed|(^|[-_\/])e5[-_]|bge|rerank|whisper|tts|transcribe|realtime|audio|image|dall-e|moderation|davinci|babbage|sora|turbo-instruct|codex/i',
+            $model_id
+        );
+    }
+
+    /**
+     * Checkbox list input for the models offered to editors
+     */
+    protected static function buildAvailableModelsInput(array $model_options): \ILIAS\UI\Component\Input\Field\MultiSelect
+    {
+        global $DIC;
+        $plugin = \ilAIChatPageComponentPlugin::getInstance();
+
+        return $DIC->ui()->factory()->input()->field()->multiSelect(
+            $plugin->txt('config_available_models'),
+            $model_options,
+            $plugin->txt('config_available_models_info')
+        )->withValue(array_values(array_intersect(
+            array_map('strval', array_keys(static::getAvailableModels())),
+            array_map('strval', array_keys($model_options))
+        )))->withRequired(true);
+    }
+
+    /**
+     * Normalize the submitted selection; the default model is always available
+     *
+     * @param mixed $selection Submitted multiselect value
+     * @param mixed $default_model Submitted default model
+     */
+    protected static function normalizeAvailableModels($selection, $default_model): array
+    {
+        $selection = array_values(is_array($selection) ? $selection : []);
+        if (is_string($default_model) && $default_model !== '' && !in_array($default_model, $selection, true)) {
+            $selection[] = $default_model;
+        }
+        return $selection;
+    }
+
+    /**
+     * Update the editor selection after refreshing the model list
+     *
+     * Keeps the existing selection, drops models that no longer exist and adds
+     * new models unless they look like non-chat models.
+     *
+     * @param array $previous_ids Model IDs known before the refresh
+     * @param array $models New model list (model_id => name)
+     */
+    protected static function updateAvailableModels(array $previous_ids, array $models): void
+    {
+        $key = static::getServiceId() . '_available_models';
+        $selected = \platform\AIChatPageComponentConfig::get($key);
+        if (!is_array($selected) || empty($selected)) {
+            // No selection saved yet: the name-based default applies automatically
+            return;
+        }
+
+        $updated = array_values(array_intersect($selected, array_map('strval', array_keys($models))));
+        foreach (array_keys($models) as $id) {
+            $id = (string) $id;
+            if (!in_array($id, $previous_ids, true) && !self::looksLikeNonChatModel($id)) {
+                $updated[] = $id;
+            }
+        }
+
+        \platform\AIChatPageComponentConfig::set($key, array_values(array_unique($updated)));
+    }
+
+    /**
+     * Cache a refreshed model list and update the editor selection
+     *
+     * @param array $models model_id => display name
+     */
+    protected static function storeRefreshedModels(array $models): void
+    {
+        $previous_ids = array_map('strval', array_keys(static::getCachedModels()));
+        \platform\AIChatPageComponentConfig::set(static::getModelCacheKey(), $models);
+        static::updateAvailableModels($previous_ids, $models);
+    }
+
+    /**
+     * Unique service ID, also used as prefix of the configuration keys
      */
     abstract public static function getServiceId(): string;
 
-    /**
-     * Get human-readable service name
-     *
-     * Displayed in UI (tabs, dropdowns, etc.)
-     *
-     * @return string Service name (e.g., 'RAMSES', 'OpenAI GPT', 'Google Gemini')
-     */
     abstract public static function getServiceName(): string;
 
-    /**
-     * Get service description
-     *
-     * Short description shown in configuration
-     *
-     * @return string Service description
-     */
     abstract public static function getServiceDescription(): string;
 
-    // ============================================
-    // Configuration Management (MUST be implemented by each service)
-    // ============================================
-
     /**
-     * Get configuration form inputs for this service
-     *
-     * Returns array of ILIAS UI Factory form inputs that will be rendered
-     * in the service's configuration tab.
-     *
-     * @return array Array of form field name => Input component
+     * @return array<string, \ILIAS\UI\Component\Input\Field\FormInput> Inputs of the service tab
      */
     abstract public function getConfigurationFormInputs(): array;
 
-    /**
-     * Save configuration data for this service
-     *
-     * Called when configuration form is submitted.
-     * Should save all service-specific settings.
-     *
-     * @param array $formData Form data from submission
-     * @return void
-     */
-    abstract public function saveConfiguration(array $formData): void;
+    abstract public function saveConfiguration(array $form_data): void;
 
     /**
-     * Get default configuration values for this service
-     *
-     * Used during plugin installation and for fallback values.
-     *
-     * @return array Array of config_key => default_value
+     * @return array<string, mixed> config key => default value
      */
     abstract public static function getDefaultConfiguration(): array;
 
-    // ============================================
-    // Service Capabilities (MUST be implemented by each service)
-    // ============================================
-
     /**
-     * Get service capabilities
+     * Supported features
      *
-     * Describes what features this service supports.
-     * Used for conditional UI rendering and feature availability checks.
-     *
-     * Expected keys:
-     * - 'streaming': bool - Supports streaming responses
-     * - 'rag': bool - Supports RAG mode
-     * - 'multimodal': bool - Supports images/files
-     * - 'file_types': array - Supported file extensions
-     * - 'max_tokens': int|null - Maximum context length
-     *
-     * @return array Service capabilities
+     * Keys: streaming (bool), rag (bool), multimodal (bool), file_types (string[]),
+     * max_tokens (int|null)
      */
     abstract public function getCapabilities(): array;
-
-    // ============================================
-    // Configuration Getters/Setters
-    // ============================================
 
     public function getMaxMemoryMessages(): ?int
     {
@@ -174,199 +270,172 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * Get last response metadata (RAG sources)
-     *
-     * @return array|null Array of source objects or null if not available
+     * @return array|null Sources of the last answer (RAG)
      */
     public function getLastResponseMetadata(): ?array
     {
-        return $this->lastResponseMetadata;
+        return $this->last_response_metadata;
     }
 
     /**
-     * Get last response token usage
-     *
-     * @return array|null Array with prompt_tokens, completion_tokens, total_tokens
+     * @return array|null Token usage of the last answer
      */
     public function getLastResponseUsage(): ?array
     {
-        return $this->lastResponseUsage;
+        return $this->last_response_usage;
     }
 
-    /**
-     * Clear last response data
-     */
     protected function clearLastResponseData(): void
     {
-        $this->lastResponseMetadata = null;
-        $this->lastResponseUsage = null;
+        $this->last_response_metadata = null;
+        $this->last_response_usage = null;
     }
 
     /**
-     * Check if file handling is enabled for this AI service (hierarchical check)
-     *
-     * @param string $aiService AI service identifier (ramses|openai)
-     * @return bool True if file handling should be used, false otherwise
+     * File handling must be enabled globally and for the service
      */
-    protected function isFileHandlingEnabledForService(string $aiService): bool
+    protected function isFileHandlingEnabledForService(string $ai_service): bool
     {
-        // 1. Check central/global file handling setting
         $global_file_handling = \platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1';
         if ($global_file_handling !== '1') {
-            return false; // Centrally disabled
+            return false;
         }
 
-        // 2. Check service-specific file handling setting
-        $service_file_handling_key = $aiService . '_file_handling_enabled';
+        $service_file_handling_key = $ai_service . '_file_handling_enabled';
         $service_file_handling = \platform\AIChatPageComponentConfig::get($service_file_handling_key);
 
-        // Default values: Both RAMSES and OpenAI enabled by default
         $default_file_handling = '1';
         $service_file_handling = $service_file_handling ?? $default_file_handling;
 
         if ($service_file_handling !== '1') {
-            return false; // Service-specific disabled
+            return false;
         }
 
-        return true; // Both conditions met
+        return true;
     }
 
-    // ============================================
-    // Core Message Handling (NEW ARCHITECTURE)
-    // ============================================
-
     /**
-     * Main entry point for sending a message - handles complete flow
+     * Process a message of a logged-in user: store it, build the context, send it to
+     * the AI service and store the answer
      *
-     * @param string $chat_id Chat identifier
-     * @param int $user_id User identifier
-     * @param string $message User message text
-     * @param array $attachment_ids Optional attachment IDs to bind to message
-     * @return string AI response
+     * @param array $attachment_ids Uploaded attachments to bind to the message
+     * @return string Answer text
+     * @throws AIChatPageComponentException
      */
     public function handleSendMessage(string $chat_id, int $user_id, string $message, array $attachment_ids = []): string
     {
         try {
-            // Load chat configuration
-            $chatConfig = new ChatConfig($chat_id);
-            if (!$chatConfig->exists()) {
+            $chat_config = new ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
                 throw new AIChatPageComponentException('Chat configuration not found');
             }
 
-            // Get or create session
             $session = ChatSession::getOrCreateForUserAndChat($user_id, $chat_id);
 
-            // Add user message to session
-            $userMessage = $session->addMessage('user', $message);
+            $user_message = $session->addMessage('user', $message);
 
-            // Bind attachments to message if provided
             if (!empty($attachment_ids)) {
                 foreach ($attachment_ids as $attachment_id) {
                     if (is_numeric($attachment_id)) {
-                        $userMessage->addAttachment($attachment_id);
+                        $user_message->addAttachment($attachment_id);
                     }
                 }
             }
 
-            // Set configuration from chat
-            $this->setPrompt($chatConfig->getSystemPrompt());
-            $this->setMaxMemoryMessages($chatConfig->getMaxMemory());
+            $this->setPrompt($chat_config->getSystemPrompt());
+            $this->setMaxMemoryMessages($chat_config->getMaxMemory());
+            $this->resetImageDataBudget();
 
-            $ai_service_id = $chatConfig->getAiService();
+            $ai_service_id = $chat_config->getAiService();
             $force_temperature = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_temperature') === '1';
-            $this->setTemperatureOverride($force_temperature ? null : $chatConfig->getTemperature());
+            $this->setTemperatureOverride($force_temperature ? null : $chat_config->getTemperature());
             $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
-            $this->setModelOverride($force_model ? null : $chatConfig->getModel());
+            $this->setModelOverride($force_model ? null : $chat_config->getModel());
 
-            // Check hierarchical file handling (global → service)
-            $ai_service = $chatConfig->getAiService();
-            $fileHandlingEnabled = $this->isFileHandlingEnabledForService($ai_service);
+            $ai_service = $chat_config->getAiService();
+            $file_handling_enabled = $this->isFileHandlingEnabledForService($ai_service);
 
-            // Check if we should use RAG (service + global + chat settings)
-            // This must be determined BEFORE processing background files!
-            // RAG requires file handling to be enabled
-            $collectionIds = [];
-            $useRAG = false;
-            if ($fileHandlingEnabled) {
-                $collectionIds = $this->getAllRAGCollectionIds($chatConfig);
-                $useRAG = $this->isRagEnabledForChat($chatConfig) && !empty($collectionIds);
+            // RAG mode must be known before the background files are processed,
+            // because PDFs are only converted to images without RAG
+            $collection_ids = [];
+            $use_rag = false;
+            if ($file_handling_enabled) {
+                $this->ensureBackgroundFilesInRAG($chat_config);
+                $collection_ids = $this->getAllRAGCollectionIds($chat_config);
+                $use_rag = $this->isRagEnabledForChat($chat_config) && !empty($collection_ids);
             }
 
-            // Process background files as context (only if file handling is enabled)
-            // In RAG mode: Skip PDFs (they're already in the collection)
-            // In Multimodal mode: Convert PDFs to images
-            $contextResources = [];
-            if ($fileHandlingEnabled) {
-                $contextResources = $this->processBackgroundFiles($chatConfig, $useRAG);
+            $context_resources = [];
+            if ($file_handling_enabled) {
+                $context_resources = $this->processBackgroundFiles($chat_config, $use_rag);
             } else {
                 $this->logger->debug("File handling disabled - skipping background files processing");
             }
 
-            // Add page context if enabled
-            if ($chatConfig->isIncludePageContext()) {
-                $pageContext = $this->getPageContext($chatConfig);
-                if (!empty($pageContext)) {
-                    $contextResources[] = [
+            if ($chat_config->isIncludePageContext()) {
+                $page_context = $this->getPageContext($chat_config);
+                if (!empty($page_context)) {
+                    $context_resources[] = [
                         'kind' => 'page_context',
                         'title' => 'Page Context',
-                        'content' => $pageContext,
+                        'content' => $page_context,
                         'mime_type' => 'text/plain'
                     ];
                 }
             }
 
-            // Convert recent messages to AI format
-            $recent_limit = min($chatConfig->getMaxMemory(), 20);
-            $aiMessages = $this->processChatMessages($session, $recent_limit, $useRAG, $fileHandlingEnabled);
+            $recent_limit = min($chat_config->getMaxMemory(), 20);
+            $ai_messages = $this->processChatMessages($session, $recent_limit, $use_rag, $file_handling_enabled);
+            $this->addOmittedImagesNote($ai_messages);
 
-            // Sync chat attachments to RAG if RAG is enabled AND file handling is enabled
-            if ($useRAG && $fileHandlingEnabled) {
+            if ($use_rag && $file_handling_enabled) {
                 $this->logger->debug("RAG mode active, checking for chat attachments to sync");
                 $sync_stats = $this->syncChatAttachmentsToRAG($session, $recent_limit);
                 if ($sync_stats['uploaded'] > 0) {
                     $this->logger->info("Synced chat attachments to RAG", $sync_stats);
-                    // Refresh collection IDs after sync
-                    $collectionIds = $this->getAllRAGCollectionIds($chatConfig);
+                    $collection_ids = $this->getAllRAGCollectionIds($chat_config);
                 }
             }
 
-            // Clear previous response data
             $this->clearLastResponseData();
 
-            // Send to AI
-            if ($useRAG) {
-                $this->logger->debug("Using RAG mode", ['collection_ids' => $collectionIds]);
-                $aiResponse = $this->sendRagChat($aiMessages, $collectionIds, $contextResources);
+            if ($use_rag) {
+                $this->logger->debug("Using RAG mode", ['collection_ids' => $collection_ids]);
+                $ai_response = $this->sendRagChatWithRebind($chat_config, $session, $ai_messages, $collection_ids, $context_resources);
             } else {
                 $this->logger->debug("Using standard mode");
-                $aiResponse = $this->sendMessagesArray($aiMessages, $contextResources);
+                $ai_response = $this->sendMessagesArray($ai_messages, $context_resources);
             }
 
-            // Add AI response to session with metadata and usage
-            $assistantMessage = $session->addMessage('assistant', $aiResponse);
+            // Empty answers are not stored, some APIs reject them in later requests
+            if (trim($ai_response) === '') {
+                throw new AIChatPageComponentException('Empty response from AI service');
+            }
 
-            // Store metadata (RAG sources) if available
-            if ($this->lastResponseMetadata !== null) {
-                $assistantMessage->setMetadata($this->lastResponseMetadata);
+            $assistant_message = $session->addMessage('assistant', $ai_response);
+
+            if ($this->last_response_metadata !== null) {
+                $assistant_message->setMetadata($this->last_response_metadata);
                 $this->logger->debug("Storing RAG metadata", [
-                    'sources_count' => count($this->lastResponseMetadata)
+                    'sources_count' => count($this->last_response_metadata)
                 ]);
             }
 
-            // Store usage (token data) if available
-            if ($this->lastResponseUsage !== null) {
-                $assistantMessage->setUsage($this->lastResponseUsage);
-                $this->logger->debug("Storing token usage", $this->lastResponseUsage);
+            if ($this->last_response_usage !== null) {
+                $assistant_message->setUsage($this->last_response_usage);
+                $this->logger->debug("Storing token usage", $this->last_response_usage);
             }
 
-            // Save updated message with metadata/usage
-            if ($this->lastResponseMetadata !== null || $this->lastResponseUsage !== null) {
-                $assistantMessage->save();
+            if ($this->last_response_metadata !== null || $this->last_response_usage !== null) {
+                $assistant_message->save();
             }
 
-            return $aiResponse;
+            return $ai_response;
 
         } catch (\Exception $e) {
+            if (in_array($e->getMessage(), [AIChatPageComponentRAG::UNAVAILABLE, self::SERVICE_BUSY], true)) {
+                throw $e; // Shown to the user as a specific message
+            }
             $this->logger->error("handleSendMessage failed", [
                 'chat_id' => $chat_id,
                 'error' => $e->getMessage()
@@ -376,84 +445,87 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * Handle message for anonymous stateless sessions (no DB persistence)
+     * Process a message of an anonymous user without storing anything
      *
-     * Processes background files and page context identical to handleSendMessage,
-     * but uses the conversation history provided by the frontend instead of a DB
-     * session. Nothing is saved to the database.
+     * The history is provided by the frontend.
      *
-     * @param string $chat_id      Chat configuration ID
-     * @param array  $conversation_history Array of {role, message} pairs from frontend memory
-     * @param string $message      Current user message
-     * @return string AI response text
+     * @param array $conversation_history Items with role and message
+     * @return string Answer text
+     * @throws AIChatPageComponentException
      */
     public function handleStatelessMessage(string $chat_id, array $conversation_history, string $message): string
     {
         try {
-            $chatConfig = new ChatConfig($chat_id);
-            if (!$chatConfig->exists()) {
+            $chat_config = new ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
                 throw new AIChatPageComponentException('Chat configuration not found');
             }
 
-            $this->setPrompt($chatConfig->getSystemPrompt());
-            $this->setMaxMemoryMessages($chatConfig->getMaxMemory());
+            $this->setPrompt($chat_config->getSystemPrompt());
+            $this->setMaxMemoryMessages($chat_config->getMaxMemory());
+            $this->resetImageDataBudget();
 
-            $ai_service_id = $chatConfig->getAiService();
+            $ai_service_id = $chat_config->getAiService();
             $force_temperature = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_temperature') === '1';
-            $this->setTemperatureOverride($force_temperature ? null : $chatConfig->getTemperature());
+            $this->setTemperatureOverride($force_temperature ? null : $chat_config->getTemperature());
             $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
-            $this->setModelOverride($force_model ? null : $chatConfig->getModel());
+            $this->setModelOverride($force_model ? null : $chat_config->getModel());
 
             $ai_service = $ai_service_id;
-            $fileHandlingEnabled = $this->isFileHandlingEnabledForService($ai_service);
+            $file_handling_enabled = $this->isFileHandlingEnabledForService($ai_service);
 
-            $collectionIds = [];
-            $useRAG = false;
-            if ($fileHandlingEnabled) {
-                // Only background RAG collections – anonymous users have no upload sessions
-                $collectionIds = $this->getAllRAGCollectionIds($chatConfig);
-                $useRAG = $this->isRagEnabledForChat($chatConfig) && !empty($collectionIds);
+            $collection_ids = [];
+            $use_rag = false;
+            if ($file_handling_enabled) {
+                // Background files only: anonymous users cannot upload
+                $this->ensureBackgroundFilesInRAG($chat_config);
+                $collection_ids = $this->getAllRAGCollectionIds($chat_config);
+                $use_rag = $this->isRagEnabledForChat($chat_config) && !empty($collection_ids);
             }
 
-            $contextResources = [];
-            if ($fileHandlingEnabled) {
-                $contextResources = $this->processBackgroundFiles($chatConfig, $useRAG);
+            $context_resources = [];
+            if ($file_handling_enabled) {
+                $context_resources = $this->processBackgroundFiles($chat_config, $use_rag);
             }
 
-            if ($chatConfig->isIncludePageContext()) {
-                $pageContext = $this->getPageContext($chatConfig);
-                if (!empty($pageContext)) {
-                    $contextResources[] = [
+            if ($chat_config->isIncludePageContext()) {
+                $page_context = $this->getPageContext($chat_config);
+                if (!empty($page_context)) {
+                    $context_resources[] = [
                         'kind' => 'page_context',
                         'title' => 'Page Context',
-                        'content' => $pageContext,
+                        'content' => $page_context,
                         'mime_type' => 'text/plain'
                     ];
                 }
             }
 
-            // Build AI messages from in-memory history (bounded by max_memory)
-            $recentLimit = min($chatConfig->getMaxMemory(), 20);
-            $historySlice = array_slice($conversation_history, -$recentLimit);
+            // History from the frontend, limited like the stored history
+            $recent_limit = min($chat_config->getMaxMemory(), 20);
+            $history_slice = array_slice($conversation_history, -$recent_limit);
 
-            $aiMessages = [];
-            foreach ($historySlice as $entry) {
+            $ai_messages = [];
+            foreach ($history_slice as $entry) {
                 $role = $entry['role'] ?? '';
                 $text = $entry['message'] ?? '';
                 if (!empty($text) && in_array($role, ['user', 'assistant'], true)) {
-                    $aiMessages[] = ['role' => $role, 'content' => $text];
+                    $ai_messages[] = ['role' => $role, 'content' => $text];
                 }
             }
-            $aiMessages[] = ['role' => 'user', 'content' => $message];
+            $ai_messages[] = ['role' => 'user', 'content' => $message];
+            $this->addOmittedImagesNote($ai_messages);
 
             $this->clearLastResponseData();
 
-            if ($useRAG) {
-                return $this->sendRagChat($aiMessages, $collectionIds, $contextResources);
+            if ($use_rag) {
+                return $this->sendRagChatWithRebind($chat_config, null, $ai_messages, $collection_ids, $context_resources);
             }
-            return $this->sendMessagesArray($aiMessages, $contextResources);
+            return $this->sendMessagesArray($ai_messages, $context_resources);
 
         } catch (\Exception $e) {
+            if (in_array($e->getMessage(), [AIChatPageComponentRAG::UNAVAILABLE, self::SERVICE_BUSY], true)) {
+                throw $e; // Shown to the user as a specific message
+            }
             $this->logger->error("handleStatelessMessage failed", [
                 'chat_id' => $chat_id,
                 'error' => $e->getMessage()
@@ -463,19 +535,68 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * Process background files using Attachment class (with Flavour caching!)
-     *
-     * @param ChatConfig $chatConfig Chat configuration
-     * @param bool $ragMode Whether RAG mode is active
-     * @return array Context resources array
+     * Start a new request with the configured limit for image data (max_image_data_mb)
      */
-    protected function processBackgroundFiles(ChatConfig $chatConfig, bool $ragMode = false): array
+    protected function resetImageDataBudget(): void
     {
-        $contextResources = [];
+        $limit_mb = max(1, (int) (\platform\AIChatPageComponentConfig::get('max_image_data_mb') ?: 15));
+        $this->image_data_budget = $limit_mb * 1024 * 1024;
+        $this->omitted_images = [];
+    }
+
+    /**
+     * Reserve the size of an image for the current request
+     *
+     * Images are added in the order background files, then messages from old to new;
+     * images that exceed the remaining budget are omitted.
+     *
+     * @return bool False if the image does not fit into the limit
+     */
+    protected function consumeImageDataBudget(string $data_url, string $title): bool
+    {
+        $size = strlen($data_url);
+        if ($size > $this->image_data_budget) {
+            $this->omitted_images[$title] = true;
+            $this->logger->info("Image omitted, image data limit reached: " . $title);
+            return false;
+        }
+
+        $this->image_data_budget -= $size;
+        return true;
+    }
+
+    /**
+     * Tell the AI service which images were omitted because of the image data limit
+     */
+    protected function addOmittedImagesNote(array &$ai_messages): void
+    {
+        if (empty($this->omitted_images) || empty($ai_messages)) {
+            return;
+        }
+
+        $note = "[Note: the following images were not sent because of the size limit: "
+            . implode(', ', array_keys($this->omitted_images)) . "]";
+
+        $last = count($ai_messages) - 1;
+        if (is_array($ai_messages[$last]['content'])) {
+            $ai_messages[$last]['content'][] = ['type' => 'text', 'text' => $note];
+        } else {
+            $ai_messages[$last]['content'] .= "\n\n" . $note;
+        }
+    }
+
+    /**
+     * Background files as context resources
+     *
+     * Text files are added as text, images as image; PDFs are converted to images
+     * without RAG and skipped in RAG mode, because they are stored in the RAG.
+     */
+    protected function processBackgroundFiles(ChatConfig $chat_config, bool $rag_mode = false): array
+    {
+        $context_resources = [];
 
         try {
-            // Get background files from attachments table (message_id = NULL)
-            $background_files = $chatConfig->getBackgroundFiles();
+            $background_files = $chat_config->getBackgroundFiles();
 
             if (empty($background_files)) {
                 $this->logger->debug("No background files found");
@@ -484,7 +605,7 @@ abstract class AIChatPageComponentLLM
 
             $this->logger->debug("Processing background files", [
                 'count' => count($background_files),
-                'rag_mode' => $ragMode
+                'rag_mode' => $rag_mode
             ]);
 
             global $DIC;
@@ -505,13 +626,12 @@ abstract class AIChatPageComponentLLM
                     $suffix = strtolower($revision->getInformation()->getSuffix());
                     $mime_type = $revision->getInformation()->getMimeType();
 
-                    // Process text files
                     if (in_array($suffix, ['txt', 'csv'])) {
                         $stream = $irss->consume()->stream($identification);
-                        $content = $stream->getStream()->getContents();
+                        $content = Attachment::toUtf8($stream->getStream()->getContents());
 
                         if (!empty($content)) {
-                            $contextResources[] = [
+                            $context_resources[] = [
                                 'kind' => 'text_file',
                                 'id' => 'bg-text-' . $file_id,
                                 'title' => $revision->getTitle(),
@@ -519,29 +639,23 @@ abstract class AIChatPageComponentLLM
                                 'content' => $content
                             ];
                         }
-                    }
-                    // Process images using Attachment class (with caching)
-                    elseif (in_array($suffix, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
-                        // Create temporary Attachment instance for processing
+                    } elseif (in_array($suffix, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
                         $attachment = new Attachment();
                         $attachment->setResourceId($file_id);
-                        $attachment->setChatId($chatConfig->getChatId());
+                        $attachment->setChatId($chat_config->getChatId());
 
-                        $dataUrl = $attachment->getDataUrl();
-                        if ($dataUrl) {
-                            $contextResources[] = [
+                        $data_url = $attachment->getDataUrl();
+                        if ($data_url && $this->consumeImageDataBudget($data_url, $revision->getTitle())) {
+                            $context_resources[] = [
                                 'kind' => 'image_file',
                                 'id' => 'bg-img-' . $file_id,
                                 'title' => $revision->getTitle(),
                                 'mime_type' => $mime_type,
-                                'url' => $dataUrl
+                                'url' => $data_url
                             ];
                         }
-                    }
-                    // Process PDFs using Attachment class (with Flavour caching!)
-                    elseif ($suffix === 'pdf') {
-                        // In RAG mode: Skip PDF processing (files are already in RAMSES collection)
-                        if ($ragMode) {
+                    } elseif ($suffix === 'pdf') {
+                        if ($rag_mode) {
                             $this->logger->debug("Skipping PDF flavour generation (RAG mode active)", [
                                 'file_id' => $file_id,
                                 'title' => $revision->getTitle()
@@ -549,24 +663,22 @@ abstract class AIChatPageComponentLLM
                             continue;
                         }
 
-                        // In Multimodal mode: Convert PDF pages to images
-                        // Create temporary Attachment instance for processing
                         $attachment = new Attachment();
                         $attachment->setResourceId($file_id);
-                        $attachment->setChatId($chatConfig->getChatId());
+                        $attachment->setChatId($chat_config->getChatId());
 
-                        $pdfDataUrls = $attachment->getDataUrl();
-                        if ($pdfDataUrls && is_array($pdfDataUrls)) {
-                            foreach ($pdfDataUrls as $pageIndex => $pageDataUrl) {
-                                if (!empty($pageDataUrl)) {
-                                    $contextResources[] = [
+                        $pdf_data_urls = $attachment->getDataUrl();
+                        if ($pdf_data_urls && is_array($pdf_data_urls)) {
+                            foreach ($pdf_data_urls as $page_index => $page_data_url) {
+                                if (!empty($page_data_url) && $this->consumeImageDataBudget($page_data_url, $revision->getTitle())) {
+                                    $context_resources[] = [
                                         'kind' => 'pdf_page',
-                                        'id' => 'bg-pdf-' . $file_id . '-p' . ($pageIndex + 1),
-                                        'title' => $revision->getTitle() . ' (Page ' . ($pageIndex + 1) . ')',
+                                        'id' => 'bg-pdf-' . $file_id . '-p' . ($page_index + 1),
+                                        'title' => $revision->getTitle() . ' (Page ' . ($page_index + 1) . ')',
                                         'mime_type' => 'image/png',
-                                        'page_number' => $pageIndex + 1,
+                                        'page_number' => $page_index + 1,
                                         'source_file' => $revision->getTitle(),
-                                        'url' => $pageDataUrl
+                                        'url' => $page_data_url
                                     ];
                                 }
                             }
@@ -586,81 +698,71 @@ abstract class AIChatPageComponentLLM
             $this->logger->error("processBackgroundFiles failed", ['error' => $e->getMessage()]);
         }
 
-        return $contextResources;
+        return $context_resources;
     }
 
     /**
-     * Convert session messages to AI format with multimodal support
-     *
-     * @param ChatSession $session User session
-     * @param int $limit Maximum number of recent messages
-     * @param bool $ragMode Whether RAG mode is active
-     * @param bool $fileHandlingEnabled Whether file handling is enabled (hierarchical check)
-     * @return array AI-formatted messages array
+     * Recent session messages in the API message format, with images and PDF pages
+     * of attachments unless RAG mode is active or file handling is disabled
      */
-    protected function processChatMessages(ChatSession $session, int $limit = 10, bool $ragMode = false, bool $fileHandlingEnabled = true): array
+    protected function processChatMessages(ChatSession $session, int $limit = 10, bool $rag_mode = false, bool $file_handling_enabled = true): array
     {
-        $aiMessages = [];
+        $ai_messages = [];
 
         try {
-            $recentMessages = $session->getRecentMessages($limit);
+            $recent_messages = $session->getRecentMessages($limit);
 
-            foreach ($recentMessages as $msg) {
+            foreach ($recent_messages as $msg) {
                 $content = $msg->getMessage();
                 $attachments = $msg->getAttachments();
 
-                // Skip attachment processing if file handling is disabled
-                if (!$fileHandlingEnabled) {
-                    // File handling disabled: Text-only messages
-                    $aiMessages[] = [
+                if (!$file_handling_enabled) {
+                    $ai_messages[] = [
                         'role' => $msg->getRole(),
                         'content' => $content
                     ];
-                    continue; // Skip to next message
+                    continue;
                 }
 
-                // In RAG mode: Skip attachments (they're either in collection or incompatible)
-                // In Multimodal mode: Process attachments as Base64
-                if ($ragMode) {
-                    // RAG mode: Text-only messages (attachments are in RAG collection)
-                    $aiMessages[] = [
+                // In RAG mode only text is sent: the RAG accepts string content only
+                if ($rag_mode) {
+                    $ai_messages[] = [
                         'role' => $msg->getRole(),
-                        'content' => $content
+                        'content' => implode("\n\n", array_merge([$content], $this->getTextAttachmentParts($attachments)))
                     ];
                 } else {
-                    // Multimodal mode: Process attachments as Base64
-                    // Separate attachments into RAG vs Base64 (multimodal)
                     $separated = $this->separateAttachmentsByMode($attachments);
-                    $base64Attachments = $separated['base64'];
+                    $base64_attachments = $separated['base64'];
 
-                    // Build multimodal content if we have image/PDF attachments
-                    if (!empty($base64Attachments)) {
-                        $multimodalContent = [];
+                    if (!empty($base64_attachments)) {
+                        $multimodal_content = [];
 
-                        // Add text content if present
                         if (!empty(trim($content))) {
-                            $multimodalContent[] = ['type' => 'text', 'text' => $content];
+                            $multimodal_content[] = ['type' => 'text', 'text' => $content];
                         }
 
-                        // Add image attachments
-                        foreach ($base64Attachments as $attachment) {
+                        foreach ($this->getTextAttachmentParts($base64_attachments) as $text_part) {
+                            $multimodal_content[] = ['type' => 'text', 'text' => $text_part];
+                        }
+
+                        foreach ($base64_attachments as $attachment) {
                             try {
                                 if ($attachment->isImage()) {
-                                    $imageData = $attachment->getDataUrl();
-                                    if ($imageData) {
-                                        $multimodalContent[] = [
+                                    $image_data = $attachment->getDataUrl();
+                                    if ($image_data && $this->consumeImageDataBudget($image_data, (string) $attachment->getTitle())) {
+                                        $multimodal_content[] = [
                                             'type' => 'image_url',
-                                            'image_url' => ['url' => $imageData]
+                                            'image_url' => ['url' => $image_data]
                                         ];
                                     }
                                 } elseif ($attachment->isPdf()) {
-                                    $pdfDataUrls = $attachment->getDataUrl();
-                                    if ($pdfDataUrls && is_array($pdfDataUrls)) {
-                                        foreach ($pdfDataUrls as $pageDataUrl) {
-                                            if ($pageDataUrl) {
-                                                $multimodalContent[] = [
+                                    $pdf_data_urls = $attachment->getDataUrl();
+                                    if ($pdf_data_urls && is_array($pdf_data_urls)) {
+                                        foreach ($pdf_data_urls as $page_data_url) {
+                                            if ($page_data_url && $this->consumeImageDataBudget($page_data_url, (string) $attachment->getTitle())) {
+                                                $multimodal_content[] = [
                                                     'type' => 'image_url',
-                                                    'image_url' => ['url' => $pageDataUrl]
+                                                    'image_url' => ['url' => $page_data_url]
                                                 ];
                                             }
                                         }
@@ -671,29 +773,53 @@ abstract class AIChatPageComponentLLM
                             }
                         }
 
-                        $aiMessages[] = [
+                        $ai_messages[] = [
                             'role' => $msg->getRole(),
-                            'content' => $multimodalContent
+                            'content' => $multimodal_content
                         ];
                     } else {
-                        // Text-only message
-                        $aiMessages[] = [
+                        $ai_messages[] = [
                             'role' => $msg->getRole(),
                             'content' => $content
                         ];
                     }
-                } // End of if ($ragMode) else block
+                }
             }
 
         } catch (\Exception $e) {
             $this->logger->error("processChatMessages failed", ['error' => $e->getMessage()]);
         }
 
-        return $aiMessages;
+        // Drop empty messages (e.g. from failed earlier requests); some APIs reject them
+        return array_values(array_filter(
+            $ai_messages,
+            fn($m) => is_array($m['content']) ? !empty($m['content']) : trim((string) $m['content']) !== ''
+        ));
     }
 
     /**
-     * Separate attachments into RAG vs Base64 (multimodal) modes
+     * Content of the text attachments that are not stored in the RAG
+     *
+     * @param Attachment[] $attachments
+     * @return string[] One part per file, headed by the file name
+     */
+    protected function getTextAttachmentParts(array $attachments): array
+    {
+        $parts = [];
+        foreach ($attachments as $attachment) {
+            if (!$attachment->isTextFile() || $attachment->isInRAG()) {
+                continue;
+            }
+            $text = $attachment->getTextContent();
+            if ($text !== null && trim($text) !== '') {
+                $parts[] = "[Attached file: " . $attachment->getTitle() . "]\n" . $text;
+            }
+        }
+        return $parts;
+    }
+
+    /**
+     * @return array{rag: Attachment[], base64: Attachment[]}
      */
     protected function separateAttachmentsByMode(array $attachments): array
     {
@@ -715,9 +841,9 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * Get all RAG collection IDs for a chat
+     * @return string[] Collections of all files of the chat in the RAG
      */
-    protected function getAllRAGCollectionIds(ChatConfig $chatConfig): array
+    protected function getAllRAGCollectionIds(ChatConfig $chat_config): array
     {
         global $DIC;
         $db = $DIC->database();
@@ -726,7 +852,7 @@ abstract class AIChatPageComponentLLM
 
         try {
             $query = "SELECT DISTINCT rag_collection_id FROM pcaic_attachments " .
-                     "WHERE chat_id = " . $db->quote($chatConfig->getChatId(), 'text') . " " .
+                     "WHERE chat_id = " . $db->quote($chat_config->getChatId(), 'text') . " " .
                      "AND rag_collection_id IS NOT NULL";
 
             $result = $db->query($query);
@@ -743,30 +869,30 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * Get page context for chat
+     * Visible text (paragraphs) of the page containing the chat
      */
-    protected function getPageContext(ChatConfig $chatConfig): string
+    protected function getPageContext(ChatConfig $chat_config): string
     {
         global $DIC;
 
-        $page_id = (int) $chatConfig->getPageId();
-        $parent_id = (int) $chatConfig->getParentId();
-        $parent_type = (string) $chatConfig->getParentType();
+        $page_id = (int) $chat_config->getPageId();
+        $parent_id = (int) $chat_config->getParentId();
+        $parent_type = (string) $chat_config->getParentType();
 
         if (!$page_id && !$parent_id) {
             return '';
         }
 
-        // Map to COPage type
+        // Page object type used by the page manager for the parent type
         $copage_type_map = [
             'crs' => 'cont',
             'grp' => 'cont',
-            'cont'=> 'cont',
+            'cont' => 'cont',
             'cat' => 'cont',
-            'lm'  => 'lm',
+            'lm' => 'lm',
             'wpg' => 'wpg',
-            'wiki'=> 'wpg',
-            'copa'=> 'copa',
+            'wiki' => 'wpg',
+            'copa' => 'copa',
             'glo' => 'glo',
             'blp' => 'blp',
             'frm' => 'frm',
@@ -798,7 +924,6 @@ abstract class AIChatPageComponentLLM
                 return '';
             }
 
-            // Extract text content from XML
             $dom = new \DOMDocument();
             @$dom->loadXML($page_xml);
 
@@ -821,106 +946,71 @@ abstract class AIChatPageComponentLLM
         }
     }
 
-    // ============================================
-    // Abstract Methods (Service-Specific)
-    // ============================================
+    /**
+     * Send the conversation to the API
+     *
+     * @param array $messages Messages in the API format
+     * @param array|null $context_resources Page context, background files
+     * @return string Answer text
+     * @throws AIChatPageComponentException
+     */
+    abstract public function sendMessagesArray(array $messages, ?array $context_resources = null): string;
 
     /**
-     * Send messages array directly (implemented by service-specific classes)
-     *
-     * @param array $messages Array of messages with 'role' and 'content'
-     * @param array|null $contextResources Optional context resources
-     * @return string AI response
+     * @return string[] Allowed file extensions
      */
-    abstract public function sendMessagesArray(array $messages, ?array $contextResources = null): string;
-
-    // ============================================
-    // File Type Support (RAG-specific)
-    // ============================================
+    abstract public function getAllowedFileTypes(bool $rag_enabled): array;
 
     /**
-     * Get allowed file types based on RAG mode
-     *
-     * @param bool $ragEnabled Whether RAG mode is enabled
-     * @return array Array of allowed file extensions (without dots)
+     * @return string[] File types uploaded to the RAG
      */
-    abstract public function getAllowedFileTypes(bool $ragEnabled): array;
+    public function getRagFileTypes(): array
+    {
+        return $this->supportsRAG() ? AIChatPageComponentRAG::getFileTypes() : [];
+    }
 
-    /**
-     * Check if a file type is allowed in current mode
-     *
-     * @param string $extension File extension (without dot)
-     * @param bool $ragEnabled Whether RAG mode is enabled
-     * @return bool True if file type is allowed
-     */
-    public function isFileTypeAllowed(string $extension, bool $ragEnabled): bool
+    public function isFileTypeAllowed(string $extension, bool $rag_enabled): bool
     {
         $extension = strtolower($extension);
-        $allowed = $this->getAllowedFileTypes($ragEnabled);
+        $allowed = $this->getAllowedFileTypes($rag_enabled);
         return in_array($extension, $allowed, true);
     }
 
-    /**
-     * Get human-readable description of allowed types
-     *
-     * @param bool $ragEnabled Whether RAG mode is enabled
-     * @return string Formatted list of allowed extensions
-     */
-    public function getAllowedFileTypesDescription(bool $ragEnabled): string
+    public function getAllowedFileTypesDescription(bool $rag_enabled): string
     {
-        $types = $this->getAllowedFileTypes($ragEnabled);
+        $types = $this->getAllowedFileTypes($rag_enabled);
         return implode(', ', array_map(fn($type) => strtoupper($type), $types));
     }
 
-    // ============================================
-    // Model Parameters
-    // ============================================
-
     /**
-     * Get model-specific API parameters
-     *
-     * Override in subclasses to customize parameters for specific models/services.
-     * Some models don't support certain parameters (e.g., OpenAI o1 doesn't support temperature).
-     *
-     * @return array Associative array of API parameters (temperature, top_p, etc.)
+     * Additional request parameters such as temperature
      */
     protected function getModelParameters(): array
     {
-        // Default parameters - override in subclasses if needed
         return [
             'temperature' => 0.7
         ];
     }
 
-    // ============================================
-    // RAG (Retrieval-Augmented Generation) Support
-    // ============================================
-
+    /**
+     * RAG is provided by the separate RAG service for every AI service
+     */
     public function supportsRAG(): bool
     {
-        return false; // Default: No RAG support
+        return AIChatPageComponentRAG::isAvailable();
     }
 
     /**
-     * Check if RAG is actually enabled for a specific chat
-     *
-     * RAG is only enabled if ALL three conditions are met:
-     * 1. The AI service supports RAG functionality
-     * 2. RAG is globally enabled for this service in plugin config
-     * 3. RAG is enabled for this specific chat
-     *
-     * @param ChatConfig $chatConfig Chat configuration
-     * @return bool True if RAG should be used, false otherwise (multimodal mode)
+     * RAG is used if the RAG service is available, allowed for the AI service
+     * and enabled in the chat
      */
-    public function isRagEnabledForChat(ChatConfig $chatConfig): bool
+    public function isRagEnabledForChat(ChatConfig $chat_config): bool
     {
-        // First check: Does the service support RAG at all?
         if (!$this->supportsRAG()) {
             return false;
         }
 
-        // Second check: Is RAG globally enabled for this service?
-        $ai_service = $chatConfig->getAiService();
+        $ai_service = $chat_config->getAiService();
         $rag_config_key = $ai_service . '_enable_rag';
         $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
         $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
@@ -929,64 +1019,220 @@ abstract class AIChatPageComponentLLM
             return false;
         }
 
-        // Third check: Has the chat enabled RAG?
-        return $chatConfig->isEnableRag();
+        return $chat_config->isEnableRag();
     }
 
     public function supportsMultimodal(): bool
     {
-        return false; // Default: No multimodal support
+        return false;
     }
 
     public function supportsBase64Images(): bool
     {
-        return false; // Default: No base64 image support
+        return false;
     }
 
     public function supportsStreaming(): bool
     {
-        return false; // Default: No streaming support
-    }
-
-    public function uploadFileToRAG(string $filepath, string $entityId): array
-    {
-        if (!$this->supportsRAG()) {
-            throw new AIChatPageComponentException(get_class($this) . " does not support RAG file uploads");
-        }
-
-        throw new AIChatPageComponentException("uploadFileToRAG() not implemented in " . get_class($this));
-    }
-
-    public function deleteFileFromRAG(string $remoteFileId, string $entityId): bool
-    {
-        if (!$this->supportsRAG()) {
-            throw new AIChatPageComponentException(get_class($this) . " does not support RAG file deletion");
-        }
-
-        throw new AIChatPageComponentException("deleteFileFromRAG() not implemented in " . get_class($this));
-    }
-
-    public function sendRagChat(array $messages, array $collectionIds, ?array $contextResources = null): string
-    {
-        if (!$this->supportsRAG()) {
-            // Fallback: Use standard chat endpoint (ignore collection_ids)
-            $this->logger->warning("Service does not support RAG, falling back to standard chat", [
-                'service' => get_class($this),
-                'collections' => $collectionIds
-            ]);
-            return $this->sendMessagesArray($messages, $contextResources);
-        }
-
-        throw new AIChatPageComponentException("sendRagChat() not implemented in " . get_class($this));
+        return false;
     }
 
     /**
-     * Refresh available models from API
+     * @return array{collection_id: string, remote_file_id: string}
+     * @throws AIChatPageComponentException
+     */
+    public function uploadFileToRAG(string $filepath, string $entity_id, ?string $filename = null): array
+    {
+        if (!$this->supportsRAG()) {
+            throw new AIChatPageComponentException("RAG service is not enabled or not configured");
+        }
+
+        return (new AIChatPageComponentRAG())->uploadFile($filepath, $entity_id, $filename);
+    }
+
+    /**
+     * Delete a file from the RAG service
      *
-     * Fetches the list of available models from the service's API endpoint,
-     * caches them, and returns success/error information.
+     * Also works if RAG is disabled, so that no files remain in the RAG.
+     */
+    public function deleteFileFromRAG(string $remote_file_id, string $entity_id): bool
+    {
+        $deleted = (new AIChatPageComponentRAG())->deleteFile($remote_file_id, $entity_id);
+        if (!$deleted) {
+            // E.g. still being processed: deleted later, so that it does not remain in the RAG
+            AIChatPageComponentRAGStatus::queueDeletion($remote_file_id, $entity_id);
+        }
+        return $deleted;
+    }
+
+    /**
+     * Answer with RAG: the RAG service retrieves relevant passages and returns the
+     * augmented conversation, which is sent to this AI service
      *
-     * @return array ['success' => bool, 'message' => string, 'models' => array|null]
+     * Without relevant passages the original conversation is sent, so that the AI
+     * service can still answer.
+     *
+     * @throws AIChatPageComponentException
+     */
+    public function sendRagChat(array $messages, array $collection_ids, ?array $context_resources = null): string
+    {
+        if (!$this->supportsRAG()) {
+            // RAG not available: send without retrieval
+            $this->logger->warning("RAG service not available, falling back to standard chat", [
+                'service' => get_class($this),
+                'collections' => $collection_ids
+            ]);
+            return $this->sendMessagesArray($messages, $context_resources);
+        }
+
+        $retrieval = (new AIChatPageComponentRAG())->augment(
+            $this->toTextMessages($messages),
+            $collection_ids
+        );
+
+        if (empty($retrieval['chunks'])) {
+            $this->logger->debug("RAG found no relevant chunks, answering without retrieved context", [
+                'collections' => $collection_ids
+            ]);
+            return $this->sendMessagesArray($this->addNoSourcesNote($messages), $context_resources);
+        }
+
+        $response = $this->sendMessagesArray($this->toTextMessages($retrieval['messages']), $context_resources);
+
+        $this->last_response_metadata = AIChatPageComponentRAG::chunksToSources($retrieval['chunks']);
+
+        return AIChatPageComponentRAG::convertCitationMarkers($response);
+    }
+
+    /**
+     * sendRagChat(), with a new upload of the files if the RAG no longer grants access
+     * to the stored collections (e.g. after a change of the tenant)
+     *
+     * Only an explicit rejection of the collections triggers the new upload; an
+     * unreachable RAG service is reported as error. The request is repeated once.
+     *
+     * @param ChatSession|null $session Session of the user; null for anonymous users
+     * @throws AIChatPageComponentException
+     */
+    protected function sendRagChatWithRebind(
+        ChatConfig $chat_config,
+        ?ChatSession $session,
+        array $messages,
+        array $collection_ids,
+        ?array $context_resources
+    ): string {
+        try {
+            return $this->sendRagChat($messages, $collection_ids, $context_resources);
+        } catch (AIChatPageComponentRAGBindingLostException $e) {
+            $this->logger->warning(
+                "RAG collections of chat " . $chat_config->getChatId() . " not accessible, files are uploaded again: "
+                . implode(', ', $e->getCollectionIds())
+            );
+
+            $this->resetRagReferences($chat_config->getChatId(), $e->getCollectionIds());
+            $this->ensureBackgroundFilesInRAG($chat_config);
+            if ($session !== null) {
+                $this->syncChatAttachmentsToRAG($session, min($chat_config->getMaxMemory(), 20));
+            }
+
+            $this->clearLastResponseData();
+            $collection_ids = $this->getAllRAGCollectionIds($chat_config);
+            if (empty($collection_ids)) {
+                return $this->sendMessagesArray($messages, $context_resources);
+            }
+            return $this->sendRagChat($messages, $collection_ids, $context_resources);
+        }
+    }
+
+    /**
+     * Remove the stored RAG references of the files of a chat in the given collections,
+     * so that they are uploaded again
+     *
+     * @param string[] $collection_ids
+     */
+    protected function resetRagReferences(string $chat_id, array $collection_ids): void
+    {
+        if (empty($collection_ids)) {
+            return;
+        }
+
+        global $DIC;
+        $db = $DIC->database();
+        $in = $db->in('rag_collection_id', $collection_ids, false, 'text');
+
+        $db->manipulate(
+            "UPDATE pcaic_attachments SET rag_collection_id = NULL, rag_remote_file_id = NULL, rag_uploaded_at = NULL,"
+            . " rag_status = NULL, rag_status_error = NULL, rag_failed_count = 0, rag_retry_at = NULL"
+            . " WHERE chat_id = " . $db->quote($chat_id, 'text') . " AND " . $in
+        );
+        $db->manipulate(
+            "UPDATE pcaic_chats SET rag_collection_id = NULL"
+            . " WHERE chat_id = " . $db->quote($chat_id, 'text') . " AND " . $in
+        );
+    }
+
+    /**
+     * Tell the AI service that the documents of the chat contain nothing relevant,
+     * so that it does not invent their content
+     */
+    protected function addNoSourcesNote(array $messages): array
+    {
+        $note = "[Note: The documents of this chat contain no passages relevant to this question."
+            . " If the question refers to these documents, say that no matching information was found"
+            . " instead of guessing their content.]";
+
+        $last = count($messages) - 1;
+        if ($last < 0) {
+            return $messages;
+        }
+        if (is_array($messages[$last]['content'])) {
+            $messages[$last]['content'][] = ['type' => 'text', 'text' => $note];
+        } else {
+            $messages[$last]['content'] .= "\n\n" . $note;
+        }
+        return $messages;
+    }
+
+    /**
+     * Reduce messages to user/assistant messages with text content
+     *
+     * The RAG accepts string content only, and the augmented messages may contain
+     * fields that chat APIs reject.
+     */
+    protected function toTextMessages(array $messages): array
+    {
+        $result = [];
+        foreach ($messages as $message) {
+            $role = $message['role'] ?? '';
+            if (!in_array($role, ['user', 'assistant'], true)) {
+                continue;
+            }
+
+            $content = $message['content'] ?? '';
+            if (is_array($content)) {
+                $texts = [];
+                foreach ($content as $part) {
+                    if (($part['type'] ?? '') === 'text' && isset($part['text'])) {
+                        $texts[] = $part['text'];
+                    }
+                }
+                $content = implode("\n", $texts);
+            }
+
+            if (!is_string($content) || trim($content) === '') {
+                continue;
+            }
+
+            $result[] = ['role' => $role, 'content' => $content];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Load the model list from the API
+     *
+     * @return array{success: bool, message: string, models: array|null}
      */
     public function refreshModels(): array
     {
@@ -997,54 +1243,40 @@ abstract class AIChatPageComponentLLM
         ];
     }
 
-    public function getRecommendedFileHandlingMode(): string
+    /**
+     * Upload background files that are not in the RAG, e.g. after the RAG service
+     * has been changed
+     */
+    protected function ensureBackgroundFilesInRAG(ChatConfig $chat_config): void
     {
-        if ($this->supportsRAG()) {
-            return 'auto'; // Use RAG when beneficial
-        } elseif ($this->supportsBase64Images()) {
-            return 'base64_embedding'; // Fallback to embedding
+        if (!$this->isRagEnabledForChat($chat_config)) {
+            return;
         }
 
-        return 'none'; // No file support
-    }
-
-    public function shouldUseRAGForFile(int $fileSize, bool $isReused, string $mimeType): bool
-    {
-        if (!$this->supportsRAG()) {
-            return false; // No RAG available
+        $stats = $this->syncBackgroundFilesToRAG($chat_config);
+        if ($stats['uploaded'] > 0 || $stats['errors'] > 0) {
+            $this->logger->info("Background files synced to RAG before sending", $stats);
         }
 
-        // Default strategy: Use RAG for large or reused files
-        $threshold = \platform\AIChatPageComponentConfig::get('rag_upload_threshold_kb') ?: 1024;
-        $thresholdBytes = $threshold * 1024;
-
-        if ($fileSize > $thresholdBytes) {
-            return true; // Large file
-        }
-
-        if ($isReused) {
-            return true; // Reused file
-        }
-
-        // Text files benefit from RAG semantic search
-        if (strpos($mimeType, 'text/') === 0) {
-            return true;
-        }
-
-        return false; // Default: Use base64
+        // At most one status query to the RAG per chat and minute
+        AIChatPageComponentRAGStatus::refreshChat($chat_config->getChatId());
+        $this->rag_incomplete = AIChatPageComponentRAGStatus::hasUnprocessedBackgroundFiles($chat_config->getChatId());
     }
 
     /**
-     * Sync existing BACKGROUND FILES to RAG when RAG mode is activated
-     *
-     * This function handles the case where a chat is switched from Multimodal to RAG mode.
-     * It uploads only BACKGROUND FILES (background_file = 1) that are RAG-compatible
-     * and haven't been uploaded to RAMSES yet.
-     *
-     * @param ChatConfig $chatConfig Chat configuration
-     * @return array Statistics ['uploaded' => int, 'skipped' => int, 'errors' => int]
+     * Whether background files of the chat were not (yet) usable in the RAG for the last answer
      */
-    public function syncBackgroundFilesToRAG(ChatConfig $chatConfig): array
+    public function isRagIncomplete(): bool
+    {
+        return $this->rag_incomplete;
+    }
+
+    /**
+     * Upload background files of the RAG file types that are not in the RAG yet
+     *
+     * @return array{uploaded: int, skipped: int, errors: int}
+     */
+    public function syncBackgroundFilesToRAG(ChatConfig $chat_config): array
     {
         $stats = ['uploaded' => 0, 'skipped' => 0, 'errors' => 0];
 
@@ -1052,12 +1284,12 @@ abstract class AIChatPageComponentLLM
             global $DIC;
             $db = $DIC->database();
 
-            // Find all BACKGROUND FILES for this chat that haven't been uploaded to RAG yet
             $query = "SELECT id, resource_id, message_id
                       FROM pcaic_attachments
-                      WHERE chat_id = " . $db->quote($chatConfig->getChatId(), 'text') . "
+                      WHERE chat_id = " . $db->quote($chat_config->getChatId(), 'text') . "
                       AND background_file = 1
-                      AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')";
+                      AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')
+                      AND " . AIChatPageComponentRAGStatus::uploadDueCondition();
 
             $result = $db->query($query);
             $attachments_to_upload = [];
@@ -1067,12 +1299,12 @@ abstract class AIChatPageComponentLLM
             }
 
             if (empty($attachments_to_upload)) {
-                $this->logger->debug("No background files need RAG sync", ['chat_id' => $chatConfig->getChatId()]);
+                $this->logger->debug("No background files need RAG sync", ['chat_id' => $chat_config->getChatId()]);
                 return $stats;
             }
 
             $this->logger->info("Starting RAG sync for background files", [
-                'chat_id' => $chatConfig->getChatId(),
+                'chat_id' => $chat_config->getChatId(),
                 'count' => count($attachments_to_upload)
             ]);
 
@@ -1080,13 +1312,12 @@ abstract class AIChatPageComponentLLM
 
             foreach ($attachments_to_upload as $att_row) {
                 try {
-                    $attachment = Attachment::loadById((int)$att_row['id']);
+                    $attachment = Attachment::loadById((int) $att_row['id']);
                     if (!$attachment) {
                         $stats['skipped']++;
                         continue;
                     }
 
-                    // Check if file type is RAG-compatible
                     $identification = $irss->manage()->find($att_row['resource_id']);
                     if ($identification === null) {
                         $stats['skipped']++;
@@ -1101,48 +1332,43 @@ abstract class AIChatPageComponentLLM
 
                     $suffix = strtolower($revision->getInformation()->getSuffix());
 
-                    // Only upload RAG-compatible file types
-                    $ragCompatible = in_array($suffix, ['txt', 'csv', 'pdf'], true);
-                    if (!$ragCompatible) {
-                        $this->logger->debug("Skipping non-RAG file type", [
-                            'attachment_id' => $att_row['id'],
-                            'suffix' => $suffix
-                        ]);
+                    $rag_compatible = in_array($suffix, $this->getRagFileTypes(), true);
+                    if (!$rag_compatible) {
+                        AIChatPageComponentRAGStatus::markSkipped((int) $att_row['id']);
                         $stats['skipped']++;
                         continue;
                     }
 
-                    // Upload to RAG
-                    $entityId = $chatConfig->getChatId();
+                    $entity_id = $chat_config->getChatId();
                     $stream = $irss->consume()->stream($identification);
 
-                    // Create temp file with original filename (RAMSES validates file extension)
-                    $originalFilename = $revision->getTitle();
-                    $tempFile = sys_get_temp_dir() . '/' . 'rag_sync_' . uniqid() . '_' . $originalFilename;
-                    file_put_contents($tempFile, $stream->getStream()->getContents());
+                    // Temporary file with the original name, the RAG validates the extension
+                    $original_filename = $revision->getTitle();
+                    $temp_file = sys_get_temp_dir() . '/' . 'rag_sync_' . uniqid() . '_' . basename($original_filename);
+                    file_put_contents($temp_file, $stream->getStream()->getContents());
+                    try {
+                        $upload_result = $this->uploadFileToRAG($temp_file, $entity_id, $original_filename);
+                    } finally {
+                        @unlink($temp_file);
+                    }
 
-                    $uploadResult = $this->uploadFileToRAG($tempFile, $entityId);
-                    unlink($tempFile);
-
-                    // Update attachment with RAG info
-                    $attachment->setRagCollectionId($uploadResult['collection_id']);
-                    $attachment->setRagRemoteFileId($uploadResult['remote_file_id']);
+                    $attachment->setRagCollectionId($upload_result['collection_id']);
+                    $attachment->setRagRemoteFileId($upload_result['remote_file_id']);
                     $attachment->setRagUploadedAt(date('Y-m-d H:i:s'));
                     $attachment->save();
+                    AIChatPageComponentRAGStatus::markUploaded((int) $att_row['id']);
 
                     $this->logger->info("Synced background file to RAG", [
                         'attachment_id' => $att_row['id'],
-                        'remote_file_id' => $uploadResult['remote_file_id'],
-                        'collection_id' => $uploadResult['collection_id']
+                        'remote_file_id' => $upload_result['remote_file_id'],
+                        'collection_id' => $upload_result['collection_id']
                     ]);
 
                     $stats['uploaded']++;
 
                 } catch (\Exception $e) {
-                    $this->logger->error("Failed to sync attachment to RAG", [
-                        'attachment_id' => $att_row['id'],
-                        'error' => $e->getMessage()
-                    ]);
+                    $this->logger->error("Failed to sync attachment to RAG: attachment " . $att_row['id'] . " | " . $e->getMessage());
+                    AIChatPageComponentRAGStatus::markFailed((int) $att_row['id'], $e->getMessage());
                     $stats['errors']++;
                 }
             }
@@ -1158,17 +1384,11 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * Sync chat attachments from recent messages to RAG
+     * Upload attachments of the recent messages to the RAG
      *
-     * This function is called when sending a message in RAG mode.
-     * It uploads chat attachments (background_file = 0) from the last X messages
-     * that are RAG-compatible and haven't been uploaded yet.
-     *
-     * @param ChatSession $session User chat session
-     * @param int $maxMemory Maximum number of recent messages to check
-     * @return array Statistics ['uploaded' => int, 'skipped' => int, 'errors' => int]
+     * @return array{uploaded: int, skipped: int, errors: int}
      */
-    public function syncChatAttachmentsToRAG(ChatSession $session, int $maxMemory): array
+    public function syncChatAttachmentsToRAG(ChatSession $session, int $max_memory): array
     {
         $stats = ['uploaded' => 0, 'skipped' => 0, 'errors' => 0];
 
@@ -1176,23 +1396,21 @@ abstract class AIChatPageComponentLLM
             global $DIC;
             $db = $DIC->database();
 
-            // Get recent messages
-            $recentMessages = $session->getRecentMessages($maxMemory);
-            if (empty($recentMessages)) {
+            $recent_messages = $session->getRecentMessages($max_memory);
+            if (empty($recent_messages)) {
                 return $stats;
             }
 
-            // Collect message IDs
-            $messageIds = array_map(fn($msg) => $msg->getMessageId(), $recentMessages);
+            $message_ids = array_map(fn($msg) => $msg->getMessageId(), $recent_messages);
 
-            // Find chat attachments from recent messages that haven't been uploaded to RAG
-            $messageIdList = implode(',', array_map(fn($id) => $db->quote($id, 'integer'), $messageIds));
+            $message_id_list = implode(',', array_map(fn($id) => $db->quote($id, 'integer'), $message_ids));
 
             $query = "SELECT id, resource_id, message_id
                       FROM pcaic_attachments
-                      WHERE message_id IN (" . $messageIdList . ")
+                      WHERE message_id IN (" . $message_id_list . ")
                       AND background_file = 0
-                      AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')";
+                      AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')
+                      AND " . AIChatPageComponentRAGStatus::uploadDueCondition();
 
             $result = $db->query($query);
             $attachments_to_upload = [];
@@ -1204,7 +1422,7 @@ abstract class AIChatPageComponentLLM
             if (empty($attachments_to_upload)) {
                 $this->logger->debug("No chat attachments need RAG sync", [
                     'session_id' => $session->getSessionId(),
-                    'message_count' => count($recentMessages)
+                    'message_count' => count($recent_messages)
                 ]);
                 return $stats;
             }
@@ -1215,17 +1433,16 @@ abstract class AIChatPageComponentLLM
             ]);
 
             $irss = $DIC->resourceStorage();
-            $chatId = $session->getChatId();
+            $chat_id = $session->getChatId();
 
             foreach ($attachments_to_upload as $att_row) {
                 try {
-                    $attachment = Attachment::loadById((int)$att_row['id']);
+                    $attachment = Attachment::loadById((int) $att_row['id']);
                     if (!$attachment) {
                         $stats['skipped']++;
                         continue;
                     }
 
-                    // Check if file type is RAG-compatible
                     $identification = $irss->manage()->find($att_row['resource_id']);
                     if ($identification === null) {
                         $stats['skipped']++;
@@ -1240,49 +1457,45 @@ abstract class AIChatPageComponentLLM
 
                     $suffix = strtolower($revision->getInformation()->getSuffix());
 
-                    // Only upload RAG-compatible file types
-                    $ragCompatible = in_array($suffix, ['txt', 'csv', 'pdf'], true);
-                    if (!$ragCompatible) {
-                        $this->logger->debug("Skipping non-RAG file type", [
-                            'attachment_id' => $att_row['id'],
-                            'suffix' => $suffix
-                        ]);
+                    $rag_compatible = in_array($suffix, $this->getRagFileTypes(), true);
+                    if (!$rag_compatible) {
+                        AIChatPageComponentRAGStatus::markSkipped((int) $att_row['id']);
                         $stats['skipped']++;
                         continue;
                     }
 
-                    // Upload to RAG
-                    $entityId = $chatId;
+                    // Same entity as the direct upload in api.php and Attachment::delete()
+                    $entity_id = (string) $session->getSessionId();
                     $stream = $irss->consume()->stream($identification);
 
-                    // Create temp file with original filename (RAMSES validates file extension)
-                    $originalFilename = $revision->getTitle();
-                    $tempFile = sys_get_temp_dir() . '/' . 'rag_chat_sync_' . uniqid() . '_' . $originalFilename;
-                    file_put_contents($tempFile, $stream->getStream()->getContents());
+                    // Temporary file with the original name, the RAG validates the extension
+                    $original_filename = $revision->getTitle();
+                    $temp_file = sys_get_temp_dir() . '/' . 'rag_chat_sync_' . uniqid() . '_' . basename($original_filename);
+                    file_put_contents($temp_file, $stream->getStream()->getContents());
+                    try {
+                        $upload_result = $this->uploadFileToRAG($temp_file, $entity_id, $original_filename);
+                    } finally {
+                        @unlink($temp_file);
+                    }
 
-                    $uploadResult = $this->uploadFileToRAG($tempFile, $entityId);
-                    unlink($tempFile);
-
-                    // Update attachment with RAG info
-                    $attachment->setRagCollectionId($uploadResult['collection_id']);
-                    $attachment->setRagRemoteFileId($uploadResult['remote_file_id']);
+                    $attachment->setRagCollectionId($upload_result['collection_id']);
+                    $attachment->setRagRemoteFileId($upload_result['remote_file_id']);
                     $attachment->setRagUploadedAt(date('Y-m-d H:i:s'));
                     $attachment->save();
+                    AIChatPageComponentRAGStatus::markUploaded((int) $att_row['id']);
 
                     $this->logger->info("Synced chat attachment to RAG", [
                         'attachment_id' => $att_row['id'],
                         'message_id' => $att_row['message_id'],
-                        'remote_file_id' => $uploadResult['remote_file_id'],
-                        'collection_id' => $uploadResult['collection_id']
+                        'remote_file_id' => $upload_result['remote_file_id'],
+                        'collection_id' => $upload_result['collection_id']
                     ]);
 
                     $stats['uploaded']++;
 
                 } catch (\Exception $e) {
-                    $this->logger->error("Failed to sync chat attachment to RAG", [
-                        'attachment_id' => $att_row['id'],
-                        'error' => $e->getMessage()
-                    ]);
+                    $this->logger->error("Failed to sync chat attachment to RAG: attachment " . $att_row['id'] . " | " . $e->getMessage());
+                    AIChatPageComponentRAGStatus::markFailed((int) $att_row['id'], $e->getMessage());
                     $stats['errors']++;
                 }
             }

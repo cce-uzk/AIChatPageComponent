@@ -1,4 +1,17 @@
-<?php declare(strict_types=1);
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
 
 namespace ILIAS\Plugin\pcaic\Model;
 
@@ -7,79 +20,47 @@ use ILIAS\Plugin\pcaic\Storage\ResourceStakeholder;
 use Exception;
 
 /**
- * File Attachment Model for AI Chat Page Component
- * 
- * Manages file attachments in AI chat conversations using ILIAS ResourceStorage Service.
- * Supports multimodal AI interactions through comprehensive file processing capabilities.
- * 
- * Supported file types:
- * - Images (JPG, PNG, GIF, WebP): Optimized for AI analysis with ILIAS Flavours
- * - PDFs: Page-by-page conversion to images via Ghostscript
- * - Text files (TXT, MD, CSV): Content integration into AI context
- * 
- * Features:
- * - ILIAS ResourceStorage integration for secure file handling
- * - Automatic image optimization and compression
- * - PDF-to-image conversion with caching
- * - Multimodal AI message formatting
- * - File persistence across sessions
- * - Download URL generation with fallbacks
+ * File attached to a chat message or used as background file of a chat
+ *
+ * Files are stored in the ILIAS Resource Storage. Images and PDF pages are
+ * converted via flavours into images suitable for AI services.
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
- * 
- * @see \ILIAS\ResourceStorage\Services
- * @see \ILIAS\Plugin\pcaic\Service\ImageOptimizer
- * 
- * @package ILIAS\Plugin\pcaic\Model
  */
 class Attachment
 {
-    /** @var int|null Database primary key identifier */
     protected ?int $id = null;
 
-    /** @var int|null Associated message ID for conversation context (NULL = pending upload or background file) */
+    /** @var int|null NULL for background files and uploads not yet sent */
     protected ?int $message_id = null;
 
-    /** @var string|null Chat ID for session association */
     protected ?string $chat_id = null;
 
-    /** @var int|null User ID who uploaded the file */
     protected ?int $user_id = null;
 
-    /** @var string|null ILIAS ResourceStorage resource identifier (NULL if RAG-only) */
+    /** @var string|null Resource Storage identification */
     protected ?string $resource_id = null;
 
-    /** @var string|null RAMSES RAG collection identifier */
+    /** @var string|null Collection in the RAG service */
     protected ?string $rag_collection_id = null;
 
-    /** @var string|null RAMSES RAG remote file identifier */
+    /** @var string|null File ID in the RAG service */
     protected ?string $rag_remote_file_id = null;
 
-    /** @var string|null RAG upload timestamp in Y-m-d H:i:s format */
     protected ?string $rag_uploaded_at = null;
 
-    /** @var string|null Upload timestamp in Y-m-d H:i:s format */
     protected ?string $timestamp = null;
 
-    /** @var bool Flag indicating if this is a background file (true) or chat upload (false) */
     protected bool $background_file = false;
 
-    /** @var \ilDBInterface Database interface for persistence operations */
     protected \ilDBInterface $db;
-    
-    /** @var ResourceStorage ILIAS ResourceStorage service for file operations */
+
     protected ResourceStorage $resource_storage;
-    
-    /** @var \ilLogger Component-specific logger for debugging */
+
     protected \ilLogger $logger;
-    
+
     /**
-     * Constructor - initializes attachment with optional auto-loading
-     * 
-     * Sets up database connection, logging, and ResourceStorage service.
-     * If an ID is provided, automatically loads the attachment data from database.
-     * 
-     * @param int|null $id Optional attachment ID for auto-loading
+     * @param int|null $id Loads this attachment if given
      */
     public function __construct(?int $id = null)
     {
@@ -94,43 +75,29 @@ class Attachment
             $this->load();
         }
     }
-    
-    /**
-     * Loads attachment data from database using the current ID
-     * 
-     * Populates all instance properties from the database record.
-     * No-op if ID is not set.
-     * 
-     * @return void
-     */
+
     public function load(): void
     {
         if (!$this->id) {
             return;
         }
-        
+
         $query = "SELECT * FROM pcaic_attachments WHERE id = " . $this->db->quote($this->id, 'integer');
         $result = $this->db->query($query);
-        
+
         if ($row = $this->db->fetchAssoc($result)) {
-            $this->message_id = $row['message_id'] ? (int)$row['message_id'] : null;
+            $this->message_id = $row['message_id'] ? (int) $row['message_id'] : null;
             $this->chat_id = $row['chat_id'];
-            $this->user_id = $row['user_id'] ? (int)$row['user_id'] : null;
+            $this->user_id = $row['user_id'] ? (int) $row['user_id'] : null;
             $this->resource_id = $row['resource_id'];
             $this->rag_collection_id = $row['rag_collection_id'] ?? null;
             $this->rag_remote_file_id = $row['rag_remote_file_id'] ?? null;
             $this->rag_uploaded_at = $row['rag_uploaded_at'] ?? null;
             $this->timestamp = $row['timestamp'];
-            $this->background_file = (bool)($row['background_file'] ?? 0);
+            $this->background_file = (bool) ($row['background_file'] ?? 0);
         }
     }
 
-    /**
-     * Load attachment by ID (static factory method)
-     *
-     * @param int $id Attachment ID
-     * @return self|null Attachment instance or null if not found
-     */
     public static function loadById(int $id): ?self
     {
         $attachment = new self();
@@ -141,11 +108,7 @@ class Attachment
     }
 
     /**
-     * Save attachment to database
-     *
-     * Performs UPDATE for existing attachments or INSERT for new ones.
-     *
-     * @return void
+     * Insert or update the attachment
      */
     public function save(): void
     {
@@ -181,12 +144,7 @@ class Attachment
     }
 
     /**
-     * Delete attachment from database and storage
-     *
-     * Removes attachment from RAG collection (if present), ILIAS ResourceStorage,
-     * and database. Cascades to remove file references.
-     *
-     * @return void
+     * Delete the attachment from the RAG service, the Resource Storage and the database
      */
     public function delete(): void
     {
@@ -197,21 +155,21 @@ class Attachment
         if ($this->rag_remote_file_id && $this->rag_collection_id) {
             try {
                 global $DIC;
-                $entityId = $this->background_file ? $this->chat_id : $this->getSessionIdFromMessage();
+                $entity_id = $this->background_file ? $this->chat_id : $this->getSessionIdFromMessage();
 
-                if ($entityId) {
+                if ($entity_id) {
                     require_once(__DIR__ . '/../../classes/ai/class.AIChatPageComponentLLM.php');
                     require_once(__DIR__ . '/../../classes/ai/class.AIChatPageComponentRAMSES.php');
                     require_once(__DIR__ . '/ChatConfig.php');
 
-                    $chatConfig = new ChatConfig($this->chat_id);
-                    $llm = $this->createLLMInstance($chatConfig->getAiService());
-                    $llm->deleteFileFromRAG($this->rag_remote_file_id, $entityId);
+                    $chat_config = new ChatConfig($this->chat_id);
+                    $llm = $this->createLLMInstance($chat_config->getAiService());
+                    $llm->deleteFileFromRAG($this->rag_remote_file_id, $entity_id);
 
                     $this->logger->info("Deleted file from RAG", [
                         'attachment_id' => $this->id,
                         'rag_remote_file_id' => $this->rag_remote_file_id,
-                        'entity_id' => $entityId
+                        'entity_id' => $entity_id
                     ]);
                 }
             } catch (Exception $e) {
@@ -243,9 +201,7 @@ class Attachment
     }
 
     /**
-     * Get session ID from associated message
-     *
-     * @return string|null Session ID or null if no message associated
+     * Session of the message this attachment belongs to
      */
     private function getSessionIdFromMessage(): ?string
     {
@@ -261,20 +217,16 @@ class Attachment
         return null;
     }
 
-    /**
-     * Helper to create LLM instance using LLMRegistry
-     */
     private function createLLMInstance(string $service)
     {
-        // Use LLMRegistry to dynamically create service instance
         $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($service);
 
         if ($instance === null) {
-            // Fallback to first available service if requested service not found
-            $availableServices = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
-            if (!empty($availableServices)) {
-                $firstService = array_key_first($availableServices);
-                $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($firstService);
+            // Fall back to the first available service
+            $available_services = \ai\AIChatPageComponentLLMRegistry::getAvailableServices();
+            if (!empty($available_services)) {
+                $first_service = array_key_first($available_services);
+                $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($first_service);
             }
 
             if ($instance === null) {
@@ -284,7 +236,7 @@ class Attachment
 
         return $instance;
     }
-    
+
     /**
      * @return Attachment[]
      */
@@ -292,18 +244,18 @@ class Attachment
     {
         global $DIC;
         $db = $DIC->database();
-        
+
         $attachments = [];
         $query = "SELECT id FROM pcaic_attachments WHERE message_id = " . $db->quote($message_id, 'integer') . " ORDER BY timestamp ASC";
         $result = $db->query($query);
-        
+
         while ($row = $db->fetchAssoc($result)) {
-            $attachments[] = new self((int)$row['id']);
+            $attachments[] = new self((int) $row['id']);
         }
-        
+
         return $attachments;
     }
-    
+
     /**
      * @return Attachment[]
      */
@@ -311,37 +263,27 @@ class Attachment
     {
         global $DIC;
         $db = $DIC->database();
-        
+
         $attachments = [];
         $query = "SELECT id FROM pcaic_attachments WHERE chat_id = " . $db->quote($chat_id, 'text') . " ORDER BY timestamp ASC";
         $result = $db->query($query);
-        
+
         while ($row = $db->fetchAssoc($result)) {
-            $attachments[] = new self((int)$row['id']);
+            $attachments[] = new self((int) $row['id']);
         }
-        
+
         return $attachments;
     }
-    
+
     /**
-     * Factory method to create attachment from file upload
-     * 
-     * Processes an uploaded file through ILIAS ResourceStorage and creates
-     * a new attachment record linked to a specific message and chat.
-     * 
-     * @param \ILIAS\FileUpload\DTO\UploadResult $upload_result File upload result from ILIAS
-     * @param int $message_id Message ID to associate with
-     * @param string $chat_id Chat ID for context
-     * @param int $user_id User ID who uploaded the file
-     * 
-     * @return self New attachment instance
-     * 
-     * @throws Exception If upload failed or ResourceStorage operations fail
+     * Store an uploaded file and create an attachment for a message
+     *
+     * @throws Exception
      */
     public static function createFromUpload(\ILIAS\FileUpload\DTO\UploadResult $upload_result, int $message_id, string $chat_id, int $user_id): self
     {
         global $DIC;
-        
+
         if (!$upload_result->isOK()) {
             $logger = $DIC->logger()->pcaic();
             $logger->debug("Upload failed: " . $upload_result->getStatus()->getMessage());
@@ -360,16 +302,16 @@ class Attachment
         $attachment->setResourceId($resource_id->serialize());
         $attachment->setTimestamp(date('Y-m-d H:i:s'));
         $attachment->save();
-        
+
         return $attachment;
     }
-    
+
     public function getResourceIdentification(): ?\ILIAS\ResourceStorage\Identification\ResourceIdentification
     {
         if (!$this->resource_id) {
             return null;
         }
-        
+
         try {
             return $this->resource_storage->manage()->find($this->resource_id);
         } catch (Exception $e) {
@@ -380,14 +322,14 @@ class Attachment
             return null;
         }
     }
-    
+
     public function getCurrentRevision(): ?\ILIAS\ResourceStorage\Revision\Revision
     {
         $resource_id = $this->getResourceIdentification();
         if (!$resource_id) {
             return null;
         }
-        
+
         try {
             return $this->resource_storage->manage()->getCurrentRevision($resource_id);
         } catch (Exception $e) {
@@ -397,28 +339,26 @@ class Attachment
             return null;
         }
     }
-    
+
     public function getDownloadUrl(): ?string
     {
         $resource_id = $this->getResourceIdentification();
         if (!$resource_id) {
             return null;
         }
-        
+
         try {
-            // Use proper IRSS getSrc() method - this should be the standard way
             $src_consumer = $this->resource_storage->consume()->src($resource_id);
             $download_url = $src_consumer->getSrc();
-            
+
             if ($download_url) {
-                // Fix URL if it contains plugin path (wrong working directory issue)
+                // URLs generated from the plugin directory point to the wrong base path; rebuild them from ILIAS_HTTP_PATH
                 if (strpos($download_url, '/Customizing/global/plugins/') !== false) {
-                    // Extract the FileDelivery path and token
                     $pattern = '/.*\/(src\/FileDelivery\/deliver\.php\/.+)$/';
                     if (preg_match($pattern, $download_url, $matches)) {
-						$iliasBase = rtrim(preg_replace('~(/Customizing)(?=/|$).*~i', '', ILIAS_HTTP_PATH), '/');
-                        $corrected_url = $iliasBase . '/' . $matches[1];
-                        
+                        $ilias_base = rtrim(preg_replace('~(/Customizing)(?=/|$).*~i', '', ILIAS_HTTP_PATH), '/');
+                        $corrected_url = $ilias_base . '/' . $matches[1];
+
                         $this->logger->debug("Corrected IRSS URL", [
                             'original_url' => $download_url,
                             'corrected_url' => $corrected_url
@@ -426,7 +366,7 @@ class Attachment
                         return $corrected_url;
                     }
                 }
-                
+
                 $this->logger->debug("Using original IRSS URL", ['url' => $download_url]);
                 return $download_url;
             } else {
@@ -439,20 +379,19 @@ class Attachment
 
         return null;
     }
-    
+
     public function getPreviewUrl(): ?string
     {
         if (!$this->resource_id) {
             return null;
         }
-        
-        // For PDFs, don't return a preview URL since we can't generate thumbnails yet
+
+        // No thumbnails are generated for PDFs
         if ($this->getMimeType() === 'application/pdf') {
             $this->logger->debug("Skipping preview URL for PDF");
             return null;
         }
-        
-        // Try to get optimized thumbnail using ILIAS Flavours first (for images)
+
         $resource_id = $this->getResourceIdentification();
         if ($resource_id) {
             $flavour_url = $this->getThumbnailFlavourUrl($resource_id, $this->resource_storage);
@@ -461,109 +400,85 @@ class Attachment
                 return $flavour_url;
             }
         }
-        
-        // Fallback to simple URL generation (for images)
-		$iliasBase = rtrim(preg_replace('~(/Customizing)(?=/|$).*~i', '', ILIAS_HTTP_PATH), '/');
-        $delivery_url = $iliasBase . '/src/FileDelivery/deliver.php/' . $this->resource_id;
-        
+
+        $ilias_base = rtrim(preg_replace('~(/Customizing)(?=/|$).*~i', '', ILIAS_HTTP_PATH), '/');
+        $delivery_url = $ilias_base . '/src/FileDelivery/deliver.php/' . $this->resource_id;
+
         $this->logger->debug("Using simple preview URL fallback", ['url' => $delivery_url]);
         return $delivery_url;
     }
-    
+
     /**
-     * Get thumbnail flavour URL for optimized chat display using proper ILIAS Flavours
+     * Signed URL of the thumbnail flavour for images
      */
     private function getThumbnailFlavourUrl($identification, $resource_storage): ?string
     {
         try {
             $mime_type = $this->getMimeType();
-            
+
             if (strpos($mime_type, 'image/') === 0) {
-                // Create a custom thumbnail flavour definition for chat interface
                 $thumbnail_definition = $this->createChatThumbnailFlavourDefinition();
-                
-                // Ensure thumbnail exists (create if needed)
+
                 $resource_storage->flavours()->ensure($identification, $thumbnail_definition);
-                
-                // Get thumbnail flavour
+
                 $thumbnail_flavour = $resource_storage->flavours()->get($identification, $thumbnail_definition);
-                
+
                 if ($thumbnail_flavour) {
-                    // Use proper IRSS consumer to get flavour URLs with WebAccessChecker support
                     $flavour_urls_obj = $resource_storage->consume()->flavourUrls($thumbnail_flavour);
-                    $flavour_urls = $flavour_urls_obj->getURLsAsArray(true); // signed URLs
-                    
+                    $flavour_urls = $flavour_urls_obj->getURLsAsArray(true);
+
                     if (!empty($flavour_urls)) {
-                        $thumbnail_url = $flavour_urls[0]; // Get first URL
-                        
-                        // Check if flavour URL also contains plugin path (indicates incorrect URL generation)
+                        $thumbnail_url = $flavour_urls[0];
+
+                        // URLs containing the plugin path are generated with a wrong base path
                         if (strpos($thumbnail_url, '/Customizing/global/plugins/') !== false) {
                             $this->logger->debug("Flavour URL contains plugin path, skipping", ['url' => $thumbnail_url]);
-                            // Don't return flavour URL, fall through to fallback
                         } else {
                             $this->logger->debug("Generated thumbnail flavour URL", ['url' => $thumbnail_url]);
                             return $thumbnail_url;
                         }
                     }
                 }
-                
-            } elseif ($mime_type === 'application/pdf') {
-                // For PDFs: try to create preview of first page
-                try {
-                    $this->logger->debug("PDF preview disabled (complex flavours)");
-                    // Temporarily disable complex PDF flavour generation to avoid breaking chat
-                    // TODO: Re-enable when we can properly debug PDF flavour issues
-                } catch (\Exception $e) {
-                    $this->logger->warning("PDF preview flavour failed", ['error' => $e->getMessage()]);
-                }
+
             }
-            
+
         } catch (\Exception $e) {
             $this->logger->warning("Failed to create thumbnail flavour", ['error' => $e->getMessage()]);
         }
-        
+
         return null;
     }
-    
-    /**
-     * Create a custom flavour definition for chat thumbnails using proper ILIAS CropToSquare
-     */
+
     private function createChatThumbnailFlavourDefinition(): \ILIAS\ResourceStorage\Flavour\Definition\FlavourDefinition
     {
-        // Use the built-in ILIAS CropToSquare definition for proper square thumbnails
         return new \ILIAS\ResourceStorage\Flavour\Definition\CropToSquare(
-            true,  // persist = true for caching
-            150,   // max_size = 150px for square thumbnails
-            75     // quality = 75%
+            true,  // persist
+            150,   // max size in pixels
+            75     // JPEG quality
         );
     }
-    
+
     /**
-     * Get optimized image flavour data directly as binary string (no URL needed)
+     * Image scaled for AI services, read directly from the cached flavour
      */
     private function getOptimizedImageFlavourData($identification): ?string
     {
         try {
             $mime_type = $this->getMimeType();
-            
+
             if (strpos($mime_type, 'image/') === 0) {
-                // Create AI-optimized flavour definition (similar to ImageOptimizer settings)
                 $ai_optimized_definition = $this->createAiOptimizedImageFlavourDefinition();
-                
-                // Ensure flavour exists (create if needed) with caching
+
                 $this->resource_storage->flavours()->ensure($identification, $ai_optimized_definition);
-                
-                // Get AI-optimized flavour
+
                 $ai_optimized_flavour = $this->resource_storage->flavours()->get($identification, $ai_optimized_definition);
-                
+
                 if ($ai_optimized_flavour) {
-                    // Get ResourceIdentification from flavour to access stream
                     $flavour_resource_id = $ai_optimized_flavour->getResourceId();
-                    
-                    // Direct stream access using the flavour's resource identification
+
                     $stream_consumer = $this->resource_storage->consume()->stream($flavour_resource_id);
                     $optimized_data = $stream_consumer->getStream()->getContents();
-                    
+
                     if ($optimized_data !== false && !empty($optimized_data)) {
                         $this->logger->debug("Retrieved ILIAS Flavour data", ['size_bytes' => strlen($optimized_data)]);
                         return $optimized_data;
@@ -574,152 +489,73 @@ class Attachment
                     $this->logger->warning("Failed to get AI-optimized flavour object");
                 }
             }
-            
+
         } catch (\Exception $e) {
             $this->logger->warning("Failed to get AI-optimized flavour data", ['error' => $e->getMessage()]);
         }
-        
+
         return null;
     }
-    
-    /**
-     * Create AI-optimized flavour definition matching ImageOptimizer settings
-     */
+
     private function createAiOptimizedImageFlavourDefinition(): \ILIAS\ResourceStorage\Flavour\Definition\FlavourDefinition
     {
-        // Use the built-in ILIAS FitToSquare definition for AI optimization with caching
-        // FitToSquare scales down images while preserving aspect ratio within a square boundary
+        // Scales the image into a square of max_size pixels, keeping the aspect ratio
         return new \ILIAS\ResourceStorage\Flavour\Definition\FitToSquare(
-            true,  // persist = true for caching
-            1024,  // max_size = 1024px (matches ImageOptimizer::MAX_DIMENSION)
-            85     // quality = 85% (matches ImageOptimizer::JPEG_QUALITY)
+            true,  // persist
+            1024,  // max size in pixels, same as ImageOptimizer::MAX_DIMENSION
+            85     // JPEG quality, same as ImageOptimizer::JPEG_QUALITY
         );
     }
-    
-    /**
-     * Create a custom flavour definition for PDF previews
-     */
-    private function createPdfPreviewFlavourDefinition(): \ILIAS\ResourceStorage\Flavour\Definition\FlavourDefinition
-    {
-        return new class implements \ILIAS\ResourceStorage\Flavour\Definition\FlavourDefinition {
-            public function getId(): string
-            {
-                return hash('sha256', 'aichat_pdf_preview_first_page');
-            }
-            
-            public function getFlavourMachineId(): string
-            {
-                // Use ILIAS ExtractPages machine for PDF first page
-                return \ILIAS\ResourceStorage\Flavour\Machine\DefaultMachines\ExtractPages::ID;
-            }
-            
-            public function getInternalName(): string
-            {
-                return 'aichat_pdf_preview';
-            }
-            
-            public function getVariantName(): ?string
-            {
-                return json_encode([
-                    'pages' => [1], // Extract only first page
-                    'format' => 'png',
-                    'quality' => 85
-                ]);
-            }
-            
-            public function persist(): bool
-            {
-                return true;
-            }
-        };
-    }
-    
-    /**
-     * Create a simpler PDF preview flavour definition as fallback
-     */
-    private function createSimplePdfPreviewFlavourDefinition(): \ILIAS\ResourceStorage\Flavour\Definition\FlavourDefinition
-    {
-        return new class implements \ILIAS\ResourceStorage\Flavour\Definition\FlavourDefinition {
-            public function getId(): string
-            {
-                return hash('sha256', 'aichat_simple_pdf_preview');
-            }
-            
-            public function getFlavourMachineId(): string
-            {
-                // Try a different approach - use PagesToExtract definition
-                return hash('sha256', 'simple_pdf_extractor');
-            }
-            
-            public function getInternalName(): string
-            {
-                return 'aichat_simple_pdf';
-            }
-            
-            public function getVariantName(): ?string
-            {
-                return '1'; // Extract page 1
-            }
-            
-            public function persist(): bool
-            {
-                return true;
-            }
-        };
-    }
-    
+
     public function isImage(): bool
     {
         $revision = $this->getCurrentRevision();
         if (!$revision) {
             return false;
         }
-        
+
         $info = $revision->getInformation();
         $mime_type = $info->getMimeType();
         return strpos($mime_type, 'image/') === 0;
     }
-    
+
     public function getTitle(): string
     {
         $revision = $this->getCurrentRevision();
         if (!$revision) {
             return 'Unknown';
         }
-        
+
         return $revision->getInformation()->getTitle();
     }
-    
+
     public function getSize(): int
     {
         $revision = $this->getCurrentRevision();
         if (!$revision) {
             return 0;
         }
-        
+
         return $revision->getInformation()->getSize();
     }
-    
+
     public function getMimeType(): string
     {
         $revision = $this->getCurrentRevision();
         if (!$revision) {
             return 'application/octet-stream';
         }
-        
+
         return $revision->getInformation()->getMimeType();
     }
-    
-    /**
-     * Get file content as base64 encoded string
-     */
+
     public function getContentAsBase64(): ?string
     {
         $resource_id = $this->getResourceIdentification();
         if (!$resource_id) {
             return null;
         }
-        
+
         try {
             $stream = $this->resource_storage->consume()->stream($resource_id);
             $content = $stream->getStream()->getContents();
@@ -729,65 +565,55 @@ class Attachment
         } catch (Exception $e) {
             $this->logger->warning("Failed to read attachment content", ['error' => $e->getMessage()]);
         }
-        
+
         return null;
     }
-    
+
     /**
-     * Returns data URL(s) for AI multimodal processing
-     * 
-     * Generates base64-encoded data URLs suitable for AI analysis:
-     * - Images: Single data URL string with optimized content
-     * - PDFs: Array of data URLs (one per page, up to 20 pages)
-     * - Other files: null (not supported for AI analysis)
-     * 
-     * Uses ILIAS Flavours for caching and optimization when possible.
-     * 
-     * @return string|array|null Single data URL (images), array of URLs (PDFs), or null
+     * Data URL(s) for AI services
+     *
+     * @return string|array|null Image: one data URL; PDF: one data URL per page; other types: null
      */
     public function getDataUrl()
     {
         if (!$this->isImage() && !$this->isPdf()) {
             return null;
         }
-        
+
         if ($this->isPdf()) {
             return $this->getPdfPagesAsDataUrls();
         }
-        
-        $base64Content = $this->getOptimizedContentAsBase64();
-        if (!$base64Content) {
+
+        $base64_content = $this->getOptimizedContentAsBase64();
+        if (!$base64_content) {
             return null;
         }
-        
-        return $base64Content; // Already includes data URL prefix
+
+        return $base64_content;
     }
-    
+
     /**
-     * Get optimized content as base64 data URL - supports both images and PDFs
-     * For PDFs: returns first page only (for single-image contexts)
-     * For full PDF processing: use getPdfPagesAsDataUrls() instead
+     * Single data URL; for PDFs the first page
      */
     public function getOptimizedContentAsBase64(): ?string
     {
         if ($this->isImage()) {
             return $this->getOptimizedImageAsBase64();
         } elseif ($this->getMimeType() === 'application/pdf') {
-            // For single-string context, return first page only
             $pdf_pages = $this->getOptimizedPdfAsBase64();
             if (is_array($pdf_pages) && !empty($pdf_pages)) {
-                return $pdf_pages[0]; // Return first page as string
+                return $pdf_pages[0];
             } elseif (is_string($pdf_pages)) {
-                return $pdf_pages; // Return fallback text
+                return $pdf_pages; // Text fallback if the PDF could not be converted
             }
             return null;
         }
-        
+
         return null;
     }
-    
+
     /**
-     * Get optimized image content as base64 data URL using ILIAS Flavours for caching
+     * Scaled image as data URL; uses the cached flavour and falls back to ImageOptimizer
      */
     private function getOptimizedImageAsBase64(): ?string
     {
@@ -795,66 +621,62 @@ class Attachment
         if (!$resource_id) {
             return null;
         }
-        
+
         try {
-            // Try to use ILIAS Flavours for caching first - direct stream access (no URL needed)
             $optimized_flavour_data = $this->getOptimizedImageFlavourData($resource_id);
             if ($optimized_flavour_data) {
-                $base64Content = base64_encode($optimized_flavour_data);
-                
-                // Detect MIME type from optimized data
+                $base64_content = base64_encode($optimized_flavour_data);
+
                 $finfo = new \finfo(FILEINFO_MIME_TYPE);
                 $optimized_mime = $finfo->buffer($optimized_flavour_data) ?: 'image/jpeg';
-                
+
                 $this->logger->debug("Using ILIAS Flavour optimized image", [
                     'size_bytes' => strlen($optimized_flavour_data),
-                    'base64_chars' => strlen($base64Content)
+                    'base64_chars' => strlen($base64_content)
                 ]);
-                
-                return 'data:' . $optimized_mime . ';base64,' . $base64Content;
+
+                return 'data:' . $optimized_mime . ';base64,' . $base64_content;
             }
-            
+
             $this->logger->debug("ILIAS Flavour failed, using ImageOptimizer fallback");
-            
-            // Fallback to custom ImageOptimizer (without caching)
+
             $stream = $this->resource_storage->consume()->stream($resource_id);
-            $originalData = $stream->getStream()->getContents();
-            if ($originalData === false) {
+            $original_data = $stream->getStream()->getContents();
+            if ($original_data === false) {
                 return null;
             }
-            
+
             require_once(__DIR__ . '/../Service/ImageOptimizer.php');
             $optimized = \ILIAS\Plugin\pcaic\Service\ImageOptimizer::optimize(
-                $originalData, 
+                $original_data,
                 $this->getMimeType()
             );
-            
-            $base64Content = base64_encode($optimized['data']);
-            
+
+            $base64_content = base64_encode($optimized['data']);
+
             $this->logger->debug("Using ImageOptimizer fallback", [
-                'original_bytes' => strlen($originalData),
+                'original_bytes' => strlen($original_data),
                 'optimized_bytes' => strlen($optimized['data']),
-                'base64_chars' => strlen($base64Content)
+                'base64_chars' => strlen($base64_content)
             ]);
-            
-            return 'data:' . $optimized['mime_type'] . ';base64,' . $base64Content;
-            
+
+            return 'data:' . $optimized['mime_type'] . ';base64,' . $base64_content;
+
         } catch (Exception $e) {
             $this->logger->warning("Failed to optimize image", ['error' => $e->getMessage()]);
-            // Final fallback to original method
-            $base64Content = $this->getContentAsBase64();
-            if ($base64Content) {
-                return 'data:' . $this->getMimeType() . ';base64,' . $base64Content;
+            $base64_content = $this->getContentAsBase64();
+            if ($base64_content) {
+                return 'data:' . $this->getMimeType() . ';base64,' . $base64_content;
             }
         }
-        
+
         return null;
     }
-    
+
     /**
-     * Get optimized PDF content as base64 data URLs for AI context
-     * Uses ILIAS PagesToExtract flavour with direct stream access (cached)
-     * Returns: array of data URLs for pages, or string for fallback text
+     * PDF pages as data URLs, converted via the cached PagesToExtract flavour
+     *
+     * @return array|string|null Data URLs per page, or a text fallback if the conversion failed
      */
     private function getOptimizedPdfAsBase64()
     {
@@ -863,52 +685,45 @@ class Attachment
             $this->logger->warning("No resource ID for PDF optimization");
             return null;
         }
-        
+
         try {
-            // Create PDF-to-Image flavour definition
             $pdf_flavour_definition = $this->createAiPdfFlavourDefinition();
-            
-            // Ensure flavour exists (create if needed) with caching
+
             $this->logger->debug("Ensuring PDF flavour exists", ['resource_id' => $this->resource_id]);
             $this->resource_storage->flavours()->ensure($resource_id, $pdf_flavour_definition);
-            
-            // Get the flavour
+
             $pdf_flavour = $this->resource_storage->flavours()->get($resource_id, $pdf_flavour_definition);
-            
+
             if (!$pdf_flavour) {
                 $this->logger->warning("Failed to get PDF flavour");
                 return null;
             }
-            
-            // Use direct StreamResolvers for efficient cached PDF page access
+
             $stream_resolvers = $pdf_flavour->getStreamResolvers();
-            
+
             if (empty($stream_resolvers)) {
                 $this->logger->debug("No PDF stream resolvers, using text fallback");
-                // Activate text fallback instead of returning null
                 $title = $this->getTitle();
                 $fallback_text = "PDF Document: {$title}";
                 $fallback_data_url = 'data:text/plain;base64,' . base64_encode($fallback_text);
                 $this->logger->debug("Using PDF text fallback", ['text' => $fallback_text]);
                 return $fallback_data_url;
             }
-            
-            // Process pages using direct stream access (more efficient than URL-based)
+
             $pdf_pages_data = $this->processPdfFlavourStreams($stream_resolvers);
-            
+
             if (!$pdf_pages_data) {
                 $this->logger->warning("No PDF page data retrieved from cached flavours");
                 return null;
             }
-            
-            // Return processed page data for AI
+
             $this->logger->debug("PDF converted to page images", ['page_count' => count($pdf_pages_data)]);
             return $pdf_pages_data;
-            
+
         } catch (\Exception $e) {
             $this->logger->warning("Failed to convert PDF to image for AI", ['error' => $e->getMessage()]);
-            
-            // Fallback: Return PDF filename for AI context
+
+            // The file name gives the AI service at least some context
             $title = $this->getTitle();
             $fallback_text = "PDF Document: {$title}";
             $fallback_data_url = 'data:text/plain;base64,' . base64_encode($fallback_text);
@@ -916,56 +731,52 @@ class Attachment
             return $fallback_data_url;
         }
     }
-    
-    /**
-     * Process PDF pages using direct StreamResolvers (most efficient)
-     */
+
     private function processPdfFlavourStreams(array $stream_resolvers): ?array
     {
         $pages_data = [];
-        $max_pages = 20; // Limit to avoid overwhelming AI
+        // Configured page limit; the flavour definition extracts at most 50 pages
+        $max_pages = min(50, max(1, (int) (\platform\AIChatPageComponentConfig::get('pdf_pages_processed') ?: 20)));
         $pages_processed = 0;
-        
+
         foreach ($stream_resolvers as $i => $resolver) {
             if ($pages_processed >= $max_pages) {
                 $this->logger->debug("PDF limiting to maximum pages", ['max_pages' => $max_pages]);
                 break;
             }
-            
+
             try {
                 $stream = $resolver->getStream();
-                
-                // MIME detection from first bytes (like your example)
+
+                // Detect the image type from the first bytes
                 $head = $stream->read(16);
                 $mime = (strncmp($head, "\x89PNG", 4) === 0) ? 'image/png'
                     : ((strncmp($head, "\xFF\xD8\xFF", 3) === 0) ? 'image/jpeg' : 'image/png');
-                
-                // Read complete data
+
                 $page_content = $head;
                 while (!$stream->eof()) {
                     $page_content .= $stream->read(8192);
                 }
                 $stream->close();
-                
+
                 if ($page_content) {
-                    // Final optimization for AI
                     require_once(__DIR__ . '/../Service/ImageOptimizer.php');
                     $optimized = \ILIAS\Plugin\pcaic\Service\ImageOptimizer::optimize(
-                        $page_content, 
+                        $page_content,
                         $mime
                     );
-                    
-                    $base64Content = base64_encode($optimized['data']);
-                    $data_url = 'data:' . $optimized['mime_type'] . ';base64,' . $base64Content;
-                    
+
+                    $base64_content = base64_encode($optimized['data']);
+                    $data_url = 'data:' . $optimized['mime_type'] . ';base64,' . $base64_content;
+
                     $pages_data[] = $data_url;
                     $pages_processed++;
-                    
+
                     $this->logger->debug("PDF page processed via stream resolver", ['page' => $i + 1]);
                 } else {
                     $this->logger->warning("Empty page content from stream resolver", ['resolver_index' => $i]);
                 }
-                
+
             } catch (\Exception $e) {
                 $this->logger->warning("Failed to process PDF page via stream", [
                     'page' => $i + 1,
@@ -973,120 +784,32 @@ class Attachment
                 ]);
             }
         }
-        
+
         return !empty($pages_data) ? $pages_data : null;
     }
-    
-    /**
-     * Process PDF pages from cached flavour URLs efficiently (DEPRECATED - use processPdfFlavourStreams)
-     */
-    private function processPdfFlavourPages(array $flavour_urls): ?array
-    {
-        $pages_data = [];
-        $max_pages = 20; // Limit to avoid overwhelming AI
-        $pages_processed = 0;
-        
-        foreach ($flavour_urls as $page_url) {
-            if ($pages_processed >= $max_pages) {
-                $this->logger->debug("PDF limiting to maximum pages (URL method)", ['max_pages' => $max_pages]);
-                break;
-            }
-            
-            // Download page data (this accesses ILIAS cached flavour data)
-            $page_content = $this->downloadImageFromUrl($page_url);
-            if ($page_content) {
-                // Optimize the page image for AI (final optimization step)
-                require_once(__DIR__ . '/../Service/ImageOptimizer.php');
-                $optimized = \ILIAS\Plugin\pcaic\Service\ImageOptimizer::optimize(
-                    $page_content, 
-                    'image/png'
-                );
-                
-                $base64Content = base64_encode($optimized['data']);
-                $data_url = 'data:' . $optimized['mime_type'] . ';base64,' . $base64Content;
-                
-                $pages_data[] = $data_url;
-                $pages_processed++;
-                
-                $this->logger->debug("PDF page processed from cached ILIAS flavour", ['page' => $pages_processed]);
-            } else {
-                $this->logger->warning("Failed to download PDF page from cached flavour URL");
-            }
-        }
-        
-        return !empty($pages_data) ? $pages_data : null;
-    }
-    
-    /**
-     * Create flavour definition for PDF-to-Image conversion optimized for AI context
-     */
+
     private function createAiPdfFlavourDefinition(): \ILIAS\ResourceStorage\Flavour\Definition\FlavourDefinition
     {
-        // Use the built-in ILIAS PagesToExtract for PDF page extraction
         return new \ILIAS\ResourceStorage\Flavour\Definition\PagesToExtract(
-            true,    // persist = true for caching
-            1024,    // max_size = 1024px - good resolution for AI text recognition
-            50,      // max_pages = 50 - process up to 50 pages (should cover most PDFs)
-            false,   // fill = false - maintain aspect ratio
-            85       // quality = 85% - good balance between quality and size
+            true,    // persist
+            1024,    // max size in pixels
+            50,      // max pages
+            false,   // fill; false keeps the aspect ratio
+            85       // JPEG quality
         );
     }
-    
+
     /**
-     * Download image content from URL with proper error handling
-     */
-    private function downloadImageFromUrl(string $url): ?string
-    {
-        try {
-            // Use curl for better error handling
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // For local development
-            curl_setopt($ch, CURLOPT_USERAGENT, 'ILIAS AIChatPageComponent/1.0');
-            
-            $content = curl_exec($ch);
-            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $error = curl_error($ch);
-            curl_close($ch);
-            
-            if ($content === false || !empty($error)) {
-                $this->logger->warning("cURL error downloading image", ['error' => $error]);
-                return null;
-            }
-            
-            if ($http_code !== 200) {
-                $this->logger->warning("HTTP error downloading image", ['http_code' => $http_code]);
-                return null;
-            }
-            
-            if (empty($content)) {
-                $this->logger->warning("Empty content downloaded", ['url' => $url]);
-                return null;
-            }
-            
-            return $content;
-            
-        } catch (\Exception $e) {
-            $this->logger->warning("Exception downloading image", ['error' => $e->getMessage()]);
-            return null;
-        }
-    }
-    
-    /**
-     * Get all PDF pages as data URLs for AI processing (using cached flavours)
+     * PDF pages as data URLs; a text fallback is returned as single-element array
      */
     public function getPdfPagesAsDataUrls(): ?array
     {
         if (!$this->isPdf()) {
             return null;
         }
-        
-        // Use the new cached flavour system
+
         $pdf_data_urls = $this->getOptimizedPdfAsBase64();
-        
+
         if ($pdf_data_urls && is_array($pdf_data_urls)) {
             $this->logger->debug("PDF processed using cached flavours", [
                 'filename' => $this->getTitle(),
@@ -1094,83 +817,163 @@ class Attachment
             ]);
             return $pdf_data_urls;
         } elseif ($pdf_data_urls && is_string($pdf_data_urls)) {
-            // Handle fallback case: convert single string to array
             $this->logger->debug("PDF using fallback text representation", ['filename' => $this->getTitle()]);
-            return [$pdf_data_urls]; // Wrap string in array
+            return [$pdf_data_urls];
         }
-        
+
         return null;
     }
-    
-    /**
-     * Check if attachment is a PDF
-     */
+
     public function isPdf(): bool
     {
         return $this->getMimeType() === 'application/pdf';
     }
-    
-    // Getters and Setters
-    public function getId(): ?int { return $this->id; }
-    public function setId(?int $id): void { $this->id = $id; }
-    
-    public function getMessageId(): ?int { return $this->message_id; }
-    public function setMessageId(?int $message_id): void { $this->message_id = $message_id; }
-    
-    public function getChatId(): ?string { return $this->chat_id; }
-    public function setChatId(?string $chat_id): void { $this->chat_id = $chat_id; }
-    
-    public function getUserId(): ?int { return $this->user_id; }
-    public function setUserId(?int $user_id): void { $this->user_id = $user_id; }
-    
-    public function getResourceId(): ?string { return $this->resource_id; }
-    public function setResourceId(?string $resource_id): void { $this->resource_id = $resource_id; }
-    
-    public function getTimestamp(): ?string { return $this->timestamp; }
-    public function setTimestamp(?string $timestamp): void { $this->timestamp = $timestamp; }
 
-    public function getRAGCollectionId(): ?string { return $this->rag_collection_id; }
-    public function setRAGCollectionId(?string $rag_collection_id): void { $this->rag_collection_id = $rag_collection_id; }
+    public function getId(): ?int
+    {
+        return $this->id;
+    }
+    public function setId(?int $id): void
+    {
+        $this->id = $id;
+    }
 
-    public function getRAGRemoteFileId(): ?string { return $this->rag_remote_file_id; }
-    public function setRAGRemoteFileId(?string $rag_remote_file_id): void { $this->rag_remote_file_id = $rag_remote_file_id; }
+    public function getMessageId(): ?int
+    {
+        return $this->message_id;
+    }
+    public function setMessageId(?int $message_id): void
+    {
+        $this->message_id = $message_id;
+    }
 
-    public function getRAGUploadedAt(): ?string { return $this->rag_uploaded_at; }
-    public function setRAGUploadedAt(?string $rag_uploaded_at): void { $this->rag_uploaded_at = $rag_uploaded_at; }
+    public function getChatId(): ?string
+    {
+        return $this->chat_id;
+    }
+    public function setChatId(?string $chat_id): void
+    {
+        $this->chat_id = $chat_id;
+    }
 
-    public function isBackgroundFile(): bool { return $this->background_file; }
-    public function setBackgroundFile(bool $background_file): void { $this->background_file = $background_file; }
+    public function getUserId(): ?int
+    {
+        return $this->user_id;
+    }
+    public function setUserId(?int $user_id): void
+    {
+        $this->user_id = $user_id;
+    }
+
+    public function getResourceId(): ?string
+    {
+        return $this->resource_id;
+    }
+    public function setResourceId(?string $resource_id): void
+    {
+        $this->resource_id = $resource_id;
+    }
+
+    public function getTimestamp(): ?string
+    {
+        return $this->timestamp;
+    }
+    public function setTimestamp(?string $timestamp): void
+    {
+        $this->timestamp = $timestamp;
+    }
+
+    public function getRAGCollectionId(): ?string
+    {
+        return $this->rag_collection_id;
+    }
+    public function setRAGCollectionId(?string $rag_collection_id): void
+    {
+        $this->rag_collection_id = $rag_collection_id;
+    }
+
+    public function getRAGRemoteFileId(): ?string
+    {
+        return $this->rag_remote_file_id;
+    }
+    public function setRAGRemoteFileId(?string $rag_remote_file_id): void
+    {
+        $this->rag_remote_file_id = $rag_remote_file_id;
+    }
+
+    public function getRAGUploadedAt(): ?string
+    {
+        return $this->rag_uploaded_at;
+    }
+    public function setRAGUploadedAt(?string $rag_uploaded_at): void
+    {
+        $this->rag_uploaded_at = $rag_uploaded_at;
+    }
+
+    public function isBackgroundFile(): bool
+    {
+        return $this->background_file;
+    }
+    public function setBackgroundFile(bool $background_file): void
+    {
+        $this->background_file = $background_file;
+    }
 
     /**
-     * Check if attachment is stored in RAG
+     * Plain text files, whose content is sent to the AI service as text
      */
+    public function isTextFile(): bool
+    {
+        $extension = strtolower(pathinfo($this->getTitle(), PATHINFO_EXTENSION));
+        return in_array($extension, ['txt', 'csv', 'md'], true);
+    }
+
+    /**
+     * Content of a text file as UTF-8
+     */
+    public function getTextContent(): ?string
+    {
+        $resource_id = $this->getResourceIdentification();
+        if (!$resource_id) {
+            return null;
+        }
+
+        try {
+            $content = $this->resource_storage->consume()->stream($resource_id)->getStream()->getContents();
+            return self::toUtf8($content);
+        } catch (Exception $e) {
+            $this->logger->warning("Failed to read text attachment: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Convert text to UTF-8; text files are often Windows-1252 encoded, and invalid
+     * UTF-8 would make the JSON request to the AI service fail
+     */
+    public static function toUtf8(string $content): string
+    {
+        if (str_starts_with($content, "\xEF\xBB\xBF")) {
+            $content = substr($content, 3);
+        }
+        return mb_check_encoding($content, 'UTF-8') ? $content : mb_convert_encoding($content, 'UTF-8', 'Windows-1252');
+    }
+
     public function isInRAG(): bool
     {
         return $this->rag_collection_id !== null;
     }
 
-    /**
-     * Check if attachment is stored in ILIAS IRSS
-     */
     public function isInIRSS(): bool
     {
         return $this->resource_id !== null;
     }
 
     /**
-     * Converts attachment to array format for API responses
-     * 
-     * Generates a comprehensive array representation suitable for JSON API responses
-     * and frontend consumption. Includes URLs, metadata, and file type information.
-     * 
-     * Array structure:
-     * - id, title, filename, size, mime_type, file_type
-     * - download_url: Original file download
-     * - preview_url: Optimized thumbnail/preview (null for PDFs)
-     * - src: Best available URL for display (null for PDFs = show icon)
-     * - data_url: Base64 fallback for images
-     * 
-     * @return array Attachment data for API consumption
+     * Attachment data for API responses
+     *
+     * src is the best URL for display (null for PDFs, the frontend shows an icon);
+     * data_url is a Base64 fallback for images.
      */
     public function toArray(): array
     {
@@ -1191,7 +994,7 @@ class Attachment
         } else {
             $src_url = $download_url;
         }
-        
+
         return [
             'id' => $this->getId(),
             'title' => $this->getTitle(),
@@ -1209,14 +1012,12 @@ class Attachment
     }
 
     /**
-     * Get simplified file type category
-     *
-     * @return string File type category: 'image', 'pdf', 'document', or 'other'
+     * @return string image|pdf|document|other
      */
     private function getFileType(): string
     {
         $mime_type = $this->getMimeType();
-        
+
         if (strpos($mime_type, 'image/') === 0) {
             return 'image';
         } elseif ($mime_type === 'application/pdf') {
@@ -1224,7 +1025,7 @@ class Attachment
         } elseif (strpos($mime_type, 'text/') === 0) {
             return 'text';
         }
-        
+
         return 'other';
     }
 }
