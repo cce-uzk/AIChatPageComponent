@@ -231,6 +231,14 @@ stat_created_at#:#Created
 stat_session_count#:#No. of Sessions
 stat_rag#:#RAG?
 stat_background_files#:#Background Files
+stat_rag_checked_at#:#Last check of the processing state
+rag_file_status_completed#:#Processed by the document search
+rag_file_status_processing#:#Being processed by the document search
+rag_file_status_pending#:#Waiting for upload to the document search
+rag_file_status_failed#:#Processing failed
+rag_file_retry_at#:#next attempt from %s
+rag_file_retry_due#:#next attempt on the next use of the chat
+rag_file_status_direct#:#Passed directly to the AI (without document search)
 stat_is_online#:#Online
 stat_goto_page#:#Go to Page
 stat_toggle_online#:#Set Online
@@ -247,7 +255,6 @@ stat_no#:#No
 stat_no_title#:#untitled
 tab_settings#:#Settings
 tab_advanced_settings#:#Advanced Settings
-tab_statistics#:#Statistics
 section_general_label#:#General Settings
 section_general_info#:#Title, visibility and system prompt of this chat
 section_ai_config_label#:#AI Service & Configuration

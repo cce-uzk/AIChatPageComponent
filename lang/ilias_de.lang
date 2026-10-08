@@ -231,6 +231,14 @@ stat_created_at#:#Erstellung
 stat_session_count#:#Anzahl Sitzungen
 stat_rag#:#RAG?
 stat_background_files#:#Hintergrunddateien
+stat_rag_checked_at#:#Letzte Prüfung des Verarbeitungsstatus
+rag_file_status_completed#:#Von der Dokumentensuche verarbeitet
+rag_file_status_processing#:#Wird von der Dokumentensuche verarbeitet
+rag_file_status_pending#:#Wartet auf Übertragung an die Dokumentensuche
+rag_file_status_failed#:#Verarbeitung fehlgeschlagen
+rag_file_retry_at#:#neuer Versuch ab %s
+rag_file_retry_due#:#neuer Versuch bei der nächsten Nutzung des Chats
+rag_file_status_direct#:#Wird direkt an die KI übergeben (ohne Dokumentensuche)
 stat_is_online#:#Online
 stat_goto_page#:#Zur Seite springen
 stat_toggle_online#:#Online schalten
@@ -247,7 +255,6 @@ stat_no#:#Nein
 stat_no_title#:#ohne Titel
 tab_settings#:#Einstellungen
 tab_advanced_settings#:#Erweiterte Einstellungen
-tab_statistics#:#Statistik
 section_general_label#:#Grundeinstellungen
 section_general_info#:#Titel, Sichtbarkeit und System-Prompt des Chats
 section_ai_config_label#:#KI-Dienst & Konfiguration

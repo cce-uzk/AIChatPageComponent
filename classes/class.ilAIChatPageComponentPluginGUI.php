@@ -1111,7 +1111,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
 
         $last_activity_str = $last_activity
-            ? (new \DateTime($last_activity))->format('d.m.Y H:i')
+            ? $this->formatStoredDateTime($last_activity)
             : '–';
 
         $listing = $ui_factory->listing()->descriptive([
@@ -1120,6 +1120,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('stat_last_activity') => $last_activity_str,
             $this->plugin->txt('stat_background_files') => (string) $bg_count,
         ]);
+        $file_status_panel = $this->getBackgroundFileStatusPanel($chat_id);
 
         $panel = $ui_factory->panel()->standard(
             $this->plugin->txt('tab_statistics'),
@@ -1135,8 +1136,139 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $html .= '<div style="margin-bottom:1rem">' . $renderer->render($clear_btn) . '</div>';
         }
         $html .= $renderer->render($panel);
+        if ($file_status_panel !== null) {
+            $html .= $renderer->render($file_status_panel);
+        }
 
         $this->tpl->setContent($html);
+    }
+
+    /**
+     * Panel with the background files of the chat and their processing state in the RAG
+     *
+     * The state is queried from the RAG service before (at most once per minute and
+     * chat, see AIChatPageComponentRAGStatus::refreshChat()).
+     */
+    private function getBackgroundFileStatusPanel(string $chat_id): ?\ILIAS\UI\Component\Panel\Standard
+    {
+        global $DIC;
+        $db = $DIC->database();
+        $ui_factory = $DIC->ui()->factory();
+
+        try {
+            $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
+                return null;
+            }
+            $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($chat_config->getAiService());
+            $rag_enabled = $llm !== null && $llm->isRagEnabledForChat($chat_config);
+            if ($rag_enabled) {
+                \ai\AIChatPageComponentRAGStatus::refreshChat($chat_id);
+            }
+        } catch (\Exception $e) {
+            $this->logger->warning("Processing state of background files not available", ['error' => $e->getMessage()]);
+            return null;
+        }
+
+        $result = $db->query(
+            "SELECT id, rag_status, rag_status_error, rag_retry_at FROM pcaic_attachments"
+            . " WHERE chat_id = " . $db->quote($chat_id, 'text') . " AND background_file = 1 ORDER BY timestamp ASC"
+        );
+
+        // Files by processing state; problems first
+        $groups = array_fill_keys([
+            'rag_file_status_failed',
+            'rag_file_status_processing',
+            'rag_file_status_pending',
+            'rag_file_status_completed',
+            'rag_file_status_direct',
+        ], []);
+        while ($row = $db->fetchAssoc($result)) {
+            $title = (new \ILIAS\Plugin\pcaic\Model\Attachment((int) $row['id']))->getTitle();
+            $status = $this->getRagFileStatusKey($rag_enabled, $row['rag_status'] ?? null);
+            if ($status === 'rag_file_status_failed') {
+                $title .= $this->getRagFailureDetails($row);
+            }
+            $groups[$status][] = $title;
+        }
+
+        $items = [];
+        foreach ($groups as $status => $titles) {
+            if ($titles !== []) {
+                $label = $this->plugin->txt($status) . ' (' . count($titles) . ')';
+                $items[$label] = $ui_factory->listing()->unordered($titles);
+            }
+        }
+
+        if ($items === []) {
+            return null;
+        }
+
+        if ($rag_enabled) {
+            $checked = $db->fetchAssoc($db->query(
+                "SELECT rag_status_checked_at FROM pcaic_chats WHERE chat_id = " . $db->quote($chat_id, 'text')
+            ));
+            if (!empty($checked['rag_status_checked_at'])) {
+                $items[$this->plugin->txt('stat_rag_checked_at')] =
+                    $this->formatStoredDateTime($checked['rag_status_checked_at']);
+            }
+        }
+
+        return $ui_factory->panel()->standard(
+            $this->plugin->txt('stat_background_files'),
+            $ui_factory->listing()->descriptive($items)
+        );
+    }
+
+    /**
+     * Date and time stored by the plugin (UTC) in the time zone and format of the user
+     */
+    private function formatStoredDateTime(string $value): string
+    {
+        return \ilDatePresentation::formatDate(new \ilDateTime($value, IL_CAL_DATETIME, 'UTC'));
+    }
+
+    /**
+     * Language key of the processing state of a background file
+     */
+    private function getRagFileStatusKey(bool $rag_enabled, ?string $rag_status): string
+    {
+        if (!$rag_enabled) {
+            return 'rag_file_status_direct';
+        }
+
+        switch ($rag_status) {
+            case \ai\AIChatPageComponentRAGStatus::COMPLETED:
+                return 'rag_file_status_completed';
+            case \ai\AIChatPageComponentRAGStatus::PROCESSING:
+                return 'rag_file_status_processing';
+            case \ai\AIChatPageComponentRAGStatus::FAILED:
+                return 'rag_file_status_failed';
+            case \ai\AIChatPageComponentRAGStatus::SKIPPED:
+                return 'rag_file_status_direct';
+            default:
+                return 'rag_file_status_pending';
+        }
+    }
+
+    /**
+     * Time of the next attempt and error message of a failed background file
+     *
+     * @param array $row rag_status_error and rag_retry_at of the attachment
+     */
+    private function getRagFailureDetails(array $row): string
+    {
+        $details = [];
+        if (!empty($row['rag_retry_at'])) {
+            // The new upload is triggered by the next chat request
+            $details[] = $row['rag_retry_at'] <= gmdate('Y-m-d H:i:s')
+                ? $this->plugin->txt('rag_file_retry_due')
+                : sprintf($this->plugin->txt('rag_file_retry_at'), $this->formatStoredDateTime($row['rag_retry_at']));
+        }
+        if (!empty($row['rag_status_error'])) {
+            $details[] = mb_substr((string) $row['rag_status_error'], 0, 160);
+        }
+        return $details === [] ? '' : ' – ' . implode('; ', $details);
     }
 
     public function clearHistory(): void

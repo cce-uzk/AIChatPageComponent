@@ -249,6 +249,7 @@ In RAG mode:
 - The RAG processes uploaded files asynchronously; large PDFs can take several minutes. While background files are not yet processed or their processing failed, learners see a note below the answer that the answer may be incomplete.
 - The processing state is queried from the RAG service at most once per minute and chat, triggered by chat requests, so the number of concurrent learners does not increase the load on the RAG service.
 - Files whose processing failed are uploaded again with increasing delay (5 minutes, doubled after each failure, at most 6 hours).
+- The statistics tab of the chat lists the background files with their processing state (processed, being processed, waiting, failed with the time of the next attempt, or passed directly to the AI).
 - Files the RAG service cannot delete yet, because they are still being processed, are deleted later.
 - If the RAG service is not available, learners see the message "Document search is currently unavailable. Please try again later."
 

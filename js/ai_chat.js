@@ -709,6 +709,27 @@ class AIChatPageComponent {
     // Images are loaded after the message was added and enlarge it
     this.messagesArea.addEventListener('load', () => this.scrollToBottom(), true);
 
+    // Content grows after it was added (formulas, highlighting, fonts), and a chat
+    // that is hidden when the page is loaded has no height yet: the end stays in
+    // view as long as the user has not scrolled up
+    if (typeof window.ResizeObserver === 'function' && typeof window.MutationObserver === 'function') {
+      const followResize = new window.ResizeObserver(() => {
+        if (this.followMessages) {
+          this.messagesArea.scrollTop = this.messagesArea.scrollHeight;
+        }
+        this.updateScrollButton();
+      });
+      followResize.observe(this.messagesArea);
+      [...this.messagesArea.children].forEach((child) => followResize.observe(child));
+      new window.MutationObserver((mutations) => {
+        mutations.forEach((mutation) => mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === window.Node.ELEMENT_NODE) {
+            followResize.observe(node);
+          }
+        }));
+      }).observe(this.messagesArea, { childList: true });
+    }
+
     if (this.scrollButton) {
       this.scrollButton.addEventListener('click', () => {
         const reduceMotion = typeof window.matchMedia === 'function'
