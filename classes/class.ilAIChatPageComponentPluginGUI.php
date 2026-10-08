@@ -1468,8 +1468,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("ATTACH_FILE_TITLE", $this->plugin->txt('attach_file_title'));
 
         $tpl->setVariable("COPY_MESSAGE_TITLE", htmlspecialchars($this->plugin->txt('copy_message_title')));
-        $tpl->setVariable("LIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('like_response_title')));
-        $tpl->setVariable("DISLIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('dislike_response_title')));
+        $tpl->setVariable("REGENERATE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('regenerate_response_title')));
 
         if (!empty($config_properties['disclaimer'])) {
             $tpl->setCurrentBlock("disclaimer");
@@ -1488,6 +1487,21 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $this->addChatAssets();
 
         return $tpl->get();
+    }
+
+    /**
+     * Labels used when rendering answers (code blocks, tables, highlight boxes)
+     */
+    private function setRenderingLabels(ilTemplate $tpl): void
+    {
+        $tpl->setVariable("TABLE_COPY", htmlspecialchars($this->plugin->txt('table_copy')));
+        $tpl->setVariable("TABLE_EXPORT_CSV", htmlspecialchars($this->plugin->txt('table_export_csv')));
+        $tpl->setVariable("CODE_COPY", htmlspecialchars($this->plugin->txt('code_copy')));
+        $tpl->setVariable("ALERT_NOTE", htmlspecialchars($this->plugin->txt('alert_note')));
+        $tpl->setVariable("ALERT_TIP", htmlspecialchars($this->plugin->txt('alert_tip')));
+        $tpl->setVariable("ALERT_IMPORTANT", htmlspecialchars($this->plugin->txt('alert_important')));
+        $tpl->setVariable("ALERT_WARNING", htmlspecialchars($this->plugin->txt('alert_warning')));
+        $tpl->setVariable("ALERT_CAUTION", htmlspecialchars($this->plugin->txt('alert_caution')));
     }
 
     /**
@@ -1599,8 +1613,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("CLEAR_CHAT_CONFIRM", htmlspecialchars($this->plugin->txt('clear_chat_confirm')));
 
         $tpl->setVariable("COPY_MESSAGE_TITLE", htmlspecialchars($this->plugin->txt('copy_message_title')));
-        $tpl->setVariable("LIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('like_response_title')));
-        $tpl->setVariable("DISLIKE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('dislike_response_title')));
         $tpl->setVariable("REGENERATE_RESPONSE_TITLE", htmlspecialchars($this->plugin->txt('regenerate_response_title')));
 
         $tpl->setVariable("MESSAGE_COPIED", htmlspecialchars($this->plugin->txt('message_copied')));
@@ -1613,19 +1625,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("RAG_INCOMPLETE_NOTICE", htmlspecialchars($this->plugin->txt('rag_incomplete_notice')));
         $tpl->setVariable("PAGE_LABEL", htmlspecialchars($this->plugin->txt('page_label')));
         $tpl->setVariable("PAGES_LABEL", htmlspecialchars($this->plugin->txt('pages_label')));
-        $tpl->setVariable("TABLE_COPY", htmlspecialchars($this->plugin->txt('table_copy')));
-        $tpl->setVariable("TABLE_EXPORT_CSV", htmlspecialchars($this->plugin->txt('table_export_csv')));
-        $tpl->setVariable("CODE_COPY", htmlspecialchars($this->plugin->txt('code_copy')));
+        $this->setRenderingLabels($tpl);
         $tpl->setVariable("CITATION_MORE_SOURCE", htmlspecialchars($this->plugin->txt('citation_more_source')));
         $tpl->setVariable("CITATION_MORE_SOURCES", htmlspecialchars($this->plugin->txt('citation_more_sources')));
         $tpl->setVariable("SOURCE_PREVIOUS", htmlspecialchars($this->plugin->txt('source_previous')));
         $tpl->setVariable("SOURCE_NEXT", htmlspecialchars($this->plugin->txt('source_next')));
         $tpl->setVariable("SCROLL_TO_BOTTOM", htmlspecialchars($this->plugin->txt('scroll_to_bottom')));
-        $tpl->setVariable("ALERT_NOTE", htmlspecialchars($this->plugin->txt('alert_note')));
-        $tpl->setVariable("ALERT_TIP", htmlspecialchars($this->plugin->txt('alert_tip')));
-        $tpl->setVariable("ALERT_IMPORTANT", htmlspecialchars($this->plugin->txt('alert_important')));
-        $tpl->setVariable("ALERT_WARNING", htmlspecialchars($this->plugin->txt('alert_warning')));
-        $tpl->setVariable("ALERT_CAUTION", htmlspecialchars($this->plugin->txt('alert_caution')));
 
         $max_size_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
         $max_size_mb = $max_size_config ? (int) $max_size_config : 5;

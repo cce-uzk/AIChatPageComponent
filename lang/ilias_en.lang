@@ -20,8 +20,6 @@ clear_chat_title#:#Clear all chat messages
 clear_chat_label#:#Clear chat history
 clear_chat_confirm#:#Are you sure you want to clear all chat messages? This action cannot be undone.
 thinking_header#:#Thinking...
-like_response_title#:#Good response
-dislike_response_title#:#Poor response
 regenerate_response_title#:#Regenerate response
 generation_stopped#:#Generation stopped by user.
 regenerate_failed#:#Failed to regenerate response. Please try again.
@@ -203,10 +201,10 @@ skip_to_input#:#Skip to chat input
 edit_mode_label#:#Editor Preview
 click_to_edit_hint#:#Click to edit configuration
 demo_user_message#:#Hello! How can you help me?
-demo_assistant_message#:#Hello! I'm an AI assistant embedded in this learning page. I'm here to help you with questions about the content, explain concepts, or assist with exercises. Feel free to ask me anything!
-demo_assistant_tutor#:#Hello! As your learning tutor, I'm here to guide you through the material step by step. Ask me about any concepts you'd like to explore.
-demo_assistant_coding#:#Hello! I can help you with programming questions, explain code concepts, or debug issues. What would you like to work on?
-demo_assistant_creative#:#Hello! Let's get creative together! Whether it's brainstorming ideas, writing stories, or exploring imaginative concepts - I'm here to help!
+demo_assistant_message#:#Hello! I am an AI assistant embedded in this learning page. I am here to help you with questions about the content of this page.
+demo_assistant_tutor#:#Hello! As your learning tutor, I am here to guide you through the material step by step. Ask me any time if something is unclear.
+demo_assistant_coding#:#Hello! I can help you with programming questions, explain code concepts or support you in debugging.
+demo_assistant_creative#:#Hello! Let's get creative together! Whether brainstorming, writing stories or imaginative concepts – I am happy to support you.
 sources_label#:#Sources
 page_label#:#Page
 pages_label#:#Pages

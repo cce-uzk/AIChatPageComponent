@@ -312,40 +312,7 @@ class AIChatPageComponent {
     this.globalChatUploadsEnabled = true;
     this.allowedFileTypes = [];
 
-    this.lang = {
-      copyMessageTitle: this.container.dataset.copyMessageTitle || 'Copy message',
-      regenerateResponseTitle: this.container.dataset.regenerateResponseTitle || 'Regenerate response',
-      likeResponseTitle: this.container.dataset.likeResponseTitle || 'Good response',
-      dislikeResponseTitle: this.container.dataset.dislikeResponseTitle || 'Poor response',
-      messageCopied: this.container.dataset.messageCopied || 'Copied!',
-      messageCopyFailed: this.container.dataset.messageCopyFailed || 'Failed to copy',
-      thinkingHeader: this.container.dataset.thinkingHeader || 'Thinking...',
-      thinking: this.container.dataset.loadingText || 'Thinking...',
-      generationStopped: this.container.dataset.generationStopped || 'Generation stopped by user.',
-      regenerateFailed: this.container.dataset.regenerateFailed || 'Failed to regenerate response. Please try again.',
-      welcomeMessage: this.container.dataset.welcomeMessage || 'Start a conversation...',
-      stopGeneration: this.container.dataset.stopGeneration || 'Stop generation',
-      newMessageAria: this.container.dataset.newMessageAria || 'New message received',
-      sourcesLabel: this.container.dataset.sourcesLabel || 'Quellen',
-      ragIncompleteNotice: this.container.dataset.ragIncompleteNotice
-        || 'Some background files have not been processed yet. The answer may be incomplete.',
-      pageLabel: this.container.dataset.pageLabel || 'Seite',
-      pagesLabel: this.container.dataset.pagesLabel || 'Seiten',
-      tableCopy: this.container.dataset.tableCopy || 'Copy table',
-      tableExportCsv: this.container.dataset.tableExportCsv || 'Export as CSV',
-      codeCopy: this.container.dataset.codeCopy || 'Copy code',
-      citationMoreSource: this.container.dataset.citationMoreSource || '1 more source',
-      citationMoreSources: this.container.dataset.citationMoreSources || '%s more sources',
-      sourcePrevious: this.container.dataset.sourcePrevious || 'Previous source',
-      sourceNext: this.container.dataset.sourceNext || 'Next source',
-      alerts: {
-        note: this.container.dataset.alertNote || 'Note',
-        tip: this.container.dataset.alertTip || 'Tip',
-        important: this.container.dataset.alertImportant || 'Important',
-        warning: this.container.dataset.alertWarning || 'Warning',
-        caution: this.container.dataset.alertCaution || 'Caution',
-      },
-    };
+    this.lang = AIChatPageComponent.readLang(this.container);
 
     this.pageId = parseInt(this.container.dataset.pageId, 10) || 0;
     this.parentId = parseInt(this.container.dataset.parentId, 10) || 0;
@@ -392,6 +359,47 @@ class AIChatPageComponent {
 
   /** Distance from the end of the messages, in pixels, still treated as "at the end" */
   static get SCROLL_END_TOLERANCE() { return 48; }
+
+  /**
+   * Language strings from the data attributes of a chat container
+   *
+   * @param {HTMLElement} container
+   * @returns {Object}
+   */
+  static readLang(container) {
+    return {
+      copyMessageTitle: container.dataset.copyMessageTitle || 'Copy message',
+      regenerateResponseTitle: container.dataset.regenerateResponseTitle || 'Regenerate response',
+      messageCopied: container.dataset.messageCopied || 'Copied!',
+      messageCopyFailed: container.dataset.messageCopyFailed || 'Failed to copy',
+      thinkingHeader: container.dataset.thinkingHeader || 'Thinking...',
+      thinking: container.dataset.loadingText || 'Thinking...',
+      generationStopped: container.dataset.generationStopped || 'Generation stopped by user.',
+      regenerateFailed: container.dataset.regenerateFailed || 'Failed to regenerate response. Please try again.',
+      welcomeMessage: container.dataset.welcomeMessage || 'Start a conversation...',
+      stopGeneration: container.dataset.stopGeneration || 'Stop generation',
+      newMessageAria: container.dataset.newMessageAria || 'New message received',
+      sourcesLabel: container.dataset.sourcesLabel || 'Quellen',
+      ragIncompleteNotice: container.dataset.ragIncompleteNotice
+        || 'Some background files have not been processed yet. The answer may be incomplete.',
+      pageLabel: container.dataset.pageLabel || 'Seite',
+      pagesLabel: container.dataset.pagesLabel || 'Seiten',
+      tableCopy: container.dataset.tableCopy || 'Copy table',
+      tableExportCsv: container.dataset.tableExportCsv || 'Export as CSV',
+      codeCopy: container.dataset.codeCopy || 'Copy code',
+      citationMoreSource: container.dataset.citationMoreSource || '1 more source',
+      citationMoreSources: container.dataset.citationMoreSources || '%s more sources',
+      sourcePrevious: container.dataset.sourcePrevious || 'Previous source',
+      sourceNext: container.dataset.sourceNext || 'Next source',
+      alerts: {
+        note: container.dataset.alertNote || 'Note',
+        tip: container.dataset.alertTip || 'Tip',
+        important: container.dataset.alertImportant || 'Important',
+        warning: container.dataset.alertWarning || 'Warning',
+        caution: container.dataset.alertCaution || 'Caution',
+      },
+    };
+  }
 
   /**
    * State of a streamed answer: pending frame and sources received before the answer

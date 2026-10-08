@@ -587,13 +587,7 @@ class AIChatPageComponentRAG
             curl_setopt($curl, CURLOPT_CAINFO, $ca_cert_path);
         }
 
-        if (class_exists('ilProxySettings') && \ilProxySettings::_getInstance()->isActive()) {
-            curl_setopt(
-                $curl,
-                CURLOPT_PROXY,
-                \ilProxySettings::_getInstance()->getHost() . ':' . \ilProxySettings::_getInstance()->getPort()
-            );
-        }
+        AIChatPageComponentLLM::applyProxySettings($curl);
 
         $response = curl_exec($curl);
         $http_code = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);

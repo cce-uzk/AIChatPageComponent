@@ -298,6 +298,21 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
+     * Use the proxy configured in ILIAS (Administration > General Settings > Server)
+     * for a request to an external service
+     */
+    public static function applyProxySettings(\CurlHandle $curl): void
+    {
+        if (class_exists('ilProxySettings') && \ilProxySettings::_getInstance()->isActive()) {
+            curl_setopt(
+                $curl,
+                CURLOPT_PROXY,
+                \ilProxySettings::_getInstance()->getHost() . ':' . \ilProxySettings::_getInstance()->getPort()
+            );
+        }
+    }
+
+    /**
      * Listener for the sources of a streamed RAG answer
      *
      * The sources are known after the retrieval, before the answer is generated, so

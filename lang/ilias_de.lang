@@ -20,8 +20,6 @@ clear_chat_title#:#Alle Chat-Nachrichten löschen
 clear_chat_label#:#Chat-Verlauf löschen
 clear_chat_confirm#:#Sind Sie sicher, dass Sie alle Chat-Nachrichten löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.
 thinking_header#:#Nachdenken...
-like_response_title#:#Gute Antwort
-dislike_response_title#:#Schlechte Antwort
 regenerate_response_title#:#Antwort neu generieren
 generation_stopped#:#Generierung vom Benutzer gestoppt.
 regenerate_failed#:#Antwort konnte nicht neu generiert werden. Bitte versuchen Sie es erneut.
@@ -203,10 +201,10 @@ skip_to_input#:#Zum Eingabefeld springen
 edit_mode_label#:#Editor-Vorschau
 click_to_edit_hint#:#Klicken Sie hier, um die Konfiguration zu bearbeiten
 demo_user_message#:#Hallo! Wie kannst du mir helfen?
-demo_assistant_message#:#Hallo! Ich bin ein KI-Assistent, der in diese Lernseite eingebettet ist. Ich bin hier, um Ihnen bei Fragen zum Inhalt zu helfen, Konzepte zu erklären oder bei Übungen zu unterstützen. Fragen Sie mich gerne alles!
-demo_assistant_tutor#:#Hallo! Als Ihr Lern-Tutor bin ich hier, um Sie Schritt für Schritt durch das Material zu führen. Fragen Sie mich zu allen Konzepten, die Sie erkunden möchten.
-demo_assistant_coding#:#Hallo! Ich kann Ihnen bei Programmier-Fragen helfen, Code-Konzepte erklären oder bei der Fehlersuche unterstützen. Woran möchten Sie arbeiten?
-demo_assistant_creative#:#Hallo! Lassen Sie uns gemeinsam kreativ werden! Ob Brainstorming, Geschichten schreiben oder fantasievolle Konzepte erkunden - ich bin hier, um zu helfen!
+demo_assistant_message#:#Hallo! Ich bin ein KI-Assistent, der in diese Lernseite eingebettet ist. Ich bin hier, um Ihnen bei Fragen zum Inhalt dieser Seite zu helfen.
+demo_assistant_tutor#:#Hallo! Als Ihr Lern-Tutor bin ich hier, um Sie Schritt für Schritt durch das Material zu führen. Fragen Sie mich jederzeit, wenn etwas unklar ist.
+demo_assistant_coding#:#Hallo! Ich kann Ihnen bei Programmier-Fragen helfen, Code-Konzepte erklären oder bei der Fehlersuche unterstützen.
+demo_assistant_creative#:#Hallo! Lassen Sie uns gemeinsam kreativ werden! Ob Brainstorming, Geschichten schreiben oder fantasievolle Konzepte – ich unterstütze Sie gern.
 sources_label#:#Quellen
 page_label#:#Seite
 pages_label#:#Seiten

@@ -437,12 +437,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             'Authorization: Bearer ' . $this->getApiKey()
         ]);
 
-        if (class_exists('ilProxySettings') && \ilProxySettings::_getInstance()->isActive()) {
-            $proxy_host = \ilProxySettings::_getInstance()->getHost();
-            $proxy_port = \ilProxySettings::_getInstance()->getPort();
-            $proxy_url = $proxy_host . ":" . $proxy_port;
-            curl_setopt($curl_session, CURLOPT_PROXY, $proxy_url);
-        }
+        self::applyProxySettings($curl_session);
 
         $response_content = '';
 
@@ -628,12 +623,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             ]);
             curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
-            if (class_exists('ilProxySettings') && \ilProxySettings::_getInstance()->isActive()) {
-                $proxy_host = \ilProxySettings::_getInstance()->getHost();
-                $proxy_port = \ilProxySettings::_getInstance()->getPort();
-                $proxy_url = $proxy_host . ":" . $proxy_port;
-                curl_setopt($ch, CURLOPT_PROXY, $proxy_url);
-            }
+            self::applyProxySettings($ch);
 
             $response = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);

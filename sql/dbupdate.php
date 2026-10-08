@@ -970,3 +970,25 @@ if (!$db->tableExists('pcaic_rag_deletions')) {
     $db->createSequence('pcaic_rag_deletions');
 }
 ?>
+<#15>
+<?php
+/**
+ * Step 15: Remove unused configuration keys of the former RAMSES endpoints (v1.10.1)
+ *
+ * Chat and model URLs are derived from ramses_api_url. Deleting keys that do not
+ * exist has no effect.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_config')) {
+    $db->manipulate(
+        "DELETE FROM pcaic_config WHERE " . $db->in(
+            'config_key',
+            ['ramses_chat_api_url', 'ramses_models_api_url'],
+            false,
+            'text'
+        )
+    );
+}
+?>

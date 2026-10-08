@@ -2390,6 +2390,71 @@ a.ai-chat-footnote-link:hover,
     .ai-chat-clear-btn { border: 1px solid currentColor !important; }
 }
 
+/* ── Editor preview (page editor) ────────────────────────────────────────────── */
+
+/* All interactions disabled; a click on the overlay opens the element for editing */
+.ai-chat-preview-mode {
+    position: relative;
+    pointer-events: none;
+}
+
+.ai-chat-preview-mode::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+/* Same height as the header buttons */
+.ai-chat-preview-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 14px;
+    background: var(--chat-secondary);
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 18px;
+    white-space: nowrap;
+}
+
+.ai-chat-preview-badge svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+}
+
+.ai-chat-messages-preview {
+    min-height: 200px;
+    max-height: 200px;
+}
+
+.ai-chat-preview-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--chat-bg-secondary);
+    color: var(--chat-text-secondary);
+    font-size: 13px;
+    border-top: 1px solid var(--chat-border);
+}
+
+.ai-chat-preview-hint svg {
+    color: var(--chat-secondary);
+}
+
+.ai-chat-composer-preview .ai-chat-input {
+    cursor: not-allowed;
+}
+
+
 @media (prefers-reduced-motion: reduce) {
     .ai-chat-container *,
     .ai-chat-container *::before,
