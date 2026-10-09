@@ -400,9 +400,14 @@ abstract class AIChatPageComponentLLM
             return strlen($chunk);
         });
 
-        // Called by cURL about once per second, also while no data arrives
+        // Called by cURL about once per second, also while no data arrives.
+        // CURLOPT_XFERINFOFUNCTION is available from PHP 8.2, the older
+        // CURLOPT_PROGRESSFUNCTION works the same way for this purpose.
+        $progress_option = defined('CURLOPT_XFERINFOFUNCTION')
+            ? constant('CURLOPT_XFERINFOFUNCTION')
+            : CURLOPT_PROGRESSFUNCTION;
         curl_setopt($curl, CURLOPT_NOPROGRESS, false);
-        curl_setopt($curl, CURLOPT_XFERINFOFUNCTION, function () use ($state): int {
+        curl_setopt($curl, $progress_option, function () use ($state): int {
             $now = microtime(true);
             if ($state->finished_at !== null && $now - $state->finished_at > static::STREAM_END_GRACE) {
                 $state->ended_after_finish = true;
