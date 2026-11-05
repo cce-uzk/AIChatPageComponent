@@ -45,7 +45,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         $tpl->setTitle($this->plugin->txt('plugin_title'));
         $tpl->setDescription($this->plugin->txt('plugin_description'));
         $tpl->setTitleIcon(
-            $this->plugin->getDirectory() . '/templates/images/ai_chat.svg',
+            $this->plugin->getRelativeDirectory() . '/templates/images/ai_chat.svg',
             $this->plugin->txt('plugin_title')
         );
 

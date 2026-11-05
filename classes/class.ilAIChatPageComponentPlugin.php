@@ -67,11 +67,11 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin
     }
 
     /**
-     * Plugin directory relative to the ILIAS root
+     * Plugin directory relative to the web root
      */
     public function getPluginBaseDir(): string
     {
-        return rtrim($this->getDirectory(), '/');
+        return rtrim($this->getRelativeDirectory(), '/');
     }
 
     /**

@@ -1,6 +1,6 @@
-# AI Chat PageComponent for ILIAS 9
+# AI Chat PageComponent for ILIAS 10
 
-ILIAS 9 PageComponent plugin for embedding configurable AI chats into ILIAS pages. Each chat has its own system prompt, optional background files and its own settings, so that chats can be designed for a specific teaching purpose (e.g. a tutor for a course topic or an exercise on generative AI).
+ILIAS 10 PageComponent plugin for embedding configurable AI chats into ILIAS pages. Each chat has its own system prompt, optional background files and its own settings, so that chats can be designed for a specific teaching purpose (e.g. a tutor for a course topic or an exercise on generative AI).
 
 The plugin talks to OpenAI-compatible chat APIs. KI:connect.nrw and OpenAI are included; further services can be added. Retrieval-Augmented Generation (RAG) is provided by a separate RAG service that can be combined with any of the AI services.
 
@@ -84,9 +84,9 @@ Developed by the CompetenceCenter E-Learning, University of Cologne.
 
 ## Requirements
 
-- ILIAS 9.x
-- PHP 8.1 or higher with `curl`, `gd` and `imagick`
-- MySQL 8.0 or MariaDB (as supported by ILIAS 9)
+- ILIAS 10.x
+- PHP 8.2 or 8.3 with `curl`, `gd` and `imagick`
+- MySQL 8.0 or MariaDB (as supported by ILIAS 10)
 - Ghostscript (used by ILIAS to convert PDF pages to images)
 - Access to at least one OpenAI-compatible chat API (e.g. KI:connect.nrw or OpenAI)
 - Optional: a RAG service compatible with the OSKI RAG WebGateway API (see [RAG](#rag-tab))
@@ -97,14 +97,14 @@ The plugin does not require other ILIAS plugins.
 
 1. Clone the plugin into the ILIAS directory:
    ```bash
-   mkdir -p Customizing/global/plugins/Services/COPage/PageComponent
-   cd Customizing/global/plugins/Services/COPage/PageComponent
-   git clone https://github.com/cce-uzk/AIChatPageComponent.git AIChatPageComponent
+   mkdir -p public/Customizing/global/plugins/Services/COPage/PageComponent
+   cd public/Customizing/global/plugins/Services/COPage/PageComponent
+   git clone -b release_10 https://github.com/cce-uzk/AIChatPageComponent.git AIChatPageComponent
    ```
 2. In the ILIAS root directory, rebuild the artifacts and run the setup:
    ```bash
    composer du
-   php setup/setup.php update
+   php cli/setup.php update
    ```
 3. In **Administration > Extending ILIAS > Plugins**, install and activate **AIChatPageComponent**.
 4. Configure at least one AI service (see below).
@@ -116,11 +116,11 @@ TLS certificates of the AI services and the RAG service are always verified. If 
 ## Updating
 
 ```bash
-cd Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
+cd public/Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
 git pull
 cd <ILIAS root>
 composer du
-php setup/setup.php update
+php cli/setup.php update
 ```
 
 Then run the plugin update in **Administration > Extending ILIAS > Plugins** if ILIAS shows it as pending.
@@ -378,17 +378,17 @@ The implementations of KI:connect.nrw and OpenAI can serve as templates.
 
 ### Tests and code style
 
-Unit tests (PHPUnit 9.5, as used by ILIAS 9) cover the RAG helpers and the model selection. They run without an ILIAS installation:
+Unit tests (PHPUnit 10.5, as used by ILIAS 10) cover the RAG helpers and the model selection. They run without an ILIAS installation:
 
 ```bash
-cd Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
+cd public/Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
 <path to>/phpunit -c phpunit.xml
 ```
 
-The code follows the ILIAS [PHP coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_9/docs/development/php-coding-style.md) (PSR-12 with ILIAS additions) and the [JavaScript coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_9/docs/development/js-coding-style.md). Checks from the ILIAS root directory:
+The code follows the ILIAS [PHP coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_10/docs/development/php-coding-style.md) (PSR-12 with ILIAS additions) and the [JavaScript coding style](https://github.com/ILIAS-eLearning/ILIAS/blob/release_10/docs/development/js-coding-style.md). Checks from the ILIAS root directory:
 
 ```bash
-libs/composer/vendor/bin/php-cs-fixer fix --dry-run --diff --config=./CI/PHP-CS-Fixer/code-format.php_cs <plugin directory>
+vendor/composer/vendor/bin/php-cs-fixer fix --dry-run --diff --config=./scripts/PHP-CS-Fixer/code-format.php_cs <plugin directory>
 node_modules/.bin/eslint -c .eslintrc.json --no-eslintrc <plugin directory>/js/ai_chat.js
 ```
 

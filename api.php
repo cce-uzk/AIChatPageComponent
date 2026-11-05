@@ -19,9 +19,8 @@
  *
  * @author Nadimo Staszak <nadimo.staszak@uni-koeln.de>
  */
-$ilias_root = rtrim(dirname(__DIR__, 7), '/');
-chdir($ilias_root);
-require_once($ilias_root . '/Services/Init/classes/class.ilInitialisation.php');
+chdir(dirname(__DIR__, 7));
+require_once '../vendor/composer/vendor/autoload.php';
 ilContext::init(ilContext::CONTEXT_WEB);
 ilInitialisation::initILIAS();
 

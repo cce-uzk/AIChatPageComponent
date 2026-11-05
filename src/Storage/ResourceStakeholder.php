@@ -24,14 +24,14 @@ use ILIAS\ResourceStorage\Stakeholder\AbstractResourceStakeholder;
  */
 class ResourceStakeholder extends AbstractResourceStakeholder
 {
-    public function __construct()
-    {
-        global $DIC;
-    }
-
     public function getId(): string
     {
         return \ilAIChatPageComponentPlugin::getPluginId();
+    }
+
+    public function getConsumerNameForPresentation(): string
+    {
+        return \ilAIChatPageComponentPlugin::PLUGIN_NAME;
     }
 
     /**

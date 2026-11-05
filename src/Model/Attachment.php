@@ -354,7 +354,7 @@ class Attachment
             if ($download_url) {
                 // URLs generated from the plugin directory point to the wrong base path; rebuild them from ILIAS_HTTP_PATH
                 if (strpos($download_url, '/Customizing/global/plugins/') !== false) {
-                    $pattern = '/.*\/(src\/FileDelivery\/deliver\.php\/.+)$/';
+                    $pattern = '/.*\/(deliver\.php\/.+)$/';
                     if (preg_match($pattern, $download_url, $matches)) {
                         $ilias_base = rtrim(preg_replace('~(/Customizing)(?=/|$).*~i', '', ILIAS_HTTP_PATH), '/');
                         $corrected_url = $ilias_base . '/' . $matches[1];
@@ -402,7 +402,7 @@ class Attachment
         }
 
         $ilias_base = rtrim(preg_replace('~(/Customizing)(?=/|$).*~i', '', ILIAS_HTTP_PATH), '/');
-        $delivery_url = $ilias_base . '/src/FileDelivery/deliver.php/' . $this->resource_id;
+        $delivery_url = $ilias_base . '/deliver.php/' . $this->resource_id;
 
         $this->logger->debug("Using simple preview URL fallback", ['url' => $delivery_url]);
         return $delivery_url;

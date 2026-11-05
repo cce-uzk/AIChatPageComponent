@@ -2082,13 +2082,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $tpl = $DIC['tpl'];
 
-        $tpl->addCss($this->plugin->getDirectory() . "/css/ai_chat.css");
+        $tpl->addCss($this->plugin->getRelativeDirectory() . "/css/ai_chat.css");
 
         // marked.js renders Markdown in the browser
-        $tpl->addJavaScript($this->plugin->getDirectory() . "/js/vendor/marked.min.js");
+        $tpl->addJavaScript($this->plugin->getRelativeDirectory() . "/js/vendor/marked.min.js");
         // DOMPurify cleans the rendered answers
-        $tpl->addJavaScript($this->plugin->getDirectory() . "/js/vendor/purify.min.js");
-        $tpl->addJavaScript($this->plugin->getDirectory() . "/js/ai_chat.js");
+        $tpl->addJavaScript($this->plugin->getRelativeDirectory() . "/js/vendor/purify.min.js");
+        $tpl->addJavaScript($this->plugin->getRelativeDirectory() . "/js/ai_chat.js");
     }
 
     /**
@@ -2121,7 +2121,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         ];
 
         try {
-            require_once($this->plugin->getPluginBaseDir() . '/classes/platform/class.AIChatPageComponentConfig.php');
+            require_once(__DIR__ . '/platform/class.AIChatPageComponentConfig.php');
 
             $prompt = \platform\AIChatPageComponentConfig::get('default_prompt');
             if (!empty($prompt)) {
