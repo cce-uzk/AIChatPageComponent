@@ -31,7 +31,7 @@ class ChatMessage
     /**
      * @param int|null $message_id Loads this message if given
      */
-    public function __construct(int $message_id = null)
+    public function __construct(?int $message_id = null)
     {
         if ($message_id) {
             $this->message_id = $message_id;

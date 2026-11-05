@@ -31,7 +31,7 @@ class ChatSession
     /**
      * @param string|null $session_id Loads this session if given
      */
-    public function __construct(string $session_id = null)
+    public function __construct(?string $session_id = null)
     {
         if ($session_id) {
             $this->session_id = $session_id;

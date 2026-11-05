@@ -16,8 +16,8 @@ $id = "pcaic";
 
 $version = "1.10.1";
 
-$ilias_min_version = "10.0.0";
-$ilias_max_version = "10.999";
+$ilias_min_version = "11.0.0";
+$ilias_max_version = "11.999";
 
 $responsible = "Nadimo Staszak";
 $responsible_mail = "nadimo.staszak@uni-koeln.de";

@@ -241,7 +241,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         ];
     }
 
-    public function __construct(string $model = null)
+    public function __construct(?string $model = null)
     {
         parent::__construct();
 

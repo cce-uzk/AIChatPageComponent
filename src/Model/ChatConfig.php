@@ -47,7 +47,7 @@ class ChatConfig
     /**
      * @param string|null $chat_id Loads the configuration of this chat if given
      */
-    public function __construct(string $chat_id = null)
+    public function __construct(?string $chat_id = null)
     {
         if ($chat_id) {
             $this->chat_id = $chat_id;

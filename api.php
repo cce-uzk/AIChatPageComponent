@@ -21,8 +21,9 @@
  */
 chdir(dirname(__DIR__, 7));
 require_once '../vendor/composer/vendor/autoload.php';
+require_once '../artifacts/bootstrap_default.php';
 ilContext::init(ilContext::CONTEXT_WEB);
-ilInitialisation::initILIAS();
+entry_point('ILIAS Legacy Initialisation Adapter');
 
 global $DIC;
 $logger = $DIC->logger()->root();

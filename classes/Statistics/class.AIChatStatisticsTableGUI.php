@@ -80,9 +80,9 @@ class AIChatStatisticsTableGUI
         ];
 
         $table = $f->table()->data(
+            $data_retrieval,
             $this->plugin->txt('tab_statistics'),
-            $columns,
-            $data_retrieval
+            $columns
         )->withActions($this->buildActions());
 
         if ($filter_data !== null) {

@@ -255,7 +255,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
     /**
      * @param string|null $model Defaults to the configured model
      */
-    public function __construct(string $model = null)
+    public function __construct(?string $model = null)
     {
         parent::__construct();
 
