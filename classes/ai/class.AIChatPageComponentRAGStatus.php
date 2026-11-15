@@ -35,6 +35,8 @@ class AIChatPageComponentRAGStatus
     public const COMPLETED = 'completed';
     public const FAILED = 'failed';
     public const SKIPPED = 'skipped';
+    /** Waiting for an upload: the first upload failed, or a request is uploading the file right now */
+    public const PENDING = 'pending';
     /** Processed by the RAG, but the retrieval finds no content (e.g. a scan the text recognition could not read) */
     public const EMPTY = 'empty';
     /** Processed and usable, but the file is a scan: the content depends on the text recognition of the RAG */
@@ -48,6 +50,12 @@ class AIChatPageComponentRAGStatus
 
     /** @var int Maximum delay between new uploads, in seconds */
     public const RETRY_MAX_DELAY = 300;
+
+    /** @var int A request that uploads a file keeps it for this number of seconds; afterwards another request may upload it */
+    public const UPLOAD_CLAIM_TIME = 300;
+
+    /** @var int No further file of a chat is queried after this number of seconds, the others follow with the next check */
+    public const REFRESH_TIME_BUDGET = 20;
 
     /** @var int A file the RAG fails to process is given up after this number of attempts in a row */
     public const MAX_PROCESSING_ATTEMPTS = 5;
@@ -89,6 +97,29 @@ class AIChatPageComponentRAGStatus
             return null;
         }
         return self::retryDelay($failed_count);
+    }
+
+    /**
+     * Delay before the next upload after a failure, or null if the file is given up
+     *
+     * The delay grows with all failures in a row. Whether the file is given up
+     * depends on the kind of the failure: a processing failure counts against
+     * $max_attempts with the processing failures only, an upload failure with all failures.
+     *
+     * @param int $failed_count Failures in a row including this one, uploads and processings
+     * @param int $processing_failures Processing failures in a row including this one
+     * @param int $max_attempts 0 = unlimited
+     */
+    public static function failureRetryDelay(
+        int $failed_count,
+        int $processing_failures,
+        int $max_attempts,
+        bool $is_processing_failure
+    ): ?int {
+        if ($is_processing_failure) {
+            return $max_attempts > 0 && $processing_failures >= $max_attempts ? null : self::retryDelay($failed_count);
+        }
+        return self::nextRetryDelay($failed_count, $max_attempts);
     }
 
     /**
@@ -266,30 +297,91 @@ class AIChatPageComponentRAGStatus
     }
 
     /**
-     * Upload or processing failed: remove the RAG references and schedule a new upload
-     *
-     * @param int $max_attempts Number of failures in a row after which the file is given up; 0 = unlimited,
-     *                          1 = no new upload (the RAG rejected the file)
+     * The upload failed before the file was sent with a message: it is uploaded when the message is sent
      */
-    public static function markFailed(int $attachment_id, string $error, int $max_attempts = 0): void
+    public static function markPending(int $attachment_id): void
     {
         $db = self::db();
-        $result = $db->query("SELECT rag_failed_count FROM pcaic_attachments WHERE id = " . $db->quote($attachment_id, 'integer'));
+        $db->manipulate(
+            "UPDATE pcaic_attachments SET rag_status = " . $db->quote(self::PENDING, 'text')
+            . ", rag_retry_at = " . $db->quote(date('Y-m-d H:i:s'), 'timestamp')
+            . " WHERE id = " . $db->quote($attachment_id, 'integer')
+            . " AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')"
+        );
+    }
+
+    /**
+     * Reserve a file for the upload by this request
+     *
+     * Chat requests and the cron job upload the same files. Only one of several
+     * concurrent requests gets the file; without that the file would be stored in
+     * the RAG twice and one of the copies would never be deleted. The reservation
+     * ends with markUploaded() or markFailed(), or by itself after UPLOAD_CLAIM_TIME
+     * if the request died.
+     *
+     * @return bool False if the file is not due or another request is uploading it
+     */
+    public static function claimUpload(int $attachment_id): bool
+    {
+        $db = self::db();
+        return $db->manipulate(
+            "UPDATE pcaic_attachments SET rag_status = " . $db->quote(self::PENDING, 'text')
+            . ", rag_retry_at = " . $db->quote(date('Y-m-d H:i:s', time() + self::UPLOAD_CLAIM_TIME), 'timestamp')
+            . " WHERE id = " . $db->quote($attachment_id, 'integer')
+            . " AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')"
+            . " AND " . self::uploadDueCondition()
+        ) > 0;
+    }
+
+    /**
+     * Upload or processing failed: remove the RAG references and schedule a new upload
+     *
+     * Upload failures and processing failures are counted separately. Both delay the
+     * next upload (rag_failed_count), but only processing failures use up the attempts
+     * of MAX_PROCESSING_ATTEMPTS (rag_processing_failures): a file is not given up
+     * because the RAG was not reachable for a while before.
+     *
+     * @param int $max_attempts Upload failures: 0 = unlimited, 1 = no new upload (the RAG rejected the file).
+     *                          Processing failures: number of processing failures in a row after which the
+     *                          file is given up
+     * @param string|null $remote_file_id Processing failures: file in the RAG the failure was reported for. The
+     *                          attachment is left alone if it does not refer to this file any more, because
+     *                          another request recorded the failure or uploaded the file again in the meantime
+     * @return bool False if the attachment was changed by another request and left alone
+     */
+    public static function markFailed(int $attachment_id, string $error, int $max_attempts = 0, ?string $remote_file_id = null): bool
+    {
+        $db = self::db();
+        $result = $db->query(
+            "SELECT rag_failed_count, rag_processing_failures FROM pcaic_attachments WHERE id = " . $db->quote($attachment_id, 'integer')
+        );
         $row = $db->fetchAssoc($result);
-        $failed_count = (int) ($row['rag_failed_count'] ?? 0) + 1;
-        $delay = self::nextRetryDelay($failed_count, $max_attempts);
+        $previous_count = (int) ($row['rag_failed_count'] ?? 0);
+        $failed_count = $previous_count + 1;
+        $is_processing_failure = $remote_file_id !== null;
+        $processing_failures = (int) ($row['rag_processing_failures'] ?? 0) + ($is_processing_failure ? 1 : 0);
+        $delay = self::failureRetryDelay($failed_count, $processing_failures, $max_attempts, $is_processing_failure);
         // Without a time of the next attempt the file is not uploaded again
         $retry_at = $delay === null ? null : date('Y-m-d H:i:s', time() + $delay);
 
-        $db->manipulate(
+        $condition = '';
+        if ($remote_file_id !== null) {
+            // The count is part of the condition: a failure is counted once, also if two requests see it
+            $condition = " AND rag_status = " . $db->quote(self::PROCESSING, 'text')
+                . " AND rag_remote_file_id = " . $db->quote($remote_file_id, 'text')
+                . " AND rag_failed_count = " . $db->quote($previous_count, 'integer');
+        }
+
+        return $db->manipulate(
             "UPDATE pcaic_attachments SET"
             . " rag_collection_id = NULL, rag_remote_file_id = NULL, rag_uploaded_at = NULL,"
             . " rag_status = " . $db->quote(self::FAILED, 'text') . ","
             . " rag_status_error = " . $db->quote(mb_substr($error, 0, 1000), 'text') . ","
             . " rag_failed_count = " . $db->quote($failed_count, 'integer') . ","
+            . " rag_processing_failures = " . $db->quote($processing_failures, 'integer') . ","
             . " rag_retry_at = " . $db->quote($retry_at, 'timestamp')
-            . " WHERE id = " . $db->quote($attachment_id, 'integer')
-        );
+            . " WHERE id = " . $db->quote($attachment_id, 'integer') . $condition
+        ) > 0 || $remote_file_id === null;
     }
 
     /**
@@ -301,12 +393,12 @@ class AIChatPageComponentRAGStatus
     }
 
     /**
-     * SQL condition for failed attachments whose new upload is due
+     * SQL condition for attachments whose upload failed or was not finished, and whose new upload is due
      */
     public static function retryDueCondition(): string
     {
         $db = self::db();
-        return "(rag_status = " . $db->quote(self::FAILED, 'text')
+        return "(rag_status IN (" . $db->quote(self::FAILED, 'text') . ", " . $db->quote(self::PENDING, 'text') . ")"
             . " AND rag_retry_at IS NOT NULL AND rag_retry_at <= " . $db->quote(date('Y-m-d H:i:s'), 'timestamp') . ")";
     }
 
@@ -319,7 +411,8 @@ class AIChatPageComponentRAGStatus
         $result = $db->query(
             "SELECT COUNT(*) cnt FROM pcaic_attachments WHERE chat_id = " . $db->quote($chat_id, 'text')
             . " AND background_file = 1 AND (rag_status IS NULL OR rag_status IN ("
-            . $db->quote(self::PROCESSING, 'text') . ", " . $db->quote(self::FAILED, 'text') . "))"
+            . $db->quote(self::PROCESSING, 'text') . ", " . $db->quote(self::FAILED, 'text') . ", "
+            . $db->quote(self::PENDING, 'text') . "))"
         );
         $row = $db->fetchAssoc($result);
         return (int) ($row['cnt'] ?? 0) > 0;
@@ -329,9 +422,17 @@ class AIChatPageComponentRAGStatus
      * Query the RAG for files of the chat that are still processing, not more often
      * than checkInterval() allows
      *
+     * A check may take longer than the interval if the RAG answers slowly, so two
+     * requests can query the same file. The result is therefore only stored if the
+     * attachment still refers to the queried file and is still processing. The files
+     * are queried in random order and only within REFRESH_TIME_BUDGET: a slow RAG
+     * neither blocks the request for minutes nor keeps the same files from being checked.
+     * The budget also limits the waiting time of each request to the RAG.
+     *
+     * @param bool $process_deletions Also retry pending deletions (the cron job does that separately)
      * @return bool False if the check was skipped because of the interval
      */
-    public static function refreshChat(string $chat_id): bool
+    public static function refreshChat(string $chat_id, bool $process_deletions = true): bool
     {
         $db = self::db();
         $latest = $db->fetchAssoc($db->query(
@@ -357,7 +458,24 @@ class AIChatPageComponentRAGStatus
             . " AND a.rag_remote_file_id IS NOT NULL"
         );
 
+        // Read completely before further queries are sent
+        $rows = [];
         while ($row = $db->fetchAssoc($result)) {
+            $rows[] = $row;
+        }
+        shuffle($rows);
+        $deadline = time() + self::REFRESH_TIME_BUDGET;
+
+        foreach ($rows as $row) {
+            if (time() >= $deadline) {
+                self::logger()->debug("RAG status check of chat $chat_id stopped after " . self::REFRESH_TIME_BUDGET . " seconds");
+                break;
+            }
+            // Only if the attachment still is in the state the RAG is asked about
+            $unchanged = " WHERE id = " . $db->quote((int) $row['id'], 'integer')
+                . " AND rag_status = " . $db->quote(self::PROCESSING, 'text')
+                . " AND rag_remote_file_id = " . $db->quote((string) $row['rag_remote_file_id'], 'text');
+
             // Entity as used for the upload: chat for background files, session for chat uploads
             $entity_id = (int) $row['background_file'] === 1 ? (string) $row['chat_id'] : (string) $row['session_id'];
             if ($entity_id === '') {
@@ -368,7 +486,7 @@ class AIChatPageComponentRAGStatus
                 }
                 $entity_id = $session->getSessionId();
             }
-            $status = $rag->getFileStatus((string) $row['rag_remote_file_id'], $entity_id);
+            $status = $rag->getFileStatus((string) $row['rag_remote_file_id'], $entity_id, min(30, $deadline - time()));
             if ($status === null) {
                 continue;
             }
@@ -378,36 +496,47 @@ class AIChatPageComponentRAGStatus
                     $chunks = $status['chunks'] ?? null;
                     $has_text = $chunks === null ? self::attachmentHasText((int) $row['id']) : null;
                     // A scan is only searchable if the text recognition of the RAG read it: ask the retrieval once
-                    $probe = $chunks === null && $has_text === false
+                    $needs_probe = $chunks === null && $has_text === false;
+                    if ($needs_probe && time() >= $deadline) {
+                        // Stays processing, the next check asks the retrieval
+                        break;
+                    }
+                    $probe = $needs_probe
                         ? $rag->probeFile(
                             (string) $row['rag_remote_file_id'],
                             (string) ($row['rag_collection_id'] ?? ''),
-                            self::attachmentTitle((int) $row['id'])
+                            self::attachmentTitle((int) $row['id']),
+                            min(30, $deadline - time())
                         )
                         : null;
                     $state = self::completedState($chunks, $has_text, $probe);
-                    if ($state !== self::COMPLETED) {
+                    $stored = $db->manipulate(
+                        "UPDATE pcaic_attachments SET rag_status = " . $db->quote($state, 'text')
+                        . ", rag_status_error = NULL, rag_failed_count = 0, rag_processing_failures = 0, rag_retry_at = NULL"
+                        . $unchanged
+                    ) > 0;
+                    if ($stored && $state !== self::COMPLETED) {
                         self::logger()->warning("RAG processed attachment " . $row['id'] . " as " . $state
                             . ($state === self::EMPTY ? ": no searchable content" : ": scan, content depends on text recognition"));
                     }
-                    $db->manipulate(
-                        "UPDATE pcaic_attachments SET rag_status = " . $db->quote($state, 'text')
-                        . ", rag_status_error = NULL, rag_failed_count = 0, rag_retry_at = NULL"
-                        . " WHERE id = " . $db->quote((int) $row['id'], 'integer')
-                    );
                     break;
                 case self::FAILED:
-                    self::logger()->warning("RAG processing of attachment " . $row['id'] . " failed: " . ($status['error'] ?? ''));
-                    self::markFailed(
+                    if (self::markFailed(
                         (int) $row['id'],
                         (string) ($status['error'] ?? 'Processing failed'),
-                        self::MAX_PROCESSING_ATTEMPTS
-                    );
+                        self::MAX_PROCESSING_ATTEMPTS,
+                        (string) $row['rag_remote_file_id']
+                    )) {
+                        self::logger()->warning("RAG processing of attachment " . $row['id'] . " failed: " . ($status['error'] ?? ''));
+                    }
                     break;
             }
         }
 
-        self::processDeletionQueue();
+        // Within the same budget: the request waits for the RAG at most REFRESH_TIME_BUDGET seconds
+        if ($process_deletions && time() < $deadline) {
+            self::processDeletionQueue($deadline - time());
+        }
         return true;
     }
 
@@ -479,9 +608,13 @@ class AIChatPageComponentRAGStatus
 
     /**
      * Retry pending deletions, at most once per minute for the whole installation
+     *
+     * @param int $time_budget No further deletion is started after this number of seconds, and no request to
+     *                         the RAG waits longer than the rest of it; 0 = no limit
      */
-    public static function processDeletionQueue(): void
+    public static function processDeletionQueue(int $time_budget = 0): void
     {
+        $deadline = $time_budget > 0 ? time() + $time_budget : null;
         $db = self::db();
         $result = $db->query("SELECT config_key FROM pcaic_config WHERE config_key = " . $db->quote(self::DELETION_CHECK_KEY, 'text'));
         if ($db->fetchAssoc($result) === null) {
@@ -502,12 +635,26 @@ class AIChatPageComponentRAGStatus
             . " WHERE next_try IS NULL OR next_try <= " . $db->quote($now, 'timestamp') . " ORDER BY next_try"
         );
 
-        $rag = new AIChatPageComponentRAG();
+        // Read completely before further queries are sent
+        $rows = [];
         while ($row = $db->fetchAssoc($result)) {
+            $rows[] = $row;
+        }
+
+        $rag = new AIChatPageComponentRAG();
+        foreach ($rows as $row) {
+            if ($deadline !== null && time() >= $deadline) {
+                // The rest is due again with the next run
+                break;
+            }
             $attempts = (int) $row['attempts'] + 1;
             $deleted = false;
             try {
-                $deleted = $rag->deleteFile((string) $row['remote_file_id'], (string) $row['entity_id']);
+                $deleted = $rag->deleteFile(
+                    (string) $row['remote_file_id'],
+                    (string) $row['entity_id'],
+                    $deadline === null ? 60 : min(60, $deadline - time())
+                );
             } catch (\Exception $e) {
                 self::logger()->warning("Pending RAG deletion failed: " . $e->getMessage());
             }

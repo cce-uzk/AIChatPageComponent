@@ -36,6 +36,9 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
     /** @var int No further chat is started after this number of seconds, a run should not overlap the next one */
     private const TIME_BUDGET = 120;
 
+    /** @var int The status checks end after this number of seconds, the rest of the run is kept for the uploads */
+    private const STATUS_TIME_BUDGET = 60;
+
     private ilAIChatPageComponentPlugin $plugin;
 
     private int $started_at = 0;
@@ -103,12 +106,15 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
             . $db->quote(AIChatPageComponentRAGStatus::PROCESSING, 'text') . " AND rag_remote_file_id IS NOT NULL",
             'chat_id'
         );
+        // Random order: if the RAG answers slowly, every run checks other chats first
+        shuffle($chat_ids);
         foreach ($chat_ids as $chat_id) {
-            if ($this->isOutOfTime()) {
+            if ($this->isOutOfTime(self::STATUS_TIME_BUDGET)) {
                 break;
             }
             try {
-                if (AIChatPageComponentRAGStatus::refreshChat($chat_id)) {
+                // Deletions follow after the uploads
+                if (AIChatPageComponentRAGStatus::refreshChat($chat_id, false)) {
                     $checked++;
                 }
             } catch (\Exception $e) {
@@ -160,8 +166,8 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
                 $chat_config = new ChatConfig($session->getChatId());
                 $llm = $this->getRagServiceForChat($chat_config);
                 if ($llm !== null) {
-                    // Same range of messages as before sending a message
-                    $stats = $llm->syncChatAttachmentsToRAG($session, min($chat_config->getMaxMemory(), 20));
+                    // All messages: a file is searched by the RAG also if its message is not sent to the AI service any more
+                    $stats = $llm->syncChatAttachmentsToRAG($session, null);
                     $uploaded += $stats['uploaded'];
                     $errors += $stats['errors'];
                 }
@@ -172,7 +178,11 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
         }
 
         try {
-            AIChatPageComponentRAGStatus::processDeletionQueue();
+            // In the rest of the run, so that slow deletions cannot keep files from being uploaded
+            $remaining = self::TIME_BUDGET - (time() - $this->started_at);
+            if ($remaining > 0) {
+                AIChatPageComponentRAGStatus::processDeletionQueue($remaining);
+            }
         } catch (\Exception $e) {
             $errors++;
             $logger->warning("Pending RAG deletions failed: " . $e->getMessage());
@@ -202,7 +212,12 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
         }
 
         $llm = AIChatPageComponentLLMRegistry::createServiceInstance((string) $service);
-        return $llm !== null && $llm->isRagEnabledForChat($chat_config) ? $llm : null;
+        if ($llm === null || !$llm->isRagEnabledForChat($chat_config)) {
+            return null;
+        }
+
+        // No file leaves ILIAS while the administrator has file handling switched off
+        return $llm->isFileHandlingEnabledForService((string) $service) ? $llm : null;
     }
 
     /**
@@ -221,8 +236,8 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
         return $values;
     }
 
-    private function isOutOfTime(): bool
+    private function isOutOfTime(int $budget = self::TIME_BUDGET): bool
     {
-        return time() - $this->started_at > self::TIME_BUDGET;
+        return time() - $this->started_at > $budget;
     }
 }

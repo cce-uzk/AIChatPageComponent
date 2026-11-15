@@ -1703,18 +1703,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("ERROR_FILE_UPLOAD_FAILED", $error_file_upload_failed);
 
         global $DIC;
-        if ($max_size_config !== null) {
-            $DIC->logger()->pcaic()->debug("Template: Using central config for file size", [
-                'source' => 'central_config',
-                'value' => $max_size_config,
-                'effective_mb' => $max_size_mb
-            ]);
-        } else {
-            $DIC->logger()->pcaic()->debug("Template: Using fallback file size limit", [
-                'source' => 'fallback',
-                'effective_mb' => $max_size_mb
-            ]);
-        }
+        $DIC->logger()->pcaic()->debug("Template: file size limit", [
+            'effective_mb' => FileUploadValidator::getMaxFileSizeMb()
+        ]);
 
         $tpl->setVariable("GENERATION_STOPPED", htmlspecialchars($this->plugin->txt('generation_stopped')));
         $tpl->setVariable("REGENERATE_FAILED", htmlspecialchars($this->plugin->txt('regenerate_failed')));

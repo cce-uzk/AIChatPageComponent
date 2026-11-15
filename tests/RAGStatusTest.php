@@ -72,6 +72,21 @@ class RAGStatusTest extends TestCase
         $this->assertSame(300, AIChatPageComponentRAGStatus::nextRetryDelay(1000));
     }
 
+    public function testUploadFailuresDoNotUseUpTheProcessingAttempts(): void
+    {
+        $max = AIChatPageComponentRAGStatus::MAX_PROCESSING_ATTEMPTS;
+
+        // Four failed uploads, then the first processing failure: delayed, but not given up
+        $this->assertSame(300, AIChatPageComponentRAGStatus::failureRetryDelay(5, 1, $max, true));
+        $this->assertSame(300, AIChatPageComponentRAGStatus::failureRetryDelay(8, $max - 1, $max, true));
+        // Given up with the last processing attempt
+        $this->assertNull(AIChatPageComponentRAGStatus::failureRetryDelay($max, $max, $max, true));
+        $this->assertNull(AIChatPageComponentRAGStatus::failureRetryDelay(20, $max, $max, true));
+        // Upload failures: unlimited, unless the RAG rejected the file
+        $this->assertSame(300, AIChatPageComponentRAGStatus::failureRetryDelay(50, 4, 0, false));
+        $this->assertNull(AIChatPageComponentRAGStatus::failureRetryDelay(1, 0, 1, false));
+    }
+
     /**
      * @return array<string, array{int, bool}>
      */
