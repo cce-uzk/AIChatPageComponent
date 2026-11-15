@@ -1924,6 +1924,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $attachment->save();
                 if ($attachment->isInRAG()) {
                     \ai\AIChatPageComponentRAGStatus::markUploaded((int) $attachment->getId());
+                } elseif ($enable_rag) {
+                    // Upload failed: the cron job or the next chat request uploads it again
+                    \ai\AIChatPageComponentRAGStatus::markPending((int) $attachment->getId());
                 }
 
                 $this->logger->info("Saved background file attachment", [

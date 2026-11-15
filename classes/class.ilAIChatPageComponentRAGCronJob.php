@@ -123,10 +123,12 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
             }
         }
 
-        // Failed background files whose new upload is due
+        // Background files whose new upload is due, or that were never uploaded (e.g. imported,
+        // or RAG was enabled later); chats that do not use the RAG are skipped below
         $chat_ids = $this->fetchColumn(
-            "SELECT DISTINCT chat_id FROM pcaic_attachments WHERE background_file = 1 AND "
-            . AIChatPageComponentRAGStatus::retryDueCondition(),
+            "SELECT DISTINCT chat_id FROM pcaic_attachments WHERE background_file = 1"
+            . " AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')"
+            . " AND " . AIChatPageComponentRAGStatus::uploadDueCondition(),
             'chat_id'
         );
         foreach ($chat_ids as $chat_id) {
