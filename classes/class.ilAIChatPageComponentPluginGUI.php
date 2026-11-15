@@ -1853,9 +1853,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             'ai_service' => $ai_service
         ]);
 
+        // Background files only: files users uploaded in the chat but not sent yet have no message either
         $existing_query = "SELECT id, resource_id FROM pcaic_attachments " .
                          "WHERE chat_id = " . $db->quote($chat_id, 'text') . " " .
-                         "AND message_id IS NULL";
+                         "AND message_id IS NULL AND background_file = 1";
         $existing_result = $db->query($existing_query);
         $existing_files = [];
         while ($row = $db->fetchAssoc($existing_result)) {
