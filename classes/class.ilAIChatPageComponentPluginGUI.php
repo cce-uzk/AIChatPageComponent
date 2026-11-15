@@ -693,7 +693,37 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $this->addEditTabs('basic');
         $form = $this->initForm(false, 'basic');
-        $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+        $this->tpl->setContent($DIC->ui()->renderer()->render($form) . $this->renderBackgroundFileStatus());
+    }
+
+    /**
+     * Processing state of the background files below the settings form
+     *
+     * Saving uploads new files to the RAG and returns to this tab, so the tutor
+     * sees right away whether the files can be searched yet.
+     */
+    private function renderBackgroundFileStatus(): string
+    {
+        global $DIC;
+        $chat_id = $this->getChatIdForEdit();
+        if ($chat_id === '') {
+            return '';
+        }
+
+        $pending = false;
+        $panel = $this->getBackgroundFileStatusPanel($chat_id, false, $pending);
+        if ($panel === null) {
+            return '';
+        }
+
+        $components = [$panel];
+        if ($pending) {
+            // The form does not update by itself
+            array_unshift($components, $DIC->ui()->factory()->messageBox()->info(
+                $this->plugin->txt('rag_file_status_reload_hint')
+            ));
+        }
+        return $DIC->ui()->renderer()->render($components);
     }
 
     public function saveBasic(): void
@@ -1148,9 +1178,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
      *
      * The state is queried from the RAG service before (at most once per minute and
      * chat, see AIChatPageComponentRAGStatus::refreshChat()).
+     *
+     * @param bool $include_chat_uploads Also list the numbers of files users uploaded in the chat
+     * @param bool $pending Set to true if a background file is still waiting for or in processing
      */
-    private function getBackgroundFileStatusPanel(string $chat_id): ?\ILIAS\UI\Component\Panel\Standard
-    {
+    private function getBackgroundFileStatusPanel(
+        string $chat_id,
+        bool $include_chat_uploads = true,
+        bool &$pending = false
+    ): ?\ILIAS\UI\Component\Panel\Standard {
         global $DIC;
         $db = $DIC->database();
         $ui_factory = $DIC->ui()->factory();
@@ -1194,6 +1230,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $groups[$status][] = $title;
         }
 
+        $pending = $groups['rag_file_status_processing'] !== [] || $groups['rag_file_status_pending'] !== [];
+
         $items = [];
         foreach ($groups as $status => $titles) {
             if ($titles !== []) {
@@ -1203,7 +1241,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
 
         // Files uploaded by users in the chat: numbers only, the files belong to the users
-        if ($rag_enabled) {
+        if ($rag_enabled && $include_chat_uploads) {
             $upload_states = [];
             foreach (\ai\AIChatPageComponentRAGStatus::countChatUploadStates($chat_id) as $state => $count) {
                 $upload_states[] = $this->plugin->txt($this->getRagFileStatusKey(true, $state)) . ' (' . $count . ')';
