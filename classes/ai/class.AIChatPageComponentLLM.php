@@ -1591,7 +1591,12 @@ abstract class AIChatPageComponentLLM
 
                 } catch (\Exception $e) {
                     $this->logger->error("Failed to sync attachment to RAG: attachment " . $att_row['id'] . " | " . $e->getMessage());
-                    AIChatPageComponentRAGStatus::markFailed((int) $att_row['id'], $e->getMessage());
+                    // An upload the RAG rejected is not repeated
+                    AIChatPageComponentRAGStatus::markFailed(
+                        (int) $att_row['id'],
+                        $e->getMessage(),
+                        AIChatPageComponentRAGStatus::isPermanentUploadError((int) $e->getCode()) ? 1 : 0
+                    );
                     $stats['errors']++;
                 }
             }
@@ -1718,7 +1723,12 @@ abstract class AIChatPageComponentLLM
 
                 } catch (\Exception $e) {
                     $this->logger->error("Failed to sync chat attachment to RAG: attachment " . $att_row['id'] . " | " . $e->getMessage());
-                    AIChatPageComponentRAGStatus::markFailed((int) $att_row['id'], $e->getMessage());
+                    // An upload the RAG rejected is not repeated
+                    AIChatPageComponentRAGStatus::markFailed(
+                        (int) $att_row['id'],
+                        $e->getMessage(),
+                        AIChatPageComponentRAGStatus::isPermanentUploadError((int) $e->getCode()) ? 1 : 0
+                    );
                     $stats['errors']++;
                 }
             }
