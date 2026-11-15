@@ -139,7 +139,7 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
                 $chat_config = new ChatConfig($chat_id);
                 $llm = $this->getRagServiceForChat($chat_config);
                 if ($llm !== null) {
-                    $stats = $llm->syncBackgroundFilesToRAG($chat_config);
+                    $stats = $llm->syncBackgroundFilesToRAG($chat_config, $this->started_at + self::TIME_BUDGET);
                     $uploaded += $stats['uploaded'];
                     $errors += $stats['errors'];
                 }
@@ -169,7 +169,7 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
                 $llm = $this->getRagServiceForChat($chat_config);
                 if ($llm !== null) {
                     // All messages: a file is searched by the RAG also if its message is not sent to the AI service any more
-                    $stats = $llm->syncChatAttachmentsToRAG($session, null);
+                    $stats = $llm->syncChatAttachmentsToRAG($session, null, $this->started_at + self::TIME_BUDGET);
                     $uploaded += $stats['uploaded'];
                     $errors += $stats['errors'];
                 }

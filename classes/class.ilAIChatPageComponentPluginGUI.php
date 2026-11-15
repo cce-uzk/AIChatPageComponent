@@ -1200,7 +1200,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance(
                 \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService())
             );
-            $rag_enabled = $llm !== null && $llm->isRagEnabledForChat($chat_config);
+            // As in the cron job: without file handling no file is uploaded to the RAG
+            $rag_enabled = $llm !== null && $llm->isRagEnabledForChat($chat_config)
+                && $llm->isFileHandlingEnabledForService($llm::getServiceId());
             if ($rag_enabled) {
                 \ai\AIChatPageComponentRAGStatus::refreshChat($chat_id);
             }
@@ -1844,14 +1846,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $llm = $this->getLLMInstanceForChat($chat_config);
         $ai_service = \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
 
-        // RAG service available and allowed for the AI service
-        $llm_rag_enabled = \ai\AIChatPageComponentRAG::isEnabledForService($ai_service);
-
-        $enable_rag = $llm->supportsRAG() && $llm_rag_enabled;
+        // New files go to the RAG under the same conditions as in the chat and the cron job:
+        // RAG enabled for the service and the chat, file handling allowed. If RAG is switched on
+        // with this save, the files are uploaded afterwards (see "RAG was activated").
+        $enable_rag = $llm->isRagEnabledForChat($chat_config) && $llm->isFileHandlingEnabledForService($ai_service);
 
         $this->logger->debug("RAG configuration check", [
-            'llm_supports_rag' => $llm->supportsRAG(),
-            'llm_rag_enabled' => $llm_rag_enabled,
             'enable_rag' => $enable_rag,
             'ai_service' => $ai_service
         ]);
@@ -1873,7 +1873,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 try {
                     $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
 
-                    if ($enable_rag && $attachment->isInRAG()) {
+                    // Also if RAG is off now: the file must not stay in the RAG
+                    if ($attachment->isInRAG()) {
                         $this->deleteFileFromRAG($attachment, $chat_id, $chat_config);
                     }
 

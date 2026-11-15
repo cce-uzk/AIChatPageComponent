@@ -1498,9 +1498,10 @@ abstract class AIChatPageComponentLLM
     /**
      * Upload background files of the RAG file types that are not in the RAG yet
      *
+     * @param int|null $deadline No further upload is started after this time (Unix timestamp); null = no limit
      * @return array{uploaded: int, skipped: int, errors: int}
      */
-    public function syncBackgroundFilesToRAG(ChatConfig $chat_config): array
+    public function syncBackgroundFilesToRAG(ChatConfig $chat_config, ?int $deadline = null): array
     {
         $stats = ['uploaded' => 0, 'skipped' => 0, 'errors' => 0];
 
@@ -1535,6 +1536,10 @@ abstract class AIChatPageComponentLLM
             $irss = $DIC->resourceStorage();
 
             foreach ($attachments_to_upload as $att_row) {
+                if ($deadline !== null && time() >= $deadline) {
+                    // The rest is uploaded with the next run
+                    break;
+                }
                 // Only a failure of an upload this request reserved is recorded: before the
                 // reservation, another request may be uploading the file
                 $claimed = false;
@@ -1586,6 +1591,13 @@ abstract class AIChatPageComponentLLM
                         @unlink($temp_file);
                     }
 
+                    // The file was removed during the upload: the copy in the RAG is deleted later
+                    if (!AIChatPageComponentRAGStatus::attachmentExists((int) $att_row['id'])) {
+                        AIChatPageComponentRAGStatus::queueDeletion((string) $upload_result['remote_file_id'], (string) $entity_id);
+                        $stats['skipped']++;
+                        continue;
+                    }
+
                     $attachment->setRagCollectionId($upload_result['collection_id']);
                     $attachment->setRagRemoteFileId($upload_result['remote_file_id']);
                     $attachment->setRagUploadedAt(date('Y-m-d H:i:s'));
@@ -1630,9 +1642,10 @@ abstract class AIChatPageComponentLLM
      * @param int|null $max_memory Only attachments of this number of recent messages (the messages sent to the
      *                             AI service); null = all messages of the session. The retrieval searches the
      *                             files of the whole chat, so the cron job retries all of them.
+     * @param int|null $deadline No further upload is started after this time (Unix timestamp); null = no limit
      * @return array{uploaded: int, skipped: int, errors: int}
      */
-    public function syncChatAttachmentsToRAG(ChatSession $session, ?int $max_memory): array
+    public function syncChatAttachmentsToRAG(ChatSession $session, ?int $max_memory, ?int $deadline = null): array
     {
         $stats = ['uploaded' => 0, 'skipped' => 0, 'errors' => 0];
 
@@ -1686,6 +1699,10 @@ abstract class AIChatPageComponentLLM
             $chat_id = $session->getChatId();
 
             foreach ($attachments_to_upload as $att_row) {
+                if ($deadline !== null && time() >= $deadline) {
+                    // The rest is uploaded with the next run
+                    break;
+                }
                 // Only a failure of an upload this request reserved is recorded: before the
                 // reservation, another request may be uploading the file
                 $claimed = false;
@@ -1736,6 +1753,13 @@ abstract class AIChatPageComponentLLM
                         $upload_result = $this->uploadFileToRAG($temp_file, $entity_id, $original_filename);
                     } finally {
                         @unlink($temp_file);
+                    }
+
+                    // The file was removed during the upload: the copy in the RAG is deleted later
+                    if (!AIChatPageComponentRAGStatus::attachmentExists((int) $att_row['id'])) {
+                        AIChatPageComponentRAGStatus::queueDeletion((string) $upload_result['remote_file_id'], (string) $entity_id);
+                        $stats['skipped']++;
+                        continue;
                     }
 
                     $attachment->setRagCollectionId($upload_result['collection_id']);
