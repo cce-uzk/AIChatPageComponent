@@ -31,6 +31,18 @@ class ServiceDisplayNameTest extends TestCase
         AIChatPageComponentConfig::reset();
     }
 
+    public function testEffectiveServiceFollowsTheEnforcedDefault(): void
+    {
+        $this->assertSame('openai', AIChatPageComponentLLMRegistry::getEffectiveServiceId('openai'));
+
+        AIChatPageComponentConfig::set('force_default_ai_service', '1');
+        AIChatPageComponentConfig::set('selected_ai_service', 'ramses');
+        $this->assertSame('ramses', AIChatPageComponentLLMRegistry::getEffectiveServiceId('openai'));
+
+        AIChatPageComponentConfig::set('force_default_ai_service', '0');
+        $this->assertSame('openai', AIChatPageComponentLLMRegistry::getEffectiveServiceId('openai'));
+    }
+
     public function testBuiltInNamesAreUsedByDefault(): void
     {
         AIChatPageComponentConfig::reset();

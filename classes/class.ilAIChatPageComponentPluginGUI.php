@@ -1196,7 +1196,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             if (!$chat_config->exists()) {
                 return null;
             }
-            $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($chat_config->getAiService());
+            // The service that processes the files, as in the chat and the cron job
+            $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance(
+                \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService())
+            );
             $rag_enabled = $llm !== null && $llm->isRagEnabledForChat($chat_config);
             if ($rag_enabled) {
                 \ai\AIChatPageComponentRAGStatus::refreshChat($chat_id);
@@ -1839,7 +1842,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $user_id = $DIC->user()->getId();
 
         $llm = $this->getLLMInstanceForChat($chat_config);
-        $ai_service = $chat_config->getAiService();
+        $ai_service = \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
 
         // RAG service available and allowed for the AI service
         $llm_rag_enabled = \ai\AIChatPageComponentRAG::isEnabledForService($ai_service);
@@ -2075,11 +2078,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Service of the chat; falls back to the first available service
+     * Service that answers in the chat (the enforced default service, if any); falls back to the first available service
      */
     private function getLLMInstanceForChat(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config)
     {
-        $ai_service = $chat_config->getAiService();
+        $ai_service = \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
 
         $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
 

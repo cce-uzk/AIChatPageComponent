@@ -1061,13 +1061,7 @@ function sanitizeConversationHistory(array $history): array
  */
 function getEffectiveAiService(ChatConfig $chat_config): string
 {
-    $force_default = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
-
-    if ($force_default === '1') {
-        return \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
-    }
-
-    return $chat_config->getAiService();
+    return \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
 }
 
 /**

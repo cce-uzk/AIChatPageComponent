@@ -204,11 +204,8 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
             return null;
         }
 
-        // As in api.php: the default service is used if the administrator enforces it
-        $service = $chat_config->getAiService();
-        if ((\platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0') === '1') {
-            $service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
-        }
+        // As in the chat: the default service is used if the administrator enforces it
+        $service = AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
         if (!AIChatPageComponentLLMRegistry::isServiceEnabled((string) $service)) {
             return null;
         }
