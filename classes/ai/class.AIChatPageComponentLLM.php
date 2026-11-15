@@ -1386,7 +1386,7 @@ abstract class AIChatPageComponentLLM
 
         $db->manipulate(
             "UPDATE pcaic_attachments SET rag_collection_id = NULL, rag_remote_file_id = NULL, rag_uploaded_at = NULL,"
-            . " rag_status = NULL, rag_status_error = NULL, rag_failed_count = 0, rag_retry_at = NULL"
+            . " rag_status = NULL, rag_status_error = NULL, rag_failed_count = 0, rag_processing_failures = 0, rag_retry_at = NULL"
             . " WHERE chat_id = " . $db->quote($chat_id, 'text') . " AND " . $in
         );
         $db->manipulate(

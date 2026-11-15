@@ -100,6 +100,29 @@ class AIChatPageComponentRAGStatus
     }
 
     /**
+     * Delay before the next upload after a failure, or null if the file is given up
+     *
+     * The delay grows with all failures in a row. Whether the file is given up
+     * depends on the kind of the failure: a processing failure counts against
+     * $max_attempts with the processing failures only, an upload failure with all failures.
+     *
+     * @param int $failed_count Failures in a row including this one, uploads and processings
+     * @param int $processing_failures Processing failures in a row including this one
+     * @param int $max_attempts 0 = unlimited
+     */
+    public static function failureRetryDelay(
+        int $failed_count,
+        int $processing_failures,
+        int $max_attempts,
+        bool $is_processing_failure
+    ): ?int {
+        if ($is_processing_failure) {
+            return $max_attempts > 0 && $processing_failures >= $max_attempts ? null : self::retryDelay($failed_count);
+        }
+        return self::nextRetryDelay($failed_count, $max_attempts);
+    }
+
+    /**
      * Whether the RAG rejected an upload for a reason a new upload of the same file does not change
      *
      * Network errors (no HTTP status), server errors and rate limits pass; so do
@@ -313,8 +336,14 @@ class AIChatPageComponentRAGStatus
     /**
      * Upload or processing failed: remove the RAG references and schedule a new upload
      *
-     * @param int $max_attempts Number of failures in a row after which the file is given up; 0 = unlimited,
-     *                          1 = no new upload (the RAG rejected the file)
+     * Upload failures and processing failures are counted separately. Both delay the
+     * next upload (rag_failed_count), but only processing failures use up the attempts
+     * of MAX_PROCESSING_ATTEMPTS (rag_processing_failures): a file is not given up
+     * because the RAG was not reachable for a while before.
+     *
+     * @param int $max_attempts Upload failures: 0 = unlimited, 1 = no new upload (the RAG rejected the file).
+     *                          Processing failures: number of processing failures in a row after which the
+     *                          file is given up
      * @param string|null $remote_file_id Processing failures: file in the RAG the failure was reported for. The
      *                          attachment is left alone if it does not refer to this file any more, because
      *                          another request recorded the failure or uploaded the file again in the meantime
@@ -323,11 +352,15 @@ class AIChatPageComponentRAGStatus
     public static function markFailed(int $attachment_id, string $error, int $max_attempts = 0, ?string $remote_file_id = null): bool
     {
         $db = self::db();
-        $result = $db->query("SELECT rag_failed_count FROM pcaic_attachments WHERE id = " . $db->quote($attachment_id, 'integer'));
+        $result = $db->query(
+            "SELECT rag_failed_count, rag_processing_failures FROM pcaic_attachments WHERE id = " . $db->quote($attachment_id, 'integer')
+        );
         $row = $db->fetchAssoc($result);
         $previous_count = (int) ($row['rag_failed_count'] ?? 0);
         $failed_count = $previous_count + 1;
-        $delay = self::nextRetryDelay($failed_count, $max_attempts);
+        $is_processing_failure = $remote_file_id !== null;
+        $processing_failures = (int) ($row['rag_processing_failures'] ?? 0) + ($is_processing_failure ? 1 : 0);
+        $delay = self::failureRetryDelay($failed_count, $processing_failures, $max_attempts, $is_processing_failure);
         // Without a time of the next attempt the file is not uploaded again
         $retry_at = $delay === null ? null : date('Y-m-d H:i:s', time() + $delay);
 
@@ -345,6 +378,7 @@ class AIChatPageComponentRAGStatus
             . " rag_status = " . $db->quote(self::FAILED, 'text') . ","
             . " rag_status_error = " . $db->quote(mb_substr($error, 0, 1000), 'text') . ","
             . " rag_failed_count = " . $db->quote($failed_count, 'integer') . ","
+            . " rag_processing_failures = " . $db->quote($processing_failures, 'integer') . ","
             . " rag_retry_at = " . $db->quote($retry_at, 'timestamp')
             . " WHERE id = " . $db->quote($attachment_id, 'integer') . $condition
         ) > 0 || $remote_file_id === null;
@@ -470,7 +504,8 @@ class AIChatPageComponentRAGStatus
                     $state = self::completedState($chunks, $has_text, $probe);
                     $stored = $db->manipulate(
                         "UPDATE pcaic_attachments SET rag_status = " . $db->quote($state, 'text')
-                        . ", rag_status_error = NULL, rag_failed_count = 0, rag_retry_at = NULL" . $unchanged
+                        . ", rag_status_error = NULL, rag_failed_count = 0, rag_processing_failures = 0, rag_retry_at = NULL"
+                        . $unchanged
                     ) > 0;
                     if ($stored && $state !== self::COMPLETED) {
                         self::logger()->warning("RAG processed attachment " . $row['id'] . " as " . $state
