@@ -113,7 +113,8 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
                 break;
             }
             try {
-                if (AIChatPageComponentRAGStatus::refreshChat($chat_id)) {
+                // Deletions follow after the uploads
+                if (AIChatPageComponentRAGStatus::refreshChat($chat_id, false)) {
                     $checked++;
                 }
             } catch (\Exception $e) {
@@ -177,7 +178,11 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
         }
 
         try {
-            AIChatPageComponentRAGStatus::processDeletionQueue();
+            // In the rest of the run, so that slow deletions cannot keep files from being uploaded
+            $remaining = self::TIME_BUDGET - (time() - $this->started_at);
+            if ($remaining > 0) {
+                AIChatPageComponentRAGStatus::processDeletionQueue($remaining);
+            }
         } catch (\Exception $e) {
             $errors++;
             $logger->warning("Pending RAG deletions failed: " . $e->getMessage());

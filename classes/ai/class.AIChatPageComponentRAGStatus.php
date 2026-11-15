@@ -427,10 +427,12 @@ class AIChatPageComponentRAGStatus
      * attachment still refers to the queried file and is still processing. The files
      * are queried in random order and only within REFRESH_TIME_BUDGET: a slow RAG
      * neither blocks the request for minutes nor keeps the same files from being checked.
+     * The budget also limits the waiting time of each request to the RAG.
      *
+     * @param bool $process_deletions Also retry pending deletions (the cron job does that separately)
      * @return bool False if the check was skipped because of the interval
      */
-    public static function refreshChat(string $chat_id): bool
+    public static function refreshChat(string $chat_id, bool $process_deletions = true): bool
     {
         $db = self::db();
         $latest = $db->fetchAssoc($db->query(
@@ -462,10 +464,10 @@ class AIChatPageComponentRAGStatus
             $rows[] = $row;
         }
         shuffle($rows);
-        $started_at = time();
+        $deadline = time() + self::REFRESH_TIME_BUDGET;
 
         foreach ($rows as $row) {
-            if (time() - $started_at > self::REFRESH_TIME_BUDGET) {
+            if (time() >= $deadline) {
                 self::logger()->debug("RAG status check of chat $chat_id stopped after " . self::REFRESH_TIME_BUDGET . " seconds");
                 break;
             }
@@ -484,7 +486,7 @@ class AIChatPageComponentRAGStatus
                 }
                 $entity_id = $session->getSessionId();
             }
-            $status = $rag->getFileStatus((string) $row['rag_remote_file_id'], $entity_id);
+            $status = $rag->getFileStatus((string) $row['rag_remote_file_id'], $entity_id, min(30, $deadline - time()));
             if ($status === null) {
                 continue;
             }
@@ -494,11 +496,17 @@ class AIChatPageComponentRAGStatus
                     $chunks = $status['chunks'] ?? null;
                     $has_text = $chunks === null ? self::attachmentHasText((int) $row['id']) : null;
                     // A scan is only searchable if the text recognition of the RAG read it: ask the retrieval once
-                    $probe = $chunks === null && $has_text === false
+                    $needs_probe = $chunks === null && $has_text === false;
+                    if ($needs_probe && time() >= $deadline) {
+                        // Stays processing, the next check asks the retrieval
+                        break;
+                    }
+                    $probe = $needs_probe
                         ? $rag->probeFile(
                             (string) $row['rag_remote_file_id'],
                             (string) ($row['rag_collection_id'] ?? ''),
-                            self::attachmentTitle((int) $row['id'])
+                            self::attachmentTitle((int) $row['id']),
+                            min(30, $deadline - time())
                         )
                         : null;
                     $state = self::completedState($chunks, $has_text, $probe);
@@ -525,7 +533,10 @@ class AIChatPageComponentRAGStatus
             }
         }
 
-        self::processDeletionQueue();
+        // Within the same budget: the request waits for the RAG at most REFRESH_TIME_BUDGET seconds
+        if ($process_deletions && time() < $deadline) {
+            self::processDeletionQueue($deadline - time());
+        }
         return true;
     }
 
@@ -597,9 +608,13 @@ class AIChatPageComponentRAGStatus
 
     /**
      * Retry pending deletions, at most once per minute for the whole installation
+     *
+     * @param int $time_budget No further deletion is started after this number of seconds, and no request to
+     *                         the RAG waits longer than the rest of it; 0 = no limit
      */
-    public static function processDeletionQueue(): void
+    public static function processDeletionQueue(int $time_budget = 0): void
     {
+        $deadline = $time_budget > 0 ? time() + $time_budget : null;
         $db = self::db();
         $result = $db->query("SELECT config_key FROM pcaic_config WHERE config_key = " . $db->quote(self::DELETION_CHECK_KEY, 'text'));
         if ($db->fetchAssoc($result) === null) {
@@ -620,12 +635,26 @@ class AIChatPageComponentRAGStatus
             . " WHERE next_try IS NULL OR next_try <= " . $db->quote($now, 'timestamp') . " ORDER BY next_try"
         );
 
-        $rag = new AIChatPageComponentRAG();
+        // Read completely before further queries are sent
+        $rows = [];
         while ($row = $db->fetchAssoc($result)) {
+            $rows[] = $row;
+        }
+
+        $rag = new AIChatPageComponentRAG();
+        foreach ($rows as $row) {
+            if ($deadline !== null && time() >= $deadline) {
+                // The rest is due again with the next run
+                break;
+            }
             $attempts = (int) $row['attempts'] + 1;
             $deleted = false;
             try {
-                $deleted = $rag->deleteFile((string) $row['remote_file_id'], (string) $row['entity_id']);
+                $deleted = $rag->deleteFile(
+                    (string) $row['remote_file_id'],
+                    (string) $row['entity_id'],
+                    $deadline === null ? 60 : min(60, $deadline - time())
+                );
             } catch (\Exception $e) {
                 self::logger()->warning("Pending RAG deletion failed: " . $e->getMessage());
             }

@@ -557,8 +557,8 @@ abstract class AIChatPageComponentLLM
             $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
             $this->setModelOverride($force_model ? null : $chat_config->getModel());
 
-            $ai_service = $chat_config->getAiService();
-            $file_handling_enabled = $this->isFileHandlingEnabledForService($ai_service);
+            // Settings of this service: it differs from the stored one if the administrator enforces the default service
+            $file_handling_enabled = $this->isFileHandlingEnabledForService(static::getServiceId());
 
             // RAG mode must be known before the background files are processed,
             // because PDFs are only converted to images without RAG
@@ -675,8 +675,8 @@ abstract class AIChatPageComponentLLM
             $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
             $this->setModelOverride($force_model ? null : $chat_config->getModel());
 
-            $ai_service = $ai_service_id;
-            $file_handling_enabled = $this->isFileHandlingEnabledForService($ai_service);
+            // Settings of this service: it differs from the stored one if the administrator enforces the default service
+            $file_handling_enabled = $this->isFileHandlingEnabledForService(static::getServiceId());
 
             $collection_ids = [];
             $use_rag = false;
@@ -1535,6 +1535,9 @@ abstract class AIChatPageComponentLLM
             $irss = $DIC->resourceStorage();
 
             foreach ($attachments_to_upload as $att_row) {
+                // Only a failure of an upload this request reserved is recorded: before the
+                // reservation, another request may be uploading the file
+                $claimed = false;
                 try {
                     $attachment = Attachment::loadById((int) $att_row['id']);
                     if (!$attachment) {
@@ -1568,6 +1571,7 @@ abstract class AIChatPageComponentLLM
                         $stats['skipped']++;
                         continue;
                     }
+                    $claimed = true;
 
                     $entity_id = $chat_config->getChatId();
                     $stream = $irss->consume()->stream($identification);
@@ -1598,12 +1602,14 @@ abstract class AIChatPageComponentLLM
 
                 } catch (\Exception $e) {
                     $this->logger->error("Failed to sync attachment to RAG: attachment " . $att_row['id'] . " | " . $e->getMessage());
-                    // An upload the RAG rejected is not repeated
-                    AIChatPageComponentRAGStatus::markFailed(
-                        (int) $att_row['id'],
-                        $e->getMessage(),
-                        AIChatPageComponentRAGStatus::isPermanentUploadError((int) $e->getCode()) ? 1 : 0
-                    );
+                    if ($claimed) {
+                        // An upload the RAG rejected is not repeated
+                        AIChatPageComponentRAGStatus::markFailed(
+                            (int) $att_row['id'],
+                            $e->getMessage(),
+                            AIChatPageComponentRAGStatus::isPermanentUploadError((int) $e->getCode()) ? 1 : 0
+                        );
+                    }
                     $stats['errors']++;
                 }
             }
@@ -1680,6 +1686,9 @@ abstract class AIChatPageComponentLLM
             $chat_id = $session->getChatId();
 
             foreach ($attachments_to_upload as $att_row) {
+                // Only a failure of an upload this request reserved is recorded: before the
+                // reservation, another request may be uploading the file
+                $claimed = false;
                 try {
                     $attachment = Attachment::loadById((int) $att_row['id']);
                     if (!$attachment) {
@@ -1713,6 +1722,7 @@ abstract class AIChatPageComponentLLM
                         $stats['skipped']++;
                         continue;
                     }
+                    $claimed = true;
 
                     // Same entity as the direct upload in api.php and Attachment::delete()
                     $entity_id = (string) $session->getSessionId();
@@ -1745,12 +1755,14 @@ abstract class AIChatPageComponentLLM
 
                 } catch (\Exception $e) {
                     $this->logger->error("Failed to sync chat attachment to RAG: attachment " . $att_row['id'] . " | " . $e->getMessage());
-                    // An upload the RAG rejected is not repeated
-                    AIChatPageComponentRAGStatus::markFailed(
-                        (int) $att_row['id'],
-                        $e->getMessage(),
-                        AIChatPageComponentRAGStatus::isPermanentUploadError((int) $e->getCode()) ? 1 : 0
-                    );
+                    if ($claimed) {
+                        // An upload the RAG rejected is not repeated
+                        AIChatPageComponentRAGStatus::markFailed(
+                            (int) $att_row['id'],
+                            $e->getMessage(),
+                            AIChatPageComponentRAGStatus::isPermanentUploadError((int) $e->getCode()) ? 1 : 0
+                        );
+                    }
                     $stats['errors']++;
                 }
             }

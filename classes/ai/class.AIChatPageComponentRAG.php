@@ -308,9 +308,10 @@ class AIChatPageComponentRAG
      * being processed; the status distinguishes these cases.
      *
      * @param string $entity_id Same value as used for the upload
+     * @param int $timeout Longest wait for the RAG, in seconds
      * @return bool False if the file still exists in the RAG and has to be deleted later
      */
-    public function deleteFile(string $remote_file_id, string $entity_id): bool
+    public function deleteFile(string $remote_file_id, string $entity_id, int $timeout = 60): bool
     {
         $this->assertConfigured();
 
@@ -327,7 +328,7 @@ class AIChatPageComponentRAG
             $this->getEndpointUrl(self::ENDPOINT_DELETE),
             json_encode($delete_params),
             ['Content-Type: application/json'],
-            60
+            max(1, $timeout)
         );
 
         if ($response === false) {
@@ -341,7 +342,7 @@ class AIChatPageComponentRAG
         }
 
         if ($http_code === 400) {
-            $status = $this->getFileStatus($remote_file_id, $entity_id);
+            $status = $this->getFileStatus($remote_file_id, $entity_id, min(30, $timeout));
             if ($status !== null && in_array($status['status'], [self::STATUS_PROCESSING, self::STATUS_PENDING], true)) {
                 $this->logger->info("RAG file $remote_file_id is still being processed, deletion postponed");
                 return false;
@@ -358,9 +359,10 @@ class AIChatPageComponentRAG
      * Processing state of a file in the RAG
      *
      * @param string $entity_id Same value as used for the upload
+     * @param int $timeout Longest wait for the RAG, in seconds
      * @return array{status: string, error: string|null, chunks: int|null}|null Null if the file is unknown or the RAG is not reachable
      */
-    public function getFileStatus(string $remote_file_id, string $entity_id): ?array
+    public function getFileStatus(string $remote_file_id, string $entity_id, int $timeout = 30): ?array
     {
         $this->assertConfigured();
 
@@ -374,7 +376,7 @@ class AIChatPageComponentRAG
                 'id' => $remote_file_id
             ]),
             ['Content-Type: application/json'],
-            30
+            max(1, $timeout)
         );
 
         if ($response === false || $http_code !== 200) {
@@ -511,10 +513,11 @@ class AIChatPageComponentRAG
      * whether a processed file is searchable. Used for files that look like scans.
      *
      * @param string $query Text the passages are searched with, e.g. the file name
+     * @param int $timeout Longest wait for the RAG, in seconds
      * @return bool|null True: a passage of the file was found. False: the retrieval returned
      *                   nothing of the file. Null: undecided (error, or other files filled the result)
      */
-    public function probeFile(string $remote_file_id, string $collection_id, string $query): ?bool
+    public function probeFile(string $remote_file_id, string $collection_id, string $query, int $timeout = 30): ?bool
     {
         if (self::getApiUrl() === '' || self::getClientKey() === '' || $collection_id === '') {
             return null;
@@ -528,7 +531,7 @@ class AIChatPageComponentRAG
                 'top_k' => self::PROBE_TOP_K
             ]),
             ['Content-Type: application/json'],
-            30
+            max(1, $timeout)
         );
 
         $data = $response === false || $http_code !== 200 ? null : json_decode((string) $response, true);
