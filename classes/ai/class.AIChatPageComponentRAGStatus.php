@@ -334,6 +334,17 @@ class AIChatPageComponentRAGStatus
     }
 
     /**
+     * Whether an attachment still exists, e.g. after a long upload during which it may have been deleted
+     */
+    public static function attachmentExists(int $attachment_id): bool
+    {
+        $db = self::db();
+        return $db->fetchAssoc($db->query(
+            "SELECT id FROM pcaic_attachments WHERE id = " . $db->quote($attachment_id, 'integer')
+        )) !== null;
+    }
+
+    /**
      * Upload or processing failed: remove the RAG references and schedule a new upload
      *
      * Upload failures and processing failures are counted separately. Both delay the

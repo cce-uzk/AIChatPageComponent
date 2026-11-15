@@ -123,10 +123,12 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
             }
         }
 
-        // Failed background files whose new upload is due
+        // Background files whose new upload is due, or that were never uploaded (e.g. imported,
+        // or RAG was enabled later); chats that do not use the RAG are skipped below
         $chat_ids = $this->fetchColumn(
-            "SELECT DISTINCT chat_id FROM pcaic_attachments WHERE background_file = 1 AND "
-            . AIChatPageComponentRAGStatus::retryDueCondition(),
+            "SELECT DISTINCT chat_id FROM pcaic_attachments WHERE background_file = 1"
+            . " AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')"
+            . " AND " . AIChatPageComponentRAGStatus::uploadDueCondition(),
             'chat_id'
         );
         foreach ($chat_ids as $chat_id) {
@@ -137,7 +139,7 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
                 $chat_config = new ChatConfig($chat_id);
                 $llm = $this->getRagServiceForChat($chat_config);
                 if ($llm !== null) {
-                    $stats = $llm->syncBackgroundFilesToRAG($chat_config);
+                    $stats = $llm->syncBackgroundFilesToRAG($chat_config, $this->started_at + self::TIME_BUDGET);
                     $uploaded += $stats['uploaded'];
                     $errors += $stats['errors'];
                 }
@@ -167,7 +169,7 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
                 $llm = $this->getRagServiceForChat($chat_config);
                 if ($llm !== null) {
                     // All messages: a file is searched by the RAG also if its message is not sent to the AI service any more
-                    $stats = $llm->syncChatAttachmentsToRAG($session, null);
+                    $stats = $llm->syncChatAttachmentsToRAG($session, null, $this->started_at + self::TIME_BUDGET);
                     $uploaded += $stats['uploaded'];
                     $errors += $stats['errors'];
                 }
@@ -202,11 +204,8 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
             return null;
         }
 
-        // As in api.php: the default service is used if the administrator enforces it
-        $service = $chat_config->getAiService();
-        if ((\platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0') === '1') {
-            $service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
-        }
+        // As in the chat: the default service is used if the administrator enforces it
+        $service = AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
         if (!AIChatPageComponentLLMRegistry::isServiceEnabled((string) $service)) {
             return null;
         }
