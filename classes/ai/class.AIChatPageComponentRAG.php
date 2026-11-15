@@ -314,6 +314,8 @@ class AIChatPageComponentRAG
     public function deleteFile(string $remote_file_id, string $entity_id, int $timeout = 60): bool
     {
         $this->assertConfigured();
+        // One deadline for the deletion and the status query that may follow it
+        $deadline = time() + max(1, $timeout);
 
         // Same numeric IDs as used for the upload (the WebGateway expects integers)
         [$application_id, $instance_id, $entity_id_numeric] = self::getNumericIds($entity_id);
@@ -342,7 +344,12 @@ class AIChatPageComponentRAG
         }
 
         if ($http_code === 400) {
-            $status = $this->getFileStatus($remote_file_id, $entity_id, min(30, $timeout));
+            $remaining = $deadline - time();
+            if ($remaining < 1) {
+                // Undecided: the deletion is repeated later
+                return false;
+            }
+            $status = $this->getFileStatus($remote_file_id, $entity_id, min(30, $remaining));
             if ($status !== null && in_array($status['status'], [self::STATUS_PROCESSING, self::STATUS_PENDING], true)) {
                 $this->logger->info("RAG file $remote_file_id is still being processed, deletion postponed");
                 return false;
