@@ -91,6 +91,19 @@ class FileUploadLimitTest extends TestCase
         $this->assertFalse(FileUploadValidator::exceedsPhpUploadLimit(500, null));
     }
 
+    public function testFileMustBeSmallerThanThePostLimit(): void
+    {
+        $eight_mb = 8 * 1024 * 1024;
+        $sixteen_mb = 16 * 1024 * 1024;
+
+        // The request contains more than the file: a file of the size of post_max_size cannot be uploaded
+        $this->assertTrue(FileUploadValidator::exceedsPhpUploadLimit(8, $eight_mb, $eight_mb));
+        $this->assertFalse(FileUploadValidator::exceedsPhpUploadLimit(7, $eight_mb, $eight_mb));
+        // A file of the size of upload_max_filesize is accepted if the request may be larger
+        $this->assertFalse(FileUploadValidator::exceedsPhpUploadLimit(8, $eight_mb, $sixteen_mb));
+        $this->assertFalse(FileUploadValidator::exceedsPhpUploadLimit(8, $eight_mb, null));
+    }
+
     public function testPhpUploadLimitIsTheSmallerIniValue(): void
     {
         $expected = array_filter([

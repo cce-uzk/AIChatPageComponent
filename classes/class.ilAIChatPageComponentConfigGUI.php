@@ -330,7 +330,11 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         if ($php_limit !== null) {
             $php_limit_mb = round($php_limit / 1024 / 1024, 1);
             $max_file_size_info .= ' ' . sprintf($this->plugin->txt('config_max_file_size_php_limit'), $php_limit_mb);
-            if (\ILIAS\Plugin\pcaic\Validation\FileUploadValidator::exceedsPhpUploadLimit($max_file_size, $php_limit)) {
+            if (\ILIAS\Plugin\pcaic\Validation\FileUploadValidator::exceedsPhpUploadLimit(
+                $max_file_size,
+                $php_limit,
+                \ILIAS\Plugin\pcaic\Validation\FileUploadValidator::getPhpPostLimitBytes()
+            )) {
                 $this->dic->ui()->mainTemplate()->setOnScreenMessage(
                     'info',
                     sprintf($this->plugin->txt('config_max_file_size_php_warning'), $max_file_size, $php_limit_mb)

@@ -57,11 +57,30 @@ class FileUploadValidator
     }
 
     /**
-     * Whether the configured maximum file size cannot be reached because PHP rejects such uploads
+     * Largest request body PHP accepts, in bytes (post_max_size)
+     *
+     * @return int|null Null if PHP sets no limit
      */
-    public static function exceedsPhpUploadLimit(int $max_file_size_mb, ?int $php_limit_bytes): bool
+    public static function getPhpPostLimitBytes(): ?int
     {
-        return $php_limit_bytes !== null && $max_file_size_mb * 1024 * 1024 > $php_limit_bytes;
+        $limit = self::iniSizeToBytes((string) ini_get('post_max_size'));
+        return $limit > 0 ? $limit : null;
+    }
+
+    /**
+     * Whether the configured maximum file size cannot be reached because PHP rejects such uploads
+     *
+     * A file may be as large as upload_max_filesize, but must be smaller than
+     * post_max_size: the request also contains the form fields and the multipart boundaries.
+     *
+     * @param int|null $php_limit_bytes Result of getPhpUploadLimitBytes()
+     * @param int|null $post_limit_bytes Result of getPhpPostLimitBytes()
+     */
+    public static function exceedsPhpUploadLimit(int $max_file_size_mb, ?int $php_limit_bytes, ?int $post_limit_bytes = null): bool
+    {
+        $max_bytes = $max_file_size_mb * 1024 * 1024;
+        return ($php_limit_bytes !== null && $max_bytes > $php_limit_bytes)
+            || ($post_limit_bytes !== null && $max_bytes >= $post_limit_bytes);
     }
 
     /**

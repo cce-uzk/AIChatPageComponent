@@ -475,6 +475,8 @@ try {
                             $session = ChatSession::getOrCreateForUserAndChat($user_id, $chat_id);
                             $session_id = $session->getSessionId();
 
+                            // Reserved for this request: sending the message does not upload the file a second time
+                            \ai\AIChatPageComponentRAGStatus::claimUpload((int) $attachment->getId());
                             $rag_response = $llm->uploadFileToRAG($temp_file, (string) $session_id, $original_filename);
 
                             $attachment->setRAGCollectionId($rag_response['collection_id']);
@@ -483,8 +485,10 @@ try {
                             $attachment->save();
                             \ai\AIChatPageComponentRAGStatus::markUploaded((int) $attachment->getId());
                         } catch (\Exception $e) {
-                            // The file is stored; it is sent to the RAG again when the message is sent
+                            // The file is stored; it is sent to the RAG again when the message is sent.
+                            // The state is stored, so status queries and the statistics know the file.
                             $rag_pending = true;
+                            \ai\AIChatPageComponentRAGStatus::markPending((int) $attachment->getId());
                             $logger->warning("RAG upload of chat attachment " . $attachment->getId()
                                 . " failed, it is repeated when the message is sent: " . $e->getMessage());
                         } finally {

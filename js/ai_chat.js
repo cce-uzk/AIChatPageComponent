@@ -3845,6 +3845,8 @@ class AIChatPageComponent {
 
     const badge = document.createElement('div');
     badge.className = 'ai-chat-rag-status';
+    // Announced by screen readers when the state changes, the badge may be outside the message log
+    badge.setAttribute('role', 'status');
     badge.dataset.attachmentId = attachment.id;
     this.setRagStatusBadge(badge, attachment.rag_status);
     container.appendChild(badge);
@@ -3870,7 +3872,8 @@ class AIChatPageComponent {
    * at most for 30 minutes
    */
   startRagStatusPolling() {
-    if (this.ragStatusTimer || this.isAnonymous) {
+    // A running request counts as active polling: it schedules the next query itself
+    if (this.ragStatusTimer || this.ragStatusRequestRunning || this.isAnonymous) {
       return;
     }
     this.ragStatusPollingSince = Date.now();
@@ -3895,6 +3898,7 @@ class AIChatPageComponent {
 
   async pollRagStatus() {
     this.ragStatusTimer = null;
+    this.ragStatusRequestRunning = true;
 
     let files = {};
     try {
@@ -3912,6 +3916,8 @@ class AIChatPageComponent {
       files = data.files || {};
     } catch (error) {
       debugError('AIChatPageComponent: RAG status request failed:', error);
+    } finally {
+      this.ragStatusRequestRunning = false;
     }
 
     // Keep the state of files that are not sent yet, their preview is rendered again
