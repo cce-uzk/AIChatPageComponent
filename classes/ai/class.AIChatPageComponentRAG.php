@@ -53,6 +53,9 @@ class AIChatPageComponentRAG
     /** @var int Default maximum number of chunks selected by the reranker */
     public const DEFAULT_TOP_K = 10;
 
+    /** @var int Number of chunks requested by probeFile() */
+    public const PROBE_TOP_K = 20;
+
     /** Processing states reported by the RAG */
     public const STATUS_PENDING = 'PENDING';
     public const STATUS_PROCESSING = 'PROCESSING';
@@ -280,7 +283,7 @@ class AIChatPageComponentRAG
 
         if ($http_code !== 200) {
             $this->logger->error("RAG file upload failed: HTTP $http_code | file=$filename | " . substr($response_preview, 0, 300));
-            throw new AIChatPageComponentException("RAG file upload failed: HTTP $http_code");
+            throw new AIChatPageComponentException("RAG file upload failed: HTTP $http_code", $http_code);
         }
 
         $data = json_decode((string) $response, true);
@@ -305,11 +308,14 @@ class AIChatPageComponentRAG
      * being processed; the status distinguishes these cases.
      *
      * @param string $entity_id Same value as used for the upload
+     * @param int $timeout Longest wait for the RAG, in seconds
      * @return bool False if the file still exists in the RAG and has to be deleted later
      */
-    public function deleteFile(string $remote_file_id, string $entity_id): bool
+    public function deleteFile(string $remote_file_id, string $entity_id, int $timeout = 60): bool
     {
         $this->assertConfigured();
+        // One deadline for the deletion and the status query that may follow it
+        $deadline = time() + max(1, $timeout);
 
         // Same numeric IDs as used for the upload (the WebGateway expects integers)
         [$application_id, $instance_id, $entity_id_numeric] = self::getNumericIds($entity_id);
@@ -324,7 +330,7 @@ class AIChatPageComponentRAG
             $this->getEndpointUrl(self::ENDPOINT_DELETE),
             json_encode($delete_params),
             ['Content-Type: application/json'],
-            60
+            max(1, $timeout)
         );
 
         if ($response === false) {
@@ -338,7 +344,12 @@ class AIChatPageComponentRAG
         }
 
         if ($http_code === 400) {
-            $status = $this->getFileStatus($remote_file_id, $entity_id);
+            $remaining = $deadline - time();
+            if ($remaining < 1) {
+                // Undecided: the deletion is repeated later
+                return false;
+            }
+            $status = $this->getFileStatus($remote_file_id, $entity_id, min(30, $remaining));
             if ($status !== null && in_array($status['status'], [self::STATUS_PROCESSING, self::STATUS_PENDING], true)) {
                 $this->logger->info("RAG file $remote_file_id is still being processed, deletion postponed");
                 return false;
@@ -355,9 +366,10 @@ class AIChatPageComponentRAG
      * Processing state of a file in the RAG
      *
      * @param string $entity_id Same value as used for the upload
-     * @return array{status: string, error: string|null}|null Null if the file is unknown or the RAG is not reachable
+     * @param int $timeout Longest wait for the RAG, in seconds
+     * @return array{status: string, error: string|null, chunks: int|null}|null Null if the file is unknown or the RAG is not reachable
      */
-    public function getFileStatus(string $remote_file_id, string $entity_id): ?array
+    public function getFileStatus(string $remote_file_id, string $entity_id, int $timeout = 30): ?array
     {
         $this->assertConfigured();
 
@@ -371,7 +383,7 @@ class AIChatPageComponentRAG
                 'id' => $remote_file_id
             ]),
             ['Content-Type: application/json'],
-            30
+            max(1, $timeout)
         );
 
         if ($response === false || $http_code !== 200) {
@@ -384,10 +396,38 @@ class AIChatPageComponentRAG
             return null;
         }
 
+        if (strtoupper((string) $data['status']) === self::STATUS_COMPLETED) {
+            // Shows which fields the RAG reports for a processed file (e.g. a chunk count)
+            $this->logger->debug("RAG status of $remote_file_id: " . substr((string) $response, 0, 500));
+        }
+
         return [
             'status' => strtoupper((string) $data['status']),
             'error' => isset($data['error_message']) ? (string) $data['error_message'] : null,
+            'chunks' => self::extractChunkCount($data),
         ];
+    }
+
+    /**
+     * Number of chunks of a file, if the status response of the RAG contains it
+     *
+     * The field is optional; the common names are accepted.
+     *
+     * @return int|null Null if the response contains no chunk count
+     */
+    public static function extractChunkCount(array $status_response): ?int
+    {
+        foreach (['chunk_count', 'chunks_count', 'num_chunks', 'n_chunks', 'total_chunks', 'chunks'] as $key) {
+            $value = $status_response[$key] ?? null;
+            if (is_array($value)) {
+                return count($value);
+            }
+            if (is_int($value) || (is_string($value) && ctype_digit($value))) {
+                return (int) $value;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -471,6 +511,69 @@ class AIChatPageComponentRAG
             'messages' => $data['messages'],
             'chunks' => $chunks
         ];
+    }
+
+    /**
+     * Ask the retrieval once whether it finds any passage of a file
+     *
+     * The status of the RAG contains no chunk count, so this is the only way to see
+     * whether a processed file is searchable. Used for files that look like scans.
+     *
+     * @param string $query Text the passages are searched with, e.g. the file name
+     * @param int $timeout Longest wait for the RAG, in seconds
+     * @return bool|null True: a passage of the file was found. False: the retrieval returned
+     *                   nothing of the file. Null: undecided (error, or other files filled the result)
+     */
+    public function probeFile(string $remote_file_id, string $collection_id, string $query, int $timeout = 30): ?bool
+    {
+        if (self::getApiUrl() === '' || self::getClientKey() === '' || $collection_id === '') {
+            return null;
+        }
+
+        [$response, $http_code] = $this->request(
+            $this->getEndpointUrl(self::ENDPOINT_AUGMENTATION),
+            json_encode([
+                'messages' => [['role' => 'user', 'content' => $query]],
+                'collection_ids' => [$collection_id],
+                'top_k' => self::PROBE_TOP_K
+            ]),
+            ['Content-Type: application/json'],
+            max(1, $timeout)
+        );
+
+        $data = $response === false || $http_code !== 200 ? null : json_decode((string) $response, true);
+        if (!is_array($data) || !is_array($data['chunks'] ?? null)) {
+            $this->logger->debug("RAG probe of $remote_file_id failed: HTTP $http_code");
+            return null;
+        }
+
+        $found = self::evaluateProbe($data['chunks'], $remote_file_id, self::PROBE_TOP_K);
+        $this->logger->debug("RAG probe of $remote_file_id: chunks=" . count($data['chunks'])
+            . " | result=" . var_export($found, true));
+        return $found;
+    }
+
+    /**
+     * Whether the chunks of a probe show that a file is searchable
+     *
+     * No chunk of the file only proves an empty file if the result is not full:
+     * a full result may consist of passages of other files of the collection.
+     *
+     * @param int $top_k Number of chunks that was requested
+     * @return bool|null Null if undecided
+     */
+    public static function evaluateProbe(array $chunks, string $remote_file_id, int $top_k): ?bool
+    {
+        $unknown_origin = false;
+        foreach ($chunks as $chunk) {
+            if (!is_array($chunk) || !isset($chunk['file_id'])) {
+                $unknown_origin = true;
+            } elseif ((string) $chunk['file_id'] === $remote_file_id) {
+                return true;
+            }
+        }
+
+        return $unknown_origin || count($chunks) >= $top_k ? null : false;
     }
 
     /**
