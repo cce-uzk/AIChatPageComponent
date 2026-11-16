@@ -1,0 +1,242 @@
+<?php
+
+/**
+ * This file is part of the AIChatPageComponent plugin for ILIAS.
+ *
+ * Copyright (c) University of Cologne, CompetenceCenter E-Learning
+ *
+ * The plugin is licensed with the GPL-3.0,
+ * see https://www.gnu.org/licenses/gpl-3.0.en.html
+ * You should have received a copy of said license along with the
+ * source code, too.
+ */
+
+declare(strict_types=1);
+
+use ai\AIChatPageComponentLLM;
+use ai\AIChatPageComponentLLMRegistry;
+use ai\AIChatPageComponentRAG;
+use ai\AIChatPageComponentRAGStatus;
+use ILIAS\Cron\Schedule\CronJobScheduleType;
+use ILIAS\Plugin\pcaic\Model\ChatConfig;
+use ILIAS\Plugin\pcaic\Model\ChatSession;
+
+/**
+ * Cron job that advances the processing of files in the RAG service
+ *
+ * Without this job the state of a file is only queried and a failed upload only
+ * repeated when somebody uses the chat. The job queries the state of all files
+ * that are still processing, uploads failed files again when their retry is due
+ * and deletes files the RAG could not delete yet.
+ */
+class ilAIChatPageComponentRAGCronJob extends ilCronJob
+{
+    public const JOB_ID = 'pcaic_rag_ingestion';
+
+    /** @var int No further chat is started after this number of seconds, a run should not overlap the next one */
+    private const TIME_BUDGET = 120;
+
+    /** @var int The status checks end after this number of seconds, the rest of the run is kept for the uploads */
+    private const STATUS_TIME_BUDGET = 60;
+
+    private ilAIChatPageComponentPlugin $plugin;
+
+    private int $started_at = 0;
+
+    public function __construct(ilAIChatPageComponentPlugin $plugin)
+    {
+        $this->plugin = $plugin;
+    }
+
+    public function getId(): string
+    {
+        return self::JOB_ID;
+    }
+
+    public function getTitle(): string
+    {
+        return $this->plugin->txt('cron_rag_title');
+    }
+
+    public function getDescription(): string
+    {
+        return $this->plugin->txt('cron_rag_description');
+    }
+
+    public function hasAutoActivation(): bool
+    {
+        return true;
+    }
+
+    public function hasFlexibleSchedule(): bool
+    {
+        return true;
+    }
+
+    public function getDefaultScheduleType(): CronJobScheduleType
+    {
+        return CronJobScheduleType::SCHEDULE_TYPE_IN_MINUTES;
+    }
+
+    public function getDefaultScheduleValue(): ?int
+    {
+        return 1;
+    }
+
+    public function run(): ilCronJobResult
+    {
+        global $DIC;
+        $db = $DIC->database();
+        $logger = $DIC->logger()->pcaic();
+        $result = new ilCronJobResult();
+
+        if (!AIChatPageComponentRAG::isAvailable()) {
+            $result->setStatus(ilCronJobResult::STATUS_NO_ACTION);
+            return $result;
+        }
+
+        $this->started_at = time();
+        $checked = 0;
+        $uploaded = 0;
+        $errors = 0;
+
+        // State of the files that are still processing; refreshChat() limits the frequency per chat
+        $chat_ids = $this->fetchColumn(
+            "SELECT DISTINCT chat_id FROM pcaic_attachments WHERE rag_status = "
+            . $db->quote(AIChatPageComponentRAGStatus::PROCESSING, 'text') . " AND rag_remote_file_id IS NOT NULL",
+            'chat_id'
+        );
+        // Random order: if the RAG answers slowly, every run checks other chats first
+        shuffle($chat_ids);
+        foreach ($chat_ids as $chat_id) {
+            if ($this->isOutOfTime(self::STATUS_TIME_BUDGET)) {
+                break;
+            }
+            try {
+                // Deletions follow after the uploads
+                if (AIChatPageComponentRAGStatus::refreshChat($chat_id, false)) {
+                    $checked++;
+                }
+            } catch (\Exception $e) {
+                $errors++;
+                $logger->warning("RAG status check of chat $chat_id failed: " . $e->getMessage());
+            }
+        }
+
+        // Background files whose new upload is due, or that were never uploaded (e.g. imported,
+        // or RAG was enabled later); chats that do not use the RAG are skipped below
+        $chat_ids = $this->fetchColumn(
+            "SELECT DISTINCT chat_id FROM pcaic_attachments WHERE background_file = 1"
+            . " AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')"
+            . " AND " . AIChatPageComponentRAGStatus::uploadDueCondition(),
+            'chat_id'
+        );
+        foreach ($chat_ids as $chat_id) {
+            if ($this->isOutOfTime()) {
+                break;
+            }
+            try {
+                $chat_config = new ChatConfig($chat_id);
+                $llm = $this->getRagServiceForChat($chat_config);
+                if ($llm !== null) {
+                    $stats = $llm->syncBackgroundFilesToRAG($chat_config, $this->started_at + self::TIME_BUDGET);
+                    $uploaded += $stats['uploaded'];
+                    $errors += $stats['errors'];
+                }
+            } catch (\Exception $e) {
+                $errors++;
+                $logger->warning("RAG upload of background files of chat $chat_id failed: " . $e->getMessage());
+            }
+        }
+
+        // Failed chat uploads whose new upload is due
+        $session_ids = $this->fetchColumn(
+            "SELECT DISTINCT m.session_id FROM pcaic_attachments a"
+            . " INNER JOIN pcaic_messages m ON m.message_id = a.message_id"
+            . " WHERE a.background_file = 0 AND " . AIChatPageComponentRAGStatus::retryDueCondition(),
+            'session_id'
+        );
+        foreach ($session_ids as $session_id) {
+            if ($this->isOutOfTime()) {
+                break;
+            }
+            try {
+                $session = new ChatSession($session_id);
+                if (!$session->exists()) {
+                    continue;
+                }
+                $chat_config = new ChatConfig($session->getChatId());
+                $llm = $this->getRagServiceForChat($chat_config);
+                if ($llm !== null) {
+                    // All messages: a file is searched by the RAG also if its message is not sent to the AI service any more
+                    $stats = $llm->syncChatAttachmentsToRAG($session, null, $this->started_at + self::TIME_BUDGET);
+                    $uploaded += $stats['uploaded'];
+                    $errors += $stats['errors'];
+                }
+            } catch (\Exception $e) {
+                $errors++;
+                $logger->warning("RAG upload of chat attachments of session $session_id failed: " . $e->getMessage());
+            }
+        }
+
+        try {
+            // In the rest of the run, so that slow deletions cannot keep files from being uploaded
+            $remaining = self::TIME_BUDGET - (time() - $this->started_at);
+            if ($remaining > 0) {
+                AIChatPageComponentRAGStatus::processDeletionQueue($remaining);
+            }
+        } catch (\Exception $e) {
+            $errors++;
+            $logger->warning("Pending RAG deletions failed: " . $e->getMessage());
+        }
+
+        $result->setStatus($checked + $uploaded + $errors > 0 ? ilCronJobResult::STATUS_OK : ilCronJobResult::STATUS_NO_ACTION);
+        $result->setMessage("Chats checked: $checked, files uploaded again: $uploaded, errors: $errors");
+        return $result;
+    }
+
+    /**
+     * AI service of the chat if the chat uses the RAG, otherwise null
+     */
+    private function getRagServiceForChat(ChatConfig $chat_config): ?AIChatPageComponentLLM
+    {
+        if (!$chat_config->exists()) {
+            return null;
+        }
+
+        // As in the chat: the default service is used if the administrator enforces it
+        $service = AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
+        if (!AIChatPageComponentLLMRegistry::isServiceEnabled((string) $service)) {
+            return null;
+        }
+
+        $llm = AIChatPageComponentLLMRegistry::createServiceInstance((string) $service);
+        if ($llm === null || !$llm->isRagEnabledForChat($chat_config)) {
+            return null;
+        }
+
+        // No file leaves ILIAS while the administrator has file handling switched off
+        return $llm->isFileHandlingEnabledForService((string) $service) ? $llm : null;
+    }
+
+    /**
+     * @return string[] Values of the column, read completely before further queries are sent
+     */
+    private function fetchColumn(string $query, string $column): array
+    {
+        global $DIC;
+        $db = $DIC->database();
+
+        $values = [];
+        $result = $db->query($query);
+        while ($row = $db->fetchAssoc($result)) {
+            $values[] = (string) $row[$column];
+        }
+        return $values;
+    }
+
+    private function isOutOfTime(int $budget = self::TIME_BUDGET): bool
+    {
+        return time() - $this->started_at > $budget;
+    }
+}

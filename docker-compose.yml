@@ -1,0 +1,68 @@
+# Local ILIAS 9.24 test environment with the AIChatPageComponent plugin mounted.
+#
+# Start:  docker compose up -d
+# Open:   http://localhost:8080
+#
+# ILIAS is installed automatically on the first start (ILIAS_AUTO_SETUP=1).
+# Set ILIAS_ROOT_PASSWORD in the environment to choose the root password; if it is unset, a random
+# one is printed in the container log on first install:  docker compose logs ilias
+# Then install and activate the plugin under Administration > Extending ILIAS > Plugins.
+# See docs/local-ilias.md and scripts/ilias-dev.sh (snapshots, restore, artifact refresh).
+#
+# The plugin folder of this repository is mounted at the path ILIAS expects
+# for PageComponent plugins, so no copy or git clone is needed inside the container.
+#
+# Environment variables are taken from the srsolutions/ilias image README
+# (tag 9-php8.2-apache / 9.24-php8.2-apache, ILIAS < 10 data path).
+
+services:
+  mysql:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: ilias-root
+      MARIADB_DATABASE: ilias
+      MARIADB_USER: ilias
+      MARIADB_PASSWORD: ilias
+    # utf8mb4 makes ILIAS's wide varchar(4000) columns (e.g. crs_settings) exceed InnoDB's
+    # 65535-byte row limit during auto-setup, so use utf8 (utf8mb3) like the other local ILIAS stacks.
+    command: ["--character-set-server=utf8", "--collation-server=utf8_general_ci"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  ilias:
+    image: srsolutions/ilias:9.24-php8.2-apache
+    depends_on:
+      mysql:
+        condition: service_healthy
+    # Bound to loopback so the test instance is not reachable from other hosts
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      ILIAS_AUTO_SETUP: "1"
+      # Core install only: the plugin is installed after setup, once ILIAS has rebuilt its artifacts
+      ILIAS_INSTALL_ARGUMENTS: "--no-plugins"
+      # Optional. If empty, a random root password is generated on the first install and printed in the log.
+      ILIAS_ROOT_PASSWORD: ${ILIAS_ROOT_PASSWORD:-}
+      ILIAS_DB_HOST: mysql
+      ILIAS_DB_NAME: ilias
+      ILIAS_DB_USER: ilias
+      ILIAS_DB_PASSWORD: ilias
+      # Must match the URL used in the browser, otherwise generated links point to the container hostname
+      ILIAS_HTTP_PATH: http://localhost:8080
+    volumes:
+      # Web-accessible data directory (ILIAS < 10 path)
+      - ilias-data:/var/www/html/data
+      # Private data directory where uploaded resources are stored
+      - ilias-iliasdata:/var/iliasdata/ilias
+      # This repository, mounted as the plugin folder inside ILIAS
+      - ./:/var/www/html/Customizing/global/plugins/Services/COPage/PageComponent/AIChatPageComponent
+
+volumes:
+  mysql-data:
+  ilias-data:
+  ilias-iliasdata:

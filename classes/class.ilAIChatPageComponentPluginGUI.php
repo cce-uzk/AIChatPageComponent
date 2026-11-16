@@ -693,7 +693,37 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $this->addEditTabs('basic');
         $form = $this->initForm(false, 'basic');
-        $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+        $this->tpl->setContent($DIC->ui()->renderer()->render($form) . $this->renderBackgroundFileStatus());
+    }
+
+    /**
+     * Processing state of the background files below the settings form
+     *
+     * Saving uploads new files to the RAG and returns to this tab, so the tutor
+     * sees right away whether the files can be searched yet.
+     */
+    private function renderBackgroundFileStatus(): string
+    {
+        global $DIC;
+        $chat_id = $this->getChatIdForEdit();
+        if ($chat_id === '') {
+            return '';
+        }
+
+        $pending = false;
+        $panel = $this->getBackgroundFileStatusPanel($chat_id, false, $pending);
+        if ($panel === null) {
+            return '';
+        }
+
+        $components = [$panel];
+        if ($pending) {
+            // The form does not update by itself
+            array_unshift($components, $DIC->ui()->factory()->messageBox()->info(
+                $this->plugin->txt('rag_file_status_reload_hint')
+            ));
+        }
+        return $DIC->ui()->renderer()->render($components);
     }
 
     public function saveBasic(): void
@@ -1148,9 +1178,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
      *
      * The state is queried from the RAG service before (at most once per minute and
      * chat, see AIChatPageComponentRAGStatus::refreshChat()).
+     *
+     * @param bool $include_chat_uploads Also list the numbers of files users uploaded in the chat
+     * @param bool $pending Set to true if a background file is still waiting for or in processing
      */
-    private function getBackgroundFileStatusPanel(string $chat_id): ?\ILIAS\UI\Component\Panel\Standard
-    {
+    private function getBackgroundFileStatusPanel(
+        string $chat_id,
+        bool $include_chat_uploads = true,
+        bool &$pending = false
+    ): ?\ILIAS\UI\Component\Panel\Standard {
         global $DIC;
         $db = $DIC->database();
         $ui_factory = $DIC->ui()->factory();
@@ -1160,8 +1196,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             if (!$chat_config->exists()) {
                 return null;
             }
-            $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($chat_config->getAiService());
-            $rag_enabled = $llm !== null && $llm->isRagEnabledForChat($chat_config);
+            // The service that processes the files, as in the chat and the cron job
+            $llm = \ai\AIChatPageComponentLLMRegistry::createServiceInstance(
+                \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService())
+            );
+            // As in the cron job: without file handling no file is uploaded to the RAG
+            $rag_enabled = $llm !== null && $llm->isRagEnabledForChat($chat_config)
+                && $llm->isFileHandlingEnabledForService($llm::getServiceId());
             if ($rag_enabled) {
                 \ai\AIChatPageComponentRAGStatus::refreshChat($chat_id);
             }
@@ -1178,6 +1219,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         // Files by processing state; problems first
         $groups = array_fill_keys([
             'rag_file_status_failed',
+            'rag_file_status_empty',
+            'rag_file_status_scanned',
             'rag_file_status_processing',
             'rag_file_status_pending',
             'rag_file_status_completed',
@@ -1192,11 +1235,24 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $groups[$status][] = $title;
         }
 
+        $pending = $groups['rag_file_status_processing'] !== [] || $groups['rag_file_status_pending'] !== [];
+
         $items = [];
         foreach ($groups as $status => $titles) {
             if ($titles !== []) {
                 $label = $this->plugin->txt($status) . ' (' . count($titles) . ')';
                 $items[$label] = $ui_factory->listing()->unordered($titles);
+            }
+        }
+
+        // Files uploaded by users in the chat: numbers only, the files belong to the users
+        if ($rag_enabled && $include_chat_uploads) {
+            $upload_states = [];
+            foreach (\ai\AIChatPageComponentRAGStatus::countChatUploadStates($chat_id) as $state => $count) {
+                $upload_states[] = $this->plugin->txt($this->getRagFileStatusKey(true, $state)) . ' (' . $count . ')';
+            }
+            if ($upload_states !== []) {
+                $items[$this->plugin->txt('stat_chat_uploads')] = $ui_factory->listing()->unordered($upload_states);
             }
         }
 
@@ -1244,6 +1300,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 return 'rag_file_status_processing';
             case \ai\AIChatPageComponentRAGStatus::FAILED:
                 return 'rag_file_status_failed';
+            case \ai\AIChatPageComponentRAGStatus::EMPTY:
+                return 'rag_file_status_empty';
+            case \ai\AIChatPageComponentRAGStatus::SCANNED:
+                return 'rag_file_status_scanned';
             case \ai\AIChatPageComponentRAGStatus::SKIPPED:
                 return 'rag_file_status_direct';
             default:
@@ -1260,10 +1320,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     {
         $details = [];
         if (!empty($row['rag_retry_at'])) {
-            // The new upload is triggered by the next chat request
+            // The new upload is triggered by the next chat request or the cron job
             $details[] = $row['rag_retry_at'] <= gmdate('Y-m-d H:i:s')
                 ? $this->plugin->txt('rag_file_retry_due')
                 : sprintf($this->plugin->txt('rag_file_retry_at'), $this->formatStoredDateTime($row['rag_retry_at']));
+        } else {
+            // Rejected by the RAG or failed too often
+            $details[] = $this->plugin->txt('rag_file_no_retry');
         }
         if (!empty($row['rag_status_error'])) {
             $details[] = mb_substr((string) $row['rag_status_error'], 0, 160);
@@ -1623,6 +1686,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         $tpl->setVariable("SOURCES_LABEL", htmlspecialchars($this->plugin->txt('sources_label')));
         $tpl->setVariable("RAG_INCOMPLETE_NOTICE", htmlspecialchars($this->plugin->txt('rag_incomplete_notice')));
+        $tpl->setVariable("RAG_UPLOAD_PROCESSING", htmlspecialchars($this->plugin->txt('rag_upload_processing')));
+        $tpl->setVariable("RAG_UPLOAD_COMPLETED", htmlspecialchars($this->plugin->txt('rag_upload_completed')));
+        $tpl->setVariable("RAG_UPLOAD_FAILED", htmlspecialchars($this->plugin->txt('rag_upload_failed')));
+        $tpl->setVariable("RAG_UPLOAD_EMPTY", htmlspecialchars($this->plugin->txt('rag_upload_empty')));
+        $tpl->setVariable("RAG_UPLOAD_SCANNED", htmlspecialchars($this->plugin->txt('rag_upload_scanned')));
         $tpl->setVariable("PAGE_LABEL", htmlspecialchars($this->plugin->txt('page_label')));
         $tpl->setVariable("PAGES_LABEL", htmlspecialchars($this->plugin->txt('pages_label')));
         $this->setRenderingLabels($tpl);
@@ -1632,9 +1700,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("SOURCE_NEXT", htmlspecialchars($this->plugin->txt('source_next')));
         $tpl->setVariable("SCROLL_TO_BOTTOM", htmlspecialchars($this->plugin->txt('scroll_to_bottom')));
 
-        $max_size_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
-        $max_size_mb = $max_size_config ? (int) $max_size_config : 5;
-        $tpl->setVariable("MAX_FILE_SIZE_MB", $max_size_mb);
+        $tpl->setVariable("MAX_FILE_SIZE_MB", FileUploadValidator::getMaxFileSizeMb());
 
         $max_attachments_config = \platform\AIChatPageComponentConfig::get('max_attachments_per_message');
         $max_attachments = $max_attachments_config ? (int) $max_attachments_config : 5;
@@ -1661,9 +1727,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
 
         $error_max_attachments = sprintf($error_max_attachments_template, $max_attachments);
-        $max_file_size_mb_config = \platform\AIChatPageComponentConfig::get('max_file_size_mb');
-        $max_file_size_mb = $max_file_size_mb_config ? (int) $max_file_size_mb_config : 5;
-        $error_file_too_large = sprintf($error_file_too_large_template, $max_file_size_mb);
+        $error_file_too_large = sprintf($error_file_too_large_template, FileUploadValidator::getMaxFileSizeMb());
 
         // These messages are completed by JavaScript with runtime values
         $error_file_type_not_allowed = $error_file_type_not_allowed_template;
@@ -1682,18 +1746,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("ERROR_FILE_UPLOAD_FAILED", $error_file_upload_failed);
 
         global $DIC;
-        if ($max_size_config !== null) {
-            $DIC->logger()->pcaic()->debug("Template: Using central config for file size", [
-                'source' => 'central_config',
-                'value' => $max_size_config,
-                'effective_mb' => $max_size_mb
-            ]);
-        } else {
-            $DIC->logger()->pcaic()->debug("Template: Using fallback file size limit", [
-                'source' => 'fallback',
-                'effective_mb' => $max_size_mb
-            ]);
-        }
+        $DIC->logger()->pcaic()->debug("Template: file size limit", [
+            'effective_mb' => FileUploadValidator::getMaxFileSizeMb()
+        ]);
 
         $tpl->setVariable("GENERATION_STOPPED", htmlspecialchars($this->plugin->txt('generation_stopped')));
         $tpl->setVariable("REGENERATE_FAILED", htmlspecialchars($this->plugin->txt('regenerate_failed')));
@@ -1789,23 +1844,22 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $user_id = $DIC->user()->getId();
 
         $llm = $this->getLLMInstanceForChat($chat_config);
-        $ai_service = $chat_config->getAiService();
+        $ai_service = \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
 
-        // RAG service available and allowed for the AI service
-        $llm_rag_enabled = \ai\AIChatPageComponentRAG::isEnabledForService($ai_service);
-
-        $enable_rag = $llm->supportsRAG() && $llm_rag_enabled;
+        // New files go to the RAG under the same conditions as in the chat and the cron job:
+        // RAG enabled for the service and the chat, file handling allowed. If RAG is switched on
+        // with this save, the files are uploaded afterwards (see "RAG was activated").
+        $enable_rag = $llm->isRagEnabledForChat($chat_config) && $llm->isFileHandlingEnabledForService($ai_service);
 
         $this->logger->debug("RAG configuration check", [
-            'llm_supports_rag' => $llm->supportsRAG(),
-            'llm_rag_enabled' => $llm_rag_enabled,
             'enable_rag' => $enable_rag,
             'ai_service' => $ai_service
         ]);
 
+        // Background files only: files users uploaded in the chat but not sent yet have no message either
         $existing_query = "SELECT id, resource_id FROM pcaic_attachments " .
                          "WHERE chat_id = " . $db->quote($chat_id, 'text') . " " .
-                         "AND message_id IS NULL";
+                         "AND message_id IS NULL AND background_file = 1";
         $existing_result = $db->query($existing_query);
         $existing_files = [];
         while ($row = $db->fetchAssoc($existing_result)) {
@@ -1819,7 +1873,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 try {
                     $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
 
-                    if ($enable_rag && $attachment->isInRAG()) {
+                    // Also if RAG is off now: the file must not stay in the RAG
+                    if ($attachment->isInRAG()) {
                         $this->deleteFileFromRAG($attachment, $chat_id, $chat_config);
                     }
 
@@ -1873,6 +1928,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $attachment->save();
                 if ($attachment->isInRAG()) {
                     \ai\AIChatPageComponentRAGStatus::markUploaded((int) $attachment->getId());
+                } elseif ($enable_rag) {
+                    // Upload failed: the cron job or the next chat request uploads it again
+                    \ai\AIChatPageComponentRAGStatus::markPending((int) $attachment->getId());
                 }
 
                 $this->logger->info("Saved background file attachment", [
@@ -2021,11 +2079,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Service of the chat; falls back to the first available service
+     * Service that answers in the chat (the enforced default service, if any); falls back to the first available service
      */
     private function getLLMInstanceForChat(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config)
     {
-        $ai_service = $chat_config->getAiService();
+        $ai_service = \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
 
         $instance = \ai\AIChatPageComponentLLMRegistry::createServiceInstance($ai_service);
 

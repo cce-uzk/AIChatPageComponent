@@ -248,6 +248,18 @@ abstract class AIChatPageComponentLLM
     abstract public static function getServiceDescription(): string;
 
     /**
+     * Name shown for the service in tabs and selections
+     *
+     * Any OpenAI-compatible API can be configured in a service, so the administrator
+     * can replace the built-in name by the name of the provider that is actually used.
+     */
+    public static function getDisplayName(): string
+    {
+        $label = \platform\AIChatPageComponentConfig::get(static::getServiceId() . '_service_label');
+        return is_string($label) && trim($label) !== '' ? trim($label) : static::getServiceName();
+    }
+
+    /**
      * @return array<string, \ILIAS\UI\Component\Input\Field\FormInput> Inputs of the service tab
      */
     abstract public function getConfigurationFormInputs(): array;
@@ -487,7 +499,7 @@ abstract class AIChatPageComponentLLM
     /**
      * File handling must be enabled globally and for the service
      */
-    protected function isFileHandlingEnabledForService(string $ai_service): bool
+    public function isFileHandlingEnabledForService(string $ai_service): bool
     {
         $global_file_handling = \platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1';
         if ($global_file_handling !== '1') {
@@ -545,15 +557,24 @@ abstract class AIChatPageComponentLLM
             $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
             $this->setModelOverride($force_model ? null : $chat_config->getModel());
 
-            $ai_service = $chat_config->getAiService();
-            $file_handling_enabled = $this->isFileHandlingEnabledForService($ai_service);
+            // Settings of this service: it differs from the stored one if the administrator enforces the default service
+            $file_handling_enabled = $this->isFileHandlingEnabledForService(static::getServiceId());
 
             // RAG mode must be known before the background files are processed,
             // because PDFs are only converted to images without RAG
             $collection_ids = [];
             $use_rag = false;
+            $recent_limit = min($chat_config->getMaxMemory(), 20);
             if ($file_handling_enabled) {
                 $this->ensureBackgroundFilesInRAG($chat_config);
+                if ($this->isRagEnabledForChat($chat_config)) {
+                    // Before the mode is decided: a chat upload that is not in the RAG yet
+                    // (its first upload failed) may be the only file of the chat
+                    $sync_stats = $this->syncChatAttachmentsToRAG($session, $recent_limit);
+                    if ($sync_stats['uploaded'] > 0) {
+                        $this->logger->info("Synced chat attachments to RAG", $sync_stats);
+                    }
+                }
                 $collection_ids = $this->getAllRAGCollectionIds($chat_config);
                 $use_rag = $this->isRagEnabledForChat($chat_config) && !empty($collection_ids);
             }
@@ -577,18 +598,8 @@ abstract class AIChatPageComponentLLM
                 }
             }
 
-            $recent_limit = min($chat_config->getMaxMemory(), 20);
             $ai_messages = $this->processChatMessages($session, $recent_limit, $use_rag, $file_handling_enabled);
             $this->addOmittedImagesNote($ai_messages);
-
-            if ($use_rag && $file_handling_enabled) {
-                $this->logger->debug("RAG mode active, checking for chat attachments to sync");
-                $sync_stats = $this->syncChatAttachmentsToRAG($session, $recent_limit);
-                if ($sync_stats['uploaded'] > 0) {
-                    $this->logger->info("Synced chat attachments to RAG", $sync_stats);
-                    $collection_ids = $this->getAllRAGCollectionIds($chat_config);
-                }
-            }
 
             $this->clearLastResponseData();
 
@@ -664,8 +675,8 @@ abstract class AIChatPageComponentLLM
             $force_model = \platform\AIChatPageComponentConfig::get($ai_service_id . '_force_model') === '1';
             $this->setModelOverride($force_model ? null : $chat_config->getModel());
 
-            $ai_service = $ai_service_id;
-            $file_handling_enabled = $this->isFileHandlingEnabledForService($ai_service);
+            // Settings of this service: it differs from the stored one if the administrator enforces the default service
+            $file_handling_enabled = $this->isFileHandlingEnabledForService(static::getServiceId());
 
             $collection_ids = [];
             $use_rag = false;
@@ -1196,6 +1207,9 @@ abstract class AIChatPageComponentLLM
     /**
      * RAG is used if the RAG service is available, allowed for the AI service
      * and enabled in the chat
+     *
+     * The setting of this service decides, not the one of the service stored in the
+     * chat: they differ if the administrator enforces the default service.
      */
     public function isRagEnabledForChat(ChatConfig $chat_config): bool
     {
@@ -1203,8 +1217,7 @@ abstract class AIChatPageComponentLLM
             return false;
         }
 
-        $ai_service = $chat_config->getAiService();
-        $rag_config_key = $ai_service . '_enable_rag';
+        $rag_config_key = static::getServiceId() . '_enable_rag';
         $rag_globally_enabled = \platform\AIChatPageComponentConfig::get($rag_config_key);
         $rag_globally_enabled = ($rag_globally_enabled == '1' || $rag_globally_enabled === 1);
 
@@ -1373,7 +1386,7 @@ abstract class AIChatPageComponentLLM
 
         $db->manipulate(
             "UPDATE pcaic_attachments SET rag_collection_id = NULL, rag_remote_file_id = NULL, rag_uploaded_at = NULL,"
-            . " rag_status = NULL, rag_status_error = NULL, rag_failed_count = 0, rag_retry_at = NULL"
+            . " rag_status = NULL, rag_status_error = NULL, rag_failed_count = 0, rag_processing_failures = 0, rag_retry_at = NULL"
             . " WHERE chat_id = " . $db->quote($chat_id, 'text') . " AND " . $in
         );
         $db->manipulate(
@@ -1485,9 +1498,10 @@ abstract class AIChatPageComponentLLM
     /**
      * Upload background files of the RAG file types that are not in the RAG yet
      *
+     * @param int|null $deadline No further upload is started after this time (Unix timestamp); null = no limit
      * @return array{uploaded: int, skipped: int, errors: int}
      */
-    public function syncBackgroundFilesToRAG(ChatConfig $chat_config): array
+    public function syncBackgroundFilesToRAG(ChatConfig $chat_config, ?int $deadline = null): array
     {
         $stats = ['uploaded' => 0, 'skipped' => 0, 'errors' => 0];
 
@@ -1522,6 +1536,13 @@ abstract class AIChatPageComponentLLM
             $irss = $DIC->resourceStorage();
 
             foreach ($attachments_to_upload as $att_row) {
+                if ($deadline !== null && time() >= $deadline) {
+                    // The rest is uploaded with the next run
+                    break;
+                }
+                // Only a failure of an upload this request reserved is recorded: before the
+                // reservation, another request may be uploading the file
+                $claimed = false;
                 try {
                     $attachment = Attachment::loadById((int) $att_row['id']);
                     if (!$attachment) {
@@ -1550,6 +1571,13 @@ abstract class AIChatPageComponentLLM
                         continue;
                     }
 
+                    // Another request (chat or cron job) is uploading the file
+                    if (!AIChatPageComponentRAGStatus::claimUpload((int) $att_row['id'])) {
+                        $stats['skipped']++;
+                        continue;
+                    }
+                    $claimed = true;
+
                     $entity_id = $chat_config->getChatId();
                     $stream = $irss->consume()->stream($identification);
 
@@ -1561,6 +1589,13 @@ abstract class AIChatPageComponentLLM
                         $upload_result = $this->uploadFileToRAG($temp_file, $entity_id, $original_filename);
                     } finally {
                         @unlink($temp_file);
+                    }
+
+                    // The file was removed during the upload: the copy in the RAG is deleted later
+                    if (!AIChatPageComponentRAGStatus::attachmentExists((int) $att_row['id'])) {
+                        AIChatPageComponentRAGStatus::queueDeletion((string) $upload_result['remote_file_id'], (string) $entity_id);
+                        $stats['skipped']++;
+                        continue;
                     }
 
                     $attachment->setRagCollectionId($upload_result['collection_id']);
@@ -1579,7 +1614,14 @@ abstract class AIChatPageComponentLLM
 
                 } catch (\Exception $e) {
                     $this->logger->error("Failed to sync attachment to RAG: attachment " . $att_row['id'] . " | " . $e->getMessage());
-                    AIChatPageComponentRAGStatus::markFailed((int) $att_row['id'], $e->getMessage());
+                    if ($claimed) {
+                        // An upload the RAG rejected is not repeated
+                        AIChatPageComponentRAGStatus::markFailed(
+                            (int) $att_row['id'],
+                            $e->getMessage(),
+                            AIChatPageComponentRAGStatus::isPermanentUploadError((int) $e->getCode()) ? 1 : 0
+                        );
+                    }
                     $stats['errors']++;
                 }
             }
@@ -1595,11 +1637,15 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * Upload attachments of the recent messages to the RAG
+     * Upload attachments of the session that are not in the RAG yet
      *
+     * @param int|null $max_memory Only attachments of this number of recent messages (the messages sent to the
+     *                             AI service); null = all messages of the session. The retrieval searches the
+     *                             files of the whole chat, so the cron job retries all of them.
+     * @param int|null $deadline No further upload is started after this time (Unix timestamp); null = no limit
      * @return array{uploaded: int, skipped: int, errors: int}
      */
-    public function syncChatAttachmentsToRAG(ChatSession $session, int $max_memory): array
+    public function syncChatAttachmentsToRAG(ChatSession $session, ?int $max_memory, ?int $deadline = null): array
     {
         $stats = ['uploaded' => 0, 'skipped' => 0, 'errors' => 0];
 
@@ -1607,18 +1653,24 @@ abstract class AIChatPageComponentLLM
             global $DIC;
             $db = $DIC->database();
 
-            $recent_messages = $session->getRecentMessages($max_memory);
-            if (empty($recent_messages)) {
-                return $stats;
+            if ($max_memory === null) {
+                $message_condition = "message_id IN (SELECT message_id FROM pcaic_messages WHERE session_id = "
+                    . $db->quote($session->getSessionId(), 'text') . ")";
+                $message_count = null;
+            } else {
+                $recent_messages = $session->getRecentMessages($max_memory);
+                if (empty($recent_messages)) {
+                    return $stats;
+                }
+                $message_ids = array_map(fn($msg) => $msg->getMessageId(), $recent_messages);
+                $message_condition = "message_id IN ("
+                    . implode(',', array_map(fn($id) => $db->quote($id, 'integer'), $message_ids)) . ")";
+                $message_count = count($recent_messages);
             }
-
-            $message_ids = array_map(fn($msg) => $msg->getMessageId(), $recent_messages);
-
-            $message_id_list = implode(',', array_map(fn($id) => $db->quote($id, 'integer'), $message_ids));
 
             $query = "SELECT id, resource_id, message_id
                       FROM pcaic_attachments
-                      WHERE message_id IN (" . $message_id_list . ")
+                      WHERE " . $message_condition . "
                       AND background_file = 0
                       AND (rag_remote_file_id IS NULL OR rag_remote_file_id = '')
                       AND " . AIChatPageComponentRAGStatus::uploadDueCondition();
@@ -1633,7 +1685,7 @@ abstract class AIChatPageComponentLLM
             if (empty($attachments_to_upload)) {
                 $this->logger->debug("No chat attachments need RAG sync", [
                     'session_id' => $session->getSessionId(),
-                    'message_count' => count($recent_messages)
+                    'message_count' => $message_count
                 ]);
                 return $stats;
             }
@@ -1647,6 +1699,13 @@ abstract class AIChatPageComponentLLM
             $chat_id = $session->getChatId();
 
             foreach ($attachments_to_upload as $att_row) {
+                if ($deadline !== null && time() >= $deadline) {
+                    // The rest is uploaded with the next run
+                    break;
+                }
+                // Only a failure of an upload this request reserved is recorded: before the
+                // reservation, another request may be uploading the file
+                $claimed = false;
                 try {
                     $attachment = Attachment::loadById((int) $att_row['id']);
                     if (!$attachment) {
@@ -1675,6 +1734,13 @@ abstract class AIChatPageComponentLLM
                         continue;
                     }
 
+                    // Another request (chat or cron job) is uploading the file
+                    if (!AIChatPageComponentRAGStatus::claimUpload((int) $att_row['id'])) {
+                        $stats['skipped']++;
+                        continue;
+                    }
+                    $claimed = true;
+
                     // Same entity as the direct upload in api.php and Attachment::delete()
                     $entity_id = (string) $session->getSessionId();
                     $stream = $irss->consume()->stream($identification);
@@ -1687,6 +1753,13 @@ abstract class AIChatPageComponentLLM
                         $upload_result = $this->uploadFileToRAG($temp_file, $entity_id, $original_filename);
                     } finally {
                         @unlink($temp_file);
+                    }
+
+                    // The file was removed during the upload: the copy in the RAG is deleted later
+                    if (!AIChatPageComponentRAGStatus::attachmentExists((int) $att_row['id'])) {
+                        AIChatPageComponentRAGStatus::queueDeletion((string) $upload_result['remote_file_id'], (string) $entity_id);
+                        $stats['skipped']++;
+                        continue;
                     }
 
                     $attachment->setRagCollectionId($upload_result['collection_id']);
@@ -1706,7 +1779,14 @@ abstract class AIChatPageComponentLLM
 
                 } catch (\Exception $e) {
                     $this->logger->error("Failed to sync chat attachment to RAG: attachment " . $att_row['id'] . " | " . $e->getMessage());
-                    AIChatPageComponentRAGStatus::markFailed((int) $att_row['id'], $e->getMessage());
+                    if ($claimed) {
+                        // An upload the RAG rejected is not repeated
+                        AIChatPageComponentRAGStatus::markFailed(
+                            (int) $att_row['id'],
+                            $e->getMessage(),
+                            AIChatPageComponentRAGStatus::isPermanentUploadError((int) $e->getCode()) ? 1 : 0
+                        );
+                    }
                     $stats['errors']++;
                 }
             }

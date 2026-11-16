@@ -992,3 +992,26 @@ if ($db->tableExists('pcaic_config')) {
     );
 }
 ?>
+<#16>
+<?php
+/**
+ * Step 16: Separate counter for processing failures of files in the RAG service (v1.10.2)
+ *
+ * pcaic_attachments:
+ *   rag_processing_failures  times in a row the RAG failed to process the file; the file is
+ *                            given up after AIChatPageComponentRAGStatus::MAX_PROCESSING_ATTEMPTS.
+ *                            rag_failed_count keeps counting all failures (uploads and
+ *                            processings) for the retry delay.
+ *   rag_status               new value pending: waiting for an upload
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_attachments') && !$db->tableColumnExists('pcaic_attachments', 'rag_processing_failures')) {
+    $db->addTableColumn(
+        'pcaic_attachments',
+        'rag_processing_failures',
+        ['type' => 'integer', 'length' => 4, 'notnull' => true, 'default' => 0]
+    );
+}
+?>

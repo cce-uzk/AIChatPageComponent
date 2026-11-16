@@ -69,6 +69,18 @@ class AIChatPageComponentLLMRegistry
         return $services[$service_id] ?? null;
     }
 
+    /**
+     * Service that answers in a chat: the one stored in the chat, or the default service if the
+     * administrator enforces it. The chat, the cron job and the settings use it alike.
+     */
+    public static function getEffectiveServiceId(string $stored_service_id): string
+    {
+        if ((\platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0') === '1') {
+            return (string) (\platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses');
+        }
+        return $stored_service_id;
+    }
+
     public static function serviceExists(string $service_id): bool
     {
         return isset(self::getAvailableServices()[$service_id]);
@@ -142,7 +154,7 @@ class AIChatPageComponentLLMRegistry
         $options = [];
 
         foreach ($services as $service_id => $service_class) {
-            $options[$service_id] = $service_class::getServiceName();
+            $options[$service_id] = $service_class::getDisplayName();
         }
 
         return $options;
