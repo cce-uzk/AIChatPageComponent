@@ -251,6 +251,7 @@ stat_chat_uploads#:#Files uploaded in the chat (all users)
 rag_upload_processing#:#Being processed for the document search …
 rag_upload_completed#:#Ready for the document search
 rag_upload_failed#:#Processing failed, a new attempt follows
+rag_upload_rejected#:#Could not be processed for the document search; remove the file and upload it again if necessary
 rag_upload_empty#:#No searchable text found
 rag_upload_scanned#:#Ready (scanned document: text recognition may be incomplete)
 stat_is_online#:#Online

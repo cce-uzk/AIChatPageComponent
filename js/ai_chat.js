@@ -387,6 +387,7 @@ class AIChatPageComponent {
         processing: container.dataset.ragUploadProcessing || 'Being processed for the document search …',
         completed: container.dataset.ragUploadCompleted || 'Ready for the document search',
         failed: container.dataset.ragUploadFailed || 'Processing failed, a new attempt follows',
+        rejected: container.dataset.ragUploadRejected || 'Could not be processed for the document search',
         empty: container.dataset.ragUploadEmpty || 'No searchable text found',
         scanned: container.dataset.ragUploadScanned || 'Ready (scanned document: text recognition may be incomplete)',
       },

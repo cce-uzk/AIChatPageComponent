@@ -232,4 +232,29 @@ class RAGStatusTest extends TestCase
         $this->assertTrue(AIChatPageComponentRAGStatus::hasText("a;b\n1;2\n", 'csv'));
         $this->assertFalse(AIChatPageComponentRAGStatus::hasText(" \n\t", 'txt'));
     }
+
+    public function testGivenUpFileIsShownAsRejected(): void
+    {
+        // Failed without a time of the next attempt: the file is not uploaded again
+        $this->assertSame('rejected', AIChatPageComponentRAGStatus::displayState('failed', null));
+        $this->assertSame('rejected', AIChatPageComponentRAGStatus::displayState('failed', ''));
+        $this->assertSame('failed', AIChatPageComponentRAGStatus::displayState('failed', '2026-01-01 00:00:00'));
+
+        // Other states are shown as stored
+        $this->assertSame('processing', AIChatPageComponentRAGStatus::displayState('processing', null));
+        $this->assertSame('completed', AIChatPageComponentRAGStatus::displayState('completed', null));
+        $this->assertNull(AIChatPageComponentRAGStatus::displayState(null, null));
+    }
+
+    public function testChatUploadsAreOnlySearchedForTheirOwner(): void
+    {
+        // Anonymous users: background files only
+        $this->assertSame('background_file = 1', \ai\AIChatPageComponentLLM::ragCollectionOwnerCondition(null));
+
+        // Logged-in users: background files and their own uploads, not those of other users
+        $this->assertSame(
+            '(background_file = 1 OR user_id = 42)',
+            \ai\AIChatPageComponentLLM::ragCollectionOwnerCondition(42)
+        );
+    }
 }

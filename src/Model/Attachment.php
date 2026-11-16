@@ -52,6 +52,9 @@ class Attachment
     /** @var string|null Processing state in the RAG service, written by AIChatPageComponentRAGStatus */
     protected ?string $rag_status = null;
 
+    /** @var string|null Time of the next upload after a failure; null if the file is not uploaded again */
+    protected ?string $rag_retry_at = null;
+
     protected ?string $timestamp = null;
 
     protected bool $background_file = false;
@@ -97,6 +100,7 @@ class Attachment
             $this->rag_remote_file_id = $row['rag_remote_file_id'] ?? null;
             $this->rag_uploaded_at = $row['rag_uploaded_at'] ?? null;
             $this->rag_status = $row['rag_status'] ?? null;
+            $this->rag_retry_at = $row['rag_retry_at'] ?? null;
             $this->timestamp = $row['timestamp'];
             $this->background_file = (bool) ($row['background_file'] ?? 0);
         }
@@ -1017,7 +1021,7 @@ class Attachment
             'thumbnail_url' => $preview_url,
             'src' => $src_url,
             'data_url' => $data_url,
-            'rag_status' => $this->rag_status
+            'rag_status' => \ai\AIChatPageComponentRAGStatus::displayState($this->rag_status, $this->rag_retry_at)
         ];
     }
 

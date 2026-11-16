@@ -251,6 +251,7 @@ stat_chat_uploads#:#Im Chat hochgeladene Dateien (alle Nutzer)
 rag_upload_processing#:#Wird für die Dokumentensuche verarbeitet …
 rag_upload_completed#:#Bereit für die Dokumentensuche
 rag_upload_failed#:#Verarbeitung fehlgeschlagen, ein neuer Versuch folgt
+rag_upload_rejected#:#Konnte nicht für die Dokumentensuche verarbeitet werden; Datei bei Bedarf entfernen und erneut hochladen
 rag_upload_empty#:#Kein durchsuchbarer Text gefunden
 rag_upload_scanned#:#Bereit (gescanntes Dokument: die Texterkennung kann unvollständig sein)
 stat_is_online#:#Online

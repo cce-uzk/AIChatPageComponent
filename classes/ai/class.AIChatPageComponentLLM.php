@@ -575,7 +575,7 @@ abstract class AIChatPageComponentLLM
                         $this->logger->info("Synced chat attachments to RAG", $sync_stats);
                     }
                 }
-                $collection_ids = $this->getAllRAGCollectionIds($chat_config);
+                $collection_ids = $this->getAllRAGCollectionIds($chat_config, $user_id);
                 $use_rag = $this->isRagEnabledForChat($chat_config) && !empty($collection_ids);
             }
 
@@ -1045,9 +1045,28 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * @return string[] Collections of all files of the chat in the RAG
+     * SQL condition for the attachments whose collections a request may search, see getAllRAGCollectionIds()
+     *
+     * @param int|null $user_id User who sent the request; null for anonymous users
      */
-    protected function getAllRAGCollectionIds(ChatConfig $chat_config): array
+    public static function ragCollectionOwnerCondition(?int $user_id): string
+    {
+        return $user_id === null
+            ? "background_file = 1"
+            : "(background_file = 1 OR user_id = " . $user_id . ")";
+    }
+
+    /**
+     * Collections the retrieval may search for a request
+     *
+     * Background files belong to the chat and are searched for everybody. Files uploaded
+     * in the chat belong to the user who uploaded them: they are only searched for
+     * requests of that user, never for other users of the chat or anonymous users.
+     *
+     * @param int|null $user_id User who sent the request; null for anonymous users (background files only)
+     * @return string[] Collections of the background files of the chat and of the uploads of the user
+     */
+    protected function getAllRAGCollectionIds(ChatConfig $chat_config, ?int $user_id = null): array
     {
         global $DIC;
         $db = $DIC->database();
@@ -1057,7 +1076,8 @@ abstract class AIChatPageComponentLLM
         try {
             $query = "SELECT DISTINCT rag_collection_id FROM pcaic_attachments " .
                      "WHERE chat_id = " . $db->quote($chat_config->getChatId(), 'text') . " " .
-                     "AND rag_collection_id IS NOT NULL";
+                     "AND rag_collection_id IS NOT NULL " .
+                     "AND " . self::ragCollectionOwnerCondition($user_id);
 
             $result = $db->query($query);
             while ($row = $db->fetchAssoc($result)) {
@@ -1360,7 +1380,7 @@ abstract class AIChatPageComponentLLM
             }
 
             $this->clearLastResponseData();
-            $collection_ids = $this->getAllRAGCollectionIds($chat_config);
+            $collection_ids = $this->getAllRAGCollectionIds($chat_config, $session !== null ? $session->getUserId() : null);
             if (empty($collection_ids)) {
                 return $this->sendMessagesArray($messages, $context_resources);
             }

@@ -41,6 +41,8 @@ class AIChatPageComponentRAGStatus
     public const EMPTY = 'empty';
     /** Processed and usable, but the file is a scan: the content depends on the text recognition of the RAG */
     public const SCANNED = 'scanned';
+    /** Shown to users only, never stored: failed and not uploaded again (rejected by the RAG or failed too often) */
+    public const REJECTED = 'rejected';
 
     /** @var int Longest interval between two status checks of a chat, in seconds */
     public const CHECK_INTERVAL = 60;
@@ -278,6 +280,16 @@ class AIChatPageComponentRAGStatus
             $title = '';
         }
         return trim(preg_replace('/\.[A-Za-z0-9]+$/', '', (string) $title)) ?: 'document';
+    }
+
+    /**
+     * State shown to the user for a stored state
+     *
+     * A failed file without a time of the next attempt is not uploaded again, see markFailed().
+     */
+    public static function displayState(?string $status, ?string $retry_at): ?string
+    {
+        return $status === self::FAILED && ($retry_at === null || $retry_at === '') ? self::REJECTED : $status;
     }
 
     public static function markUploaded(int $attachment_id): void
@@ -560,7 +572,7 @@ class AIChatPageComponentRAGStatus
     {
         $db = self::db();
         $result = $db->query(
-            "SELECT id, rag_status FROM pcaic_attachments WHERE chat_id = " . $db->quote($chat_id, 'text')
+            "SELECT id, rag_status, rag_retry_at FROM pcaic_attachments WHERE chat_id = " . $db->quote($chat_id, 'text')
             . " AND user_id = " . $db->quote($user_id, 'integer')
             . " AND background_file = 0 AND rag_status IS NOT NULL"
             . " AND rag_status <> " . $db->quote(self::SKIPPED, 'text')
@@ -568,7 +580,7 @@ class AIChatPageComponentRAGStatus
 
         $states = [];
         while ($row = $db->fetchAssoc($result)) {
-            $states[(int) $row['id']] = (string) $row['rag_status'];
+            $states[(int) $row['id']] = (string) self::displayState((string) $row['rag_status'], $row['rag_retry_at'] ?? null);
         }
         return $states;
     }
