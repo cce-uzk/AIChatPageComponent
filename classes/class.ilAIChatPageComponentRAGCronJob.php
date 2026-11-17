@@ -123,6 +123,20 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
             }
         }
 
+        // Files whose type no longer belongs in the RAG are deleted there, skipped files whose type
+        // now belongs in the RAG are uploaded below; only after the file types changed
+        $removed = 0;
+        try {
+            $reconciled = AIChatPageComponentRAGStatus::reconcileFileTypes(
+                \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::forService(''),
+                $this->started_at + self::TIME_BUDGET
+            );
+            $removed = $reconciled['removed'] ?? 0;
+        } catch (\Exception $e) {
+            $errors++;
+            $logger->warning("Reconciling the RAG file types failed: " . $e->getMessage());
+        }
+
         // Background files whose new upload is due, or that were never uploaded (e.g. imported,
         // or RAG was enabled later); chats that do not use the RAG are skipped below
         $chat_ids = $this->fetchColumn(
@@ -190,8 +204,8 @@ class ilAIChatPageComponentRAGCronJob extends ilCronJob
             $logger->warning("Pending RAG deletions failed: " . $e->getMessage());
         }
 
-        $result->setStatus($checked + $uploaded + $errors > 0 ? ilCronJobResult::STATUS_OK : ilCronJobResult::STATUS_NO_ACTION);
-        $result->setMessage("Chats checked: $checked, files uploaded again: $uploaded, errors: $errors");
+        $result->setStatus($checked + $uploaded + $removed + $errors > 0 ? ilCronJobResult::STATUS_OK : ilCronJobResult::STATUS_NO_ACTION);
+        $result->setMessage("Chats checked: $checked, files uploaded again: $uploaded, files removed from the RAG: $removed, errors: $errors");
         return $result;
     }
 

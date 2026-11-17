@@ -48,7 +48,7 @@ class AIChatPageComponentRAG
     public const DEFAULT_API_URL = 'https://oski-rag.itcc.uni-koeln.de';
 
     /** @var string Default file types that are sent to the RAG */
-    public const DEFAULT_FILE_TYPES = 'txt,csv,pdf';
+    public const DEFAULT_FILE_TYPES = 'pdf,txt';
 
     /** @var int Default maximum number of chunks selected by the reranker */
     public const DEFAULT_TOP_K = 10;
@@ -171,7 +171,7 @@ class AIChatPageComponentRAG
         $inputs['rag_allowed_file_types'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_rag_allowed_file_types'),
             $plugin->txt('config_rag_allowed_file_types_info')
-        )->withMaxLength(500)->withValue(implode(',', self::getFileTypes()));
+        )->withMaxLength(500)->withValue(implode(',', \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::getConfiguredRagTypes()));
 
         $top_k = \platform\AIChatPageComponentConfig::get('rag_top_k');
         $inputs['rag_top_k'] = $ui_factory->input()->field()->numeric(
@@ -201,8 +201,37 @@ class AIChatPageComponentRAG
                 $value = max(1, (int) ($value ?: self::DEFAULT_TOP_K));
             }
 
+            if ($key === 'rag_allowed_file_types') {
+                $value = implode(',', \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::normalize((string) $value));
+            }
+
             \platform\AIChatPageComponentConfig::set($key, $value);
         }
+    }
+
+    /**
+     * Keep the file types of a list that are supported; the others are reported on screen
+     *
+     * @param string[] $types
+     * @param string[] $supported
+     * @return string Comma-separated list of the supported types
+     */
+    public static function keepSupportedFileTypes(array $types, array $supported): string
+    {
+        $dropped = array_values(array_diff($types, $supported));
+        if ($dropped !== []) {
+            try {
+                global $DIC;
+                $plugin = \ilAIChatPageComponentPlugin::getInstance();
+                $DIC->ui()->mainTemplate()->setOnScreenMessage('info', sprintf(
+                    $plugin->txt('config_file_types_unsupported'),
+                    implode(', ', $dropped),
+                    implode(', ', $supported)
+                ), true);
+            } catch (\Throwable $e) {
+            }
+        }
+        return implode(',', array_values(array_intersect($types, $supported)));
     }
 
     public static function getDefaultConfiguration(): array

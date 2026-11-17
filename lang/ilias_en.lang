@@ -155,6 +155,8 @@ config_streaming#:#Enable Streaming
 config_streaming_info#:#When enabled, AI responses are streamed in real-time as they are generated
 config_file_handling#:#Enable File Handling
 config_file_handling_info#:#When enabled, the AI service can process uploaded files and attachments
+config_service_file_types_info#:#File extensions sent to this AI service directly, comma-separated. Supported: %s. Only extensions that ILIAS allows apply (Administration > Files). These types can be uploaded, with RAG also the types of the document search. The list also applies to files uploaded before.
+config_file_types_unsupported#:#Unsupported file extensions were removed: %s. Supported: %s.
 config_enable_rag#:#Allow RAG for this service
 config_enable_rag_info#:#When enabled, chats using this AI service can use the RAG service ("RAG" tab). Matching files are uploaded to RAG collections and relevant excerpts are retrieved per request. When disabled, files are embedded as Base64 in each request (multimodal mode).
 config_rag_application_id#:#Application ID
@@ -162,7 +164,7 @@ config_rag_application_id_info#:#Application identifier for RAG file uploads (e.
 config_rag_instance_id#:#Instance ID
 config_rag_instance_id_info#:#Instance identifier for RAG file uploads (e.g., ilias9)
 config_rag_allowed_file_types#:#RAG Allowed File Types
-config_rag_allowed_file_types_info#:#File extensions accepted for RAG mode uploads (comma-separated, e.g., txt,csv,pdf)
+config_rag_allowed_file_types_info#:#File extensions sent to the document search (RAG), comma-separated. Enter only extensions the RAG service accepts; it rejects others. Only extensions that ILIAS allows apply (Administration > Files). With RAG, files of these types go to the document search only, not also directly to the AI service.
 config_enable_rag_external_info#:#When enabled, chats using this AI service can use the RAG service ("RAG" tab). Privacy notice: the retrieved document excerpts are sent to this external service. Only enable this if it is permitted for the content.
 tab_rag_config#:#RAG
 config_rag_title#:#RAG Service
@@ -251,6 +253,7 @@ stat_chat_uploads#:#Files uploaded in the chat (all users)
 rag_upload_processing#:#Being processed for the document search …
 rag_upload_completed#:#Ready for the document search
 rag_upload_failed#:#Processing failed, a new attempt follows
+background_files_type_rejected#:#Not saved, file type not allowed: %s. Allowed: %s.
 rag_upload_rejected#:#Could not be processed for the document search; remove the file and upload it again if necessary
 rag_upload_empty#:#No searchable text found
 rag_upload_scanned#:#Ready (scanned document: text recognition may be incomplete)

@@ -179,11 +179,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
             $plugin->txt('config_streaming_info')
         )->withValue($streaming_enabled === '1');
 
-        $file_handling_enabled = \platform\AIChatPageComponentConfig::get('openai_file_handling_enabled') ?? '1';
-        $inputs['openai_file_handling_enabled'] = $ui_factory->input()->field()->checkbox(
-            $plugin->txt('config_file_handling'),
-            $plugin->txt('config_file_handling_info')
-        )->withValue($file_handling_enabled === '1');
+        $inputs['openai_file_handling_enabled'] = self::buildFileHandlingInput('openai');
 
         // Off by default: retrieved document passages are sent to OpenAI
         $rag_enabled = \platform\AIChatPageComponentConfig::get('openai_enable_rag') ?? '0';
@@ -197,6 +193,7 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
 
     public function saveConfiguration(array $form_data): void
     {
+        $form_data = self::flattenFileHandlingInput($form_data, 'openai');
         foreach ($form_data as $key => $value) {
             if ($value instanceof \ILIAS\Data\Password) {
                 $value = $value->toString();
@@ -330,17 +327,6 @@ class AIChatPageComponentOpenAI extends AIChatPageComponentLLM
         ];
     }
 
-    /**
-     * In RAG mode, RAG file types go to the RAG service, all other types are sent as images or text
-     */
-    public function getAllowedFileTypes(bool $rag_enabled): array
-    {
-        $multimodal = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'csv'];
-        if ($rag_enabled) {
-            return array_values(array_unique(array_merge($this->getRagFileTypes(), $multimodal)));
-        }
-        return $multimodal;
-    }
 
     public function sendMessagesArray(array $messages, ?array $context_resources = null): string
     {

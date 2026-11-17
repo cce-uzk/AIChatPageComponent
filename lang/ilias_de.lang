@@ -155,6 +155,8 @@ config_streaming#:#Streaming aktivieren
 config_streaming_info#:#Wenn aktiviert, werden AI-Antworten in Echtzeit während der Generierung gestreamt
 config_file_handling#:#Dateiverarbeitung aktivieren
 config_file_handling_info#:#Wenn aktiviert, kann der AI-Service hochgeladene Dateien und Anhänge verarbeiten
+config_service_file_types_info#:#Dateiendungen, die direkt an diesen KI-Service gehen (kommagetrennt). Unterstützt: %s. Es gelten nur Endungen, die auch in ILIAS erlaubt sind (Administration > Dateien). Hochgeladen werden können diese Typen und bei aktivem RAG zusätzlich die Typen der Dokumentensuche. Die Liste gilt auch für bereits hochgeladene Dateien.
+config_file_types_unsupported#:#Nicht unterstützte Dateiendungen wurden entfernt: %s. Unterstützt: %s.
 config_enable_rag#:#RAG für diesen Dienst erlauben
 config_enable_rag_info#:#Wenn aktiviert, können Chats mit diesem KI-Dienst den RAG-Dienst (Tab „RAG“) nutzen. Passende Dateien werden in RAG-Collections hochgeladen, relevante Textstellen werden pro Anfrage gesucht. Wenn deaktiviert, werden Dateien als Base64 in jeden Request eingebettet (Multimodal-Modus).
 config_rag_application_id#:#Anwendungs-ID
@@ -162,7 +164,7 @@ config_rag_application_id_info#:#Anwendungskennung für RAG-Datei-Uploads (z.B. 
 config_rag_instance_id#:#Instanz-ID
 config_rag_instance_id_info#:#Instanzkennung für RAG-Datei-Uploads (z.B. ilias9)
 config_rag_allowed_file_types#:#Erlaubte RAG-Dateitypen
-config_rag_allowed_file_types_info#:#Dateierweiterungen für RAG-Modus-Uploads (kommagetrennt, z.B. txt,csv,pdf)
+config_rag_allowed_file_types_info#:#Dateiendungen, die an die Dokumentensuche (RAG) gehen (kommagetrennt). Nur Endungen eintragen, die der RAG-Dienst annimmt; andere lehnt er ab. Es gelten nur Endungen, die auch in ILIAS erlaubt sind (Administration > Dateien). Dateien dieser Typen gehen bei aktivem RAG nur an die Dokumentensuche, nicht zusätzlich direkt an den KI-Service.
 config_enable_rag_external_info#:#Wenn aktiviert, können Chats mit diesem KI-Dienst den RAG-Dienst (Tab „RAG“) nutzen. Achtung Datenschutz: Die gefundenen Textstellen aus den Dokumenten werden an diesen externen Dienst gesendet. Nur aktivieren, wenn dies für die Inhalte zulässig ist.
 tab_rag_config#:#RAG
 config_rag_title#:#RAG-Dienst
@@ -251,6 +253,7 @@ stat_chat_uploads#:#Im Chat hochgeladene Dateien (alle Nutzer)
 rag_upload_processing#:#Wird für die Dokumentensuche verarbeitet …
 rag_upload_completed#:#Bereit für die Dokumentensuche
 rag_upload_failed#:#Verarbeitung fehlgeschlagen, ein neuer Versuch folgt
+background_files_type_rejected#:#Nicht gespeichert, Dateityp nicht erlaubt: %s. Erlaubt: %s.
 rag_upload_rejected#:#Konnte nicht für die Dokumentensuche verarbeitet werden; Datei bei Bedarf entfernen und erneut hochladen
 rag_upload_empty#:#Kein durchsuchbarer Text gefunden
 rag_upload_scanned#:#Bereit (gescanntes Dokument: die Texterkennung kann unvollständig sein)

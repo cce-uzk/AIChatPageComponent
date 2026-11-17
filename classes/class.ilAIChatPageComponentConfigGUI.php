@@ -377,8 +377,8 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
     }
 
     /**
-     * Global file handling switch with allowed file types and separate switches for
-     * background files and chat uploads; file handling per service is set in the service tabs
+     * Global file handling switch with separate switches for background files and chat uploads;
+     * file handling and the allowed file types per service are set in the service tabs
      */
     private function buildFileUploadRestrictionsInputs(): array
     {
@@ -388,20 +388,7 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         $enable_file_handling = \platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1';
         $file_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions') ?? [];
 
-        $default_file_types = \platform\AIChatPageComponentConfig::get('default_allowed_file_types');
-        $default_types_string = is_array($default_file_types)
-            ? implode(',', $default_file_types)
-            : 'txt,md,pdf,csv,png,jpg,jpeg,webp,gif';
-
-        $current_types = $file_restrictions['allowed_file_types'] ?? $default_file_types;
-        $current_types_string = is_array($current_types) ? implode(',', $current_types) : $default_types_string;
-
         $sub_inputs = [];
-
-        $sub_inputs['allowed_file_types'] = $ui_factory->input()->field()->text(
-            $this->plugin->txt('config_allowed_file_types'),
-            $this->plugin->txt('config_allowed_file_types_info')
-        )->withMaxLength(500)->withValue($current_types_string);
 
         $sub_inputs['allow_background_files'] = $ui_factory->input()->field()->checkbox(
             $this->plugin->txt('config_allow_background_files'),
@@ -420,11 +407,6 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
                 }
 
                 $restrictions = ['enabled' => true];
-
-                if (isset($vs['allowed_file_types']) && !empty($vs['allowed_file_types'])) {
-                    $allowed_types = array_map('trim', explode(',', $vs['allowed_file_types']));
-                    $restrictions['allowed_file_types'] = array_filter($allowed_types);
-                }
 
                 if (isset($vs['allow_background_files'])) {
                     $restrictions['allow_background_files'] = $vs['allow_background_files'];
@@ -446,7 +428,6 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
         if ($enable_file_handling === '1') {
             $current_values = [
-                'allowed_file_types' => $current_types_string,
                 'allow_background_files' => $file_restrictions['allow_background_files'] ?? true,
                 'allow_chat_uploads' => $file_restrictions['allow_chat_uploads'] ?? true
             ];
@@ -569,12 +550,23 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
 
                 $is_enabled = is_array($file_restrictions_value) && ($file_restrictions_value['enabled'] ?? false);
 
+                // The former list of allowed file types is kept: services without an own list still use it
+                $previous_restrictions = \platform\AIChatPageComponentConfig::get('file_upload_restrictions');
+                if (is_array($file_restrictions_value) && is_array($previous_restrictions)
+                    && !empty($previous_restrictions['allowed_file_types'])) {
+                    $file_restrictions_value['allowed_file_types'] = $previous_restrictions['allowed_file_types'];
+                }
+
                 if ($is_enabled) {
                     \platform\AIChatPageComponentConfig::set('enable_file_handling', '1');
                     \platform\AIChatPageComponentConfig::set('file_upload_restrictions', $file_restrictions_value);
                 } else {
                     \platform\AIChatPageComponentConfig::set('enable_file_handling', '0');
-                    \platform\AIChatPageComponentConfig::set('file_upload_restrictions', ['enabled' => false]);
+                    $disabled_value = ['enabled' => false];
+                    if (!empty($file_restrictions_value['allowed_file_types'])) {
+                        $disabled_value['allowed_file_types'] = $file_restrictions_value['allowed_file_types'];
+                    }
+                    \platform\AIChatPageComponentConfig::set('file_upload_restrictions', $disabled_value);
                 }
 
                 \platform\AIChatPageComponentConfig::set(

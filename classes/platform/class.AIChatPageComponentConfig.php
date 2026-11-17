@@ -82,7 +82,7 @@ class AIChatPageComponentConfig
             'rag_client_key' => '',
             'rag_application_id' => 'ILIAS',
             'rag_instance_id' => 'ilias9',
-            'rag_allowed_file_types' => 'txt,csv,pdf',
+            'rag_allowed_file_types' => 'pdf,txt',
             'rag_top_k' => 10
         ];
 

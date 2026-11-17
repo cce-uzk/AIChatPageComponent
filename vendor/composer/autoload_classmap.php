@@ -15,6 +15,7 @@ return array(
     'ILIAS\\Plugin\\pcaic\\Model\\ChatSession' => $baseDir . '/src/Model/ChatSession.php',
     'ILIAS\\Plugin\\pcaic\\Service\\ImageOptimizer' => $baseDir . '/src/Service/ImageOptimizer.php',
     'ILIAS\\Plugin\\pcaic\\Storage\\ResourceStakeholder' => $baseDir . '/src/Storage/ResourceStakeholder.php',
+    'ILIAS\\Plugin\\pcaic\\Validation\\FileTypePolicy' => $baseDir . '/src/Validation/FileTypePolicy.php',
     'ILIAS\\Plugin\\pcaic\\Validation\\FileUploadValidator' => $baseDir . '/src/Validation/FileUploadValidator.php',
     'ai\\AIChatPageComponentLLM' => $baseDir . '/classes/ai/class.AIChatPageComponentLLM.php',
     'ai\\AIChatPageComponentLLMRegistry' => $baseDir . '/classes/ai/class.AIChatPageComponentLLMRegistry.php',

@@ -120,7 +120,8 @@ class RAGServiceTest extends TestCase
 
     public function testFileTypesDefaultAndConfigured(): void
     {
-        $this->assertSame(['txt', 'csv', 'pdf'], AIChatPageComponentRAG::getFileTypes());
+        // csv is not accepted by the RAG service
+        $this->assertSame(['pdf', 'txt'], AIChatPageComponentRAG::getFileTypes());
 
         AIChatPageComponentConfig::set('rag_allowed_file_types', ' PDF, txt ,,');
         $this->assertSame(['pdf', 'txt'], AIChatPageComponentRAG::getFileTypes());

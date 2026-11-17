@@ -455,8 +455,9 @@ try {
                 $suffix = strtolower($revision->getInformation()->getSuffix());
 
                 if ($enable_rag) {
-                    $rag_types = $llm->getRagFileTypes();
-                    $is_rag_type = in_array($suffix, $rag_types, true);
+                    // Same rule as for every later request: file types of the RAG go to the RAG only
+                    $is_rag_type = $llm->getFileTypePolicy()->target($suffix, true)
+                        === \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_RAG;
 
                     if ($is_rag_type) {
                         // RAG file type: stored in the RAG, not sent as image

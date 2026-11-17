@@ -19,6 +19,7 @@ use ILIAS\Plugin\pcaic\Model\ChatConfig;
 use ILIAS\Plugin\pcaic\Model\ChatSession;
 use ILIAS\Plugin\pcaic\Model\ChatMessage;
 use ILIAS\Plugin\pcaic\Model\Attachment;
+use ILIAS\Plugin\pcaic\Validation\FileTypePolicy;
 use platform\AIChatPageComponentException;
 
 require_once __DIR__ . '/class.AIChatPageComponentRAG.php';
@@ -84,6 +85,9 @@ abstract class AIChatPageComponentLLM
     protected array $omitted_images = [];
     // Background files of the chat are not (yet) usable in the RAG
     protected bool $rag_incomplete = false;
+
+    /** @var array Images and PDF pages of chat files that go to the AI service directly, collected in RAG mode */
+    protected array $chat_file_resources = [];
     // Receives the sources of a streamed RAG answer before the answer is generated
     protected ?\Closure $sources_listener = null;
 
@@ -167,6 +171,56 @@ abstract class AIChatPageComponentLLM
     /**
      * Checkbox list input for the models offered to editors
      */
+    /**
+     * Switch for the file handling of a service, with the file types that may be sent to the service directly
+     */
+    protected static function buildFileHandlingInput(string $service_id): \ILIAS\UI\Component\Input\Field\OptionalGroup
+    {
+        global $DIC;
+        $ui_factory = $DIC->ui()->factory();
+        $plugin = \ilAIChatPageComponentPlugin::getInstance();
+
+        $enabled = (\platform\AIChatPageComponentConfig::get($service_id . '_file_handling_enabled') ?? '1') === '1';
+        $types_key = $service_id . '_allowed_file_types';
+
+        $group = $ui_factory->input()->field()->optionalGroup(
+            [
+                $types_key => $ui_factory->input()->field()->text(
+                    $plugin->txt('config_allowed_file_types'),
+                    sprintf($plugin->txt('config_service_file_types_info'), implode(', ', FileTypePolicy::DIRECT_SUPPORTED))
+                )->withMaxLength(500)
+            ],
+            $plugin->txt('config_file_handling'),
+            $plugin->txt('config_file_handling_info')
+        );
+
+        return $group->withValue($enabled
+            ? [$types_key => implode(',', FileTypePolicy::getServiceTypes($service_id))]
+            : null);
+    }
+
+    /**
+     * Form data of buildFileHandlingInput() as settings: the switch as '1'/'0' and the list of file types
+     */
+    protected static function flattenFileHandlingInput(array $form_data, string $service_id): array
+    {
+        $key = $service_id . '_file_handling_enabled';
+        if (!array_key_exists($key, $form_data) || is_bool($form_data[$key])) {
+            return $form_data;
+        }
+
+        $group = $form_data[$key];
+        $form_data[$key] = is_array($group) ? '1' : '0';
+        if (is_array($group)) {
+            $types_key = $service_id . '_allowed_file_types';
+            $form_data[$types_key] = AIChatPageComponentRAG::keepSupportedFileTypes(
+                FileTypePolicy::normalize((string) ($group[$types_key] ?? '')),
+                FileTypePolicy::DIRECT_SUPPORTED
+            );
+        }
+        return $form_data;
+    }
+
     protected static function buildAvailableModelsInput(array $model_options): \ILIAS\UI\Component\Input\Field\MultiSelect
     {
         global $DIC;
@@ -579,9 +633,13 @@ abstract class AIChatPageComponentLLM
                 $use_rag = $this->isRagEnabledForChat($chat_config) && !empty($collection_ids);
             }
 
+            // Decides where each file goes (see FileTypePolicy); independent of whether the RAG
+            // has processed any file yet, so that RAG file types are never also sent directly
+            $rag_active = $file_handling_enabled && $this->isRagEnabledForChat($chat_config);
+
             $context_resources = [];
             if ($file_handling_enabled) {
-                $context_resources = $this->processBackgroundFiles($chat_config, $use_rag);
+                $context_resources = $this->processBackgroundFiles($chat_config, $rag_active);
             } else {
                 $this->logger->debug("File handling disabled - skipping background files processing");
             }
@@ -598,7 +656,9 @@ abstract class AIChatPageComponentLLM
                 }
             }
 
-            $ai_messages = $this->processChatMessages($session, $recent_limit, $use_rag, $file_handling_enabled);
+            $ai_messages = $this->processChatMessages($session, $recent_limit, $use_rag, $file_handling_enabled, $rag_active);
+            // In RAG mode the messages contain text only: images and PDF pages of chat files follow as context
+            $context_resources = array_merge($context_resources, $this->chat_file_resources);
             $this->addOmittedImagesNote($ai_messages);
 
             $this->clearLastResponseData();
@@ -689,7 +749,10 @@ abstract class AIChatPageComponentLLM
 
             $context_resources = [];
             if ($file_handling_enabled) {
-                $context_resources = $this->processBackgroundFiles($chat_config, $use_rag);
+                $context_resources = $this->processBackgroundFiles(
+                    $chat_config,
+                    $this->isRagEnabledForChat($chat_config)
+                );
             }
 
             if ($chat_config->isIncludePageContext()) {
@@ -792,12 +855,16 @@ abstract class AIChatPageComponentLLM
     /**
      * Background files as context resources
      *
-     * Text files are added as text, images as image; PDFs are converted to images
-     * without RAG and skipped in RAG mode, because they are stored in the RAG.
+     * Only files that go to the AI service directly (see FileTypePolicy) are added: text files
+     * as text, images as image, PDFs as page images. Files of the RAG file types are searched in
+     * the RAG instead, files of other types are not used.
+     *
+     * @param bool $rag_active RAG is enabled for the service and the chat
      */
-    protected function processBackgroundFiles(ChatConfig $chat_config, bool $rag_mode = false): array
+    protected function processBackgroundFiles(ChatConfig $chat_config, bool $rag_active = false): array
     {
         $context_resources = [];
+        $policy = $this->getFileTypePolicy();
 
         try {
             $background_files = $chat_config->getBackgroundFiles();
@@ -809,7 +876,7 @@ abstract class AIChatPageComponentLLM
 
             $this->logger->debug("Processing background files", [
                 'count' => count($background_files),
-                'rag_mode' => $rag_mode
+                'rag_active' => $rag_active
             ]);
 
             global $DIC;
@@ -830,7 +897,11 @@ abstract class AIChatPageComponentLLM
                     $suffix = strtolower($revision->getInformation()->getSuffix());
                     $mime_type = $revision->getInformation()->getMimeType();
 
-                    if (in_array($suffix, ['txt', 'csv'])) {
+                    if ($policy->target($suffix, $rag_active) !== FileTypePolicy::TARGET_DIRECT) {
+                        continue;
+                    }
+
+                    if (in_array($suffix, ['txt', 'csv', 'md'])) {
                         $stream = $irss->consume()->stream($identification);
                         $content = Attachment::toUtf8($stream->getStream()->getContents());
 
@@ -859,14 +930,6 @@ abstract class AIChatPageComponentLLM
                             ];
                         }
                     } elseif ($suffix === 'pdf') {
-                        if ($rag_mode) {
-                            $this->logger->debug("Skipping PDF flavour generation (RAG mode active)", [
-                                'file_id' => $file_id,
-                                'title' => $revision->getTitle()
-                            ]);
-                            continue;
-                        }
-
                         $attachment = new Attachment();
                         $attachment->setResourceId($file_id);
                         $attachment->setChatId($chat_config->getChatId());
@@ -909,9 +972,17 @@ abstract class AIChatPageComponentLLM
      * Recent session messages in the API message format, with images and PDF pages
      * of attachments unless RAG mode is active or file handling is disabled
      */
-    protected function processChatMessages(ChatSession $session, int $limit = 10, bool $rag_mode = false, bool $file_handling_enabled = true): array
-    {
+    protected function processChatMessages(
+        ChatSession $session,
+        int $limit = 10,
+        bool $rag_mode = false,
+        bool $file_handling_enabled = true,
+        ?bool $rag_active = null
+    ): array {
         $ai_messages = [];
+        $this->chat_file_resources = [];
+        $policy = $this->getFileTypePolicy();
+        $rag_active = $rag_active ?? $rag_mode;
 
         try {
             $recent_messages = $session->getRecentMessages($limit);
@@ -928,15 +999,24 @@ abstract class AIChatPageComponentLLM
                     continue;
                 }
 
-                // In RAG mode only text is sent: the RAG accepts string content only
+                // Files of the RAG file types are searched in the RAG, files of other types not allowed
+                // for the service are not used; also for files uploaded before a setting changed
+                $direct_attachments = array_values(array_filter(
+                    $attachments,
+                    fn(Attachment $attachment): bool =>
+                        $policy->target($attachment->getSuffix(), $rag_active) === FileTypePolicy::TARGET_DIRECT
+                ));
+
+                // In RAG mode only text is sent: the RAG accepts string content only. Images and
+                // PDF pages are passed as context resources (see $chat_file_resources).
                 if ($rag_mode) {
                     $ai_messages[] = [
                         'role' => $msg->getRole(),
-                        'content' => implode("\n\n", array_merge([$content], $this->getTextAttachmentParts($attachments)))
+                        'content' => implode("\n\n", array_merge([$content], $this->getTextAttachmentParts($direct_attachments)))
                     ];
+                    $this->addChatFileResources($direct_attachments);
                 } else {
-                    $separated = $this->separateAttachmentsByMode($attachments);
-                    $base64_attachments = $separated['base64'];
+                    $base64_attachments = $direct_attachments;
 
                     if (!empty($base64_attachments)) {
                         $multimodal_content = [];
@@ -1002,7 +1082,7 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * Content of the text attachments that are not stored in the RAG
+     * Content of the text attachments, one part per file (callers pass the files that go to the AI service directly)
      *
      * @param Attachment[] $attachments
      * @return string[] One part per file, headed by the file name
@@ -1011,7 +1091,7 @@ abstract class AIChatPageComponentLLM
     {
         $parts = [];
         foreach ($attachments as $attachment) {
-            if (!$attachment->isTextFile() || $attachment->isInRAG()) {
+            if (!$attachment->isTextFile()) {
                 continue;
             }
             $text = $attachment->getTextContent();
@@ -1023,25 +1103,46 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * @return array{rag: Attachment[], base64: Attachment[]}
+     * Images and PDF pages of chat files as context resources, for requests whose messages contain text only
+     *
+     * @param Attachment[] $attachments Files that go to the AI service directly
      */
-    protected function separateAttachmentsByMode(array $attachments): array
+    protected function addChatFileResources(array $attachments): void
     {
-        $rag_attachments = [];
-        $base64_attachments = [];
-
         foreach ($attachments as $attachment) {
-            if ($attachment->isInRAG()) {
-                $rag_attachments[] = $attachment;
-            } else {
-                $base64_attachments[] = $attachment;
+            try {
+                $title = (string) $attachment->getTitle();
+                if ($attachment->isImage()) {
+                    $data_url = $attachment->getDataUrl();
+                    if (is_string($data_url) && $data_url !== '' && $this->consumeImageDataBudget($data_url, $title)) {
+                        $this->chat_file_resources[] = [
+                            'kind' => 'image_file',
+                            'id' => 'chat-img-' . $attachment->getId(),
+                            'title' => $title,
+                            'mime_type' => $attachment->getMimeType(),
+                            'url' => $data_url
+                        ];
+                    }
+                } elseif ($attachment->isPdf()) {
+                    $pages = $attachment->getDataUrl();
+                    foreach (is_array($pages) ? $pages : [] as $index => $page_data_url) {
+                        if (!empty($page_data_url) && $this->consumeImageDataBudget($page_data_url, $title)) {
+                            $this->chat_file_resources[] = [
+                                'kind' => 'pdf_page',
+                                'id' => 'chat-pdf-' . $attachment->getId() . '-p' . ($index + 1),
+                                'title' => $title . ' (Page ' . ($index + 1) . ')',
+                                'mime_type' => 'image/png',
+                                'page_number' => $index + 1,
+                                'source_file' => $title,
+                                'url' => $page_data_url
+                            ];
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                $this->logger->warning("Chat file processing failed", ['error' => $e->getMessage()]);
             }
         }
-
-        return [
-            'rag' => $rag_attachments,
-            'base64' => $base64_attachments
-        ];
     }
 
     /**
@@ -1074,15 +1175,23 @@ abstract class AIChatPageComponentLLM
         $collection_ids = [];
 
         try {
-            $query = "SELECT DISTINCT rag_collection_id FROM pcaic_attachments " .
+            $query = "SELECT rag_collection_id, resource_id FROM pcaic_attachments " .
                      "WHERE chat_id = " . $db->quote($chat_config->getChatId(), 'text') . " " .
                      "AND rag_collection_id IS NOT NULL " .
                      "AND " . self::ragCollectionOwnerCondition($user_id);
 
+            // A collection is searched only while it holds a file of the RAG file types: files of
+            // other types are removed from the RAG by the cron job, until then they are not searched
+            // if they are the only files of their collection
+            $policy = $this->getFileTypePolicy();
             $result = $db->query($query);
             while ($row = $db->fetchAssoc($result)) {
-                if (!empty($row['rag_collection_id'])) {
-                    $collection_ids[] = $row['rag_collection_id'];
+                $collection_id = (string) ($row['rag_collection_id'] ?? '');
+                if ($collection_id === '' || in_array($collection_id, $collection_ids, true)) {
+                    continue;
+                }
+                if ($policy->isRagType(Attachment::suffixOfResource((string) $row['resource_id']))) {
+                    $collection_ids[] = $collection_id;
                 }
             }
         } catch (\Exception $e) {
@@ -1183,14 +1292,25 @@ abstract class AIChatPageComponentLLM
     /**
      * @return string[] Allowed file extensions
      */
-    abstract public function getAllowedFileTypes(bool $rag_enabled): array;
+    public function getAllowedFileTypes(bool $rag_enabled): array
+    {
+        return $this->getFileTypePolicy()->uploadTypes($rag_enabled);
+    }
+
+    /**
+     * Rule for the file types of this service, see FileTypePolicy
+     */
+    public function getFileTypePolicy(): FileTypePolicy
+    {
+        return FileTypePolicy::forService(static::getServiceId());
+    }
 
     /**
      * @return string[] File types uploaded to the RAG
      */
     public function getRagFileTypes(): array
     {
-        return $this->supportsRAG() ? AIChatPageComponentRAG::getFileTypes() : [];
+        return $this->supportsRAG() ? $this->getFileTypePolicy()->ragTypes() : [];
     }
 
     public function isFileTypeAllowed(string $extension, bool $rag_enabled): bool

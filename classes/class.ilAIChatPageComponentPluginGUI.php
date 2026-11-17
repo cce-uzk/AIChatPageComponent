@@ -1857,6 +1857,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             'ai_service' => $ai_service
         ]);
 
+        // File types: enforced here, the file input of the browser can be bypassed
+        $policy = $llm->getFileTypePolicy();
+        $irss = $DIC->resourceStorage();
+        $rejected_titles = [];
+
         // Background files only: files users uploaded in the chat but not sent yet have no message either
         $existing_query = "SELECT id, resource_id FROM pcaic_attachments " .
                          "WHERE chat_id = " . $db->quote($chat_id, 'text') . " " .
@@ -1901,6 +1906,28 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 continue;
             }
 
+            $target = \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_NONE;
+            try {
+                $identification = $irss->manage()->find($resource_id);
+                if ($identification !== null) {
+                    $revision = $irss->manage()->getCurrentRevision($identification);
+                    $target = $policy->target((string) $revision->getInformation()->getSuffix(), $enable_rag);
+                    if ($target === \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_NONE) {
+                        $rejected_titles[] = $revision->getTitle();
+                        $irss->manage()->remove($identification, new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder());
+                    }
+                }
+            } catch (\Exception $e) {
+                $this->logger->warning("File type check of background file failed", [
+                    'resource_id' => $resource_id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+            if ($target === \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_NONE) {
+                $this->logger->info("Background file not saved, file type not allowed", ['resource_id' => $resource_id]);
+                continue;
+            }
+
             try {
                 $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment();
                 $attachment->setMessageId(null);
@@ -1916,7 +1943,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     'enable_rag' => $enable_rag
                 ]);
 
-                if ($enable_rag) {
+                // Only file types of the RAG go to the RAG, the others are sent to the AI service directly
+                if ($enable_rag && $target === \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_RAG) {
                     $this->logger->debug("Calling uploadFileToRAG", ['resource_id' => $resource_id]);
                     $this->uploadFileToRAG($attachment, $chat_id, $chat_config);
                     $this->logger->debug("uploadFileToRAG completed", [
@@ -1929,6 +1957,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $attachment->save();
                 if ($attachment->isInRAG()) {
                     \ai\AIChatPageComponentRAGStatus::markUploaded((int) $attachment->getId());
+                } elseif ($target !== \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_RAG) {
+                    if ($enable_rag) {
+                        // Not a file type of the RAG: no upload is attempted
+                        \ai\AIChatPageComponentRAGStatus::markSkipped((int) $attachment->getId());
+                    }
                 } elseif ($enable_rag) {
                     // Upload failed: the cron job or the next chat request uploads it again
                     \ai\AIChatPageComponentRAGStatus::markPending((int) $attachment->getId());
@@ -1948,6 +1981,14 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                     'error' => $e->getMessage()
                 ]);
             }
+        }
+
+        if ($rejected_titles !== []) {
+            $this->tpl->setOnScreenMessage('info', sprintf(
+                $this->plugin->txt('background_files_type_rejected'),
+                implode(', ', $rejected_titles),
+                implode(', ', array_map('strtoupper', $policy->uploadTypes($enable_rag)))
+            ), true);
         }
     }
 
