@@ -254,6 +254,7 @@ rag_upload_processing#:#Being processed for the document search …
 rag_upload_completed#:#Ready for the document search
 rag_upload_failed#:#Processing failed, a new attempt follows
 background_files_type_rejected#:#Not saved, file type not allowed: %s. Allowed: %s.
+rag_image_only_query#:#Please look at the attached image.
 rag_upload_rejected#:#Could not be processed for the document search; remove the file and upload it again if necessary
 rag_upload_empty#:#No searchable text found
 rag_upload_scanned#:#Ready (scanned document: text recognition may be incomplete)

@@ -254,6 +254,7 @@ rag_upload_processing#:#Wird für die Dokumentensuche verarbeitet …
 rag_upload_completed#:#Bereit für die Dokumentensuche
 rag_upload_failed#:#Verarbeitung fehlgeschlagen, ein neuer Versuch folgt
 background_files_type_rejected#:#Nicht gespeichert, Dateityp nicht erlaubt: %s. Erlaubt: %s.
+rag_image_only_query#:#Bitte sieh dir das angehängte Bild an.
 rag_upload_rejected#:#Konnte nicht für die Dokumentensuche verarbeitet werden; Datei bei Bedarf entfernen und erneut hochladen
 rag_upload_empty#:#Kein durchsuchbarer Text gefunden
 rag_upload_scanned#:#Bereit (gescanntes Dokument: die Texterkennung kann unvollständig sein)
