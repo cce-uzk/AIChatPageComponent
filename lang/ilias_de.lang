@@ -306,3 +306,32 @@ show_sources_label#:#Quellen anzeigen
 show_sources_info#:#Wenn aktiviert, werden RAG-Quellenangaben für Nutzer angezeigt. Wenn deaktiviert, werden Quellen serverseitig herausgefiltert und Nutzer sehen nur die KI-Antwort.
 allow_source_downloads_label#:#Quellen-Download erlauben
 allow_source_downloads_info#:#Wenn aktiviert, können Nutzer die als Quellen zitierten Hintergrunddateien herunterladen. Erfordert aktive Option "Quellen anzeigen".
+tab_resources#:#Ressourcen
+resources_info#:#Ressourcen sind Inhalte, die der Chat zusätzlich zum Gespräch verwendet. Jede Ressource ist ein Abbild vom Zeitpunkt des Hinzufügens: Änderungen an der Quelle wirken erst nach „Aktualisieren“. Ausgeschlossene Ressourcen bleiben erhalten, werden aber nicht verwendet.
+resources_none#:#Dieser Chat hat noch keine Ressourcen.
+resources_add_files#:#Dateien hinzufügen
+resources_add_page_context#:#Seiteninhalt hinzufügen
+resources_files_byline#:#Jede Datei wird eine eigene Ressource. Erlaubte Dateitypen: %s
+resources_files_added#:#%s Ressource(n) hinzugefügt.
+resource_title#:#Titel
+resource_type#:#Art
+resource_snapshot#:#Stand
+resource_state#:#Verarbeitung
+resource_used#:#Verwendet
+resource_included#:#Ja
+resource_excluded#:#Nein
+resource_type_file#:#Datei
+resource_type_page_context#:#Seiteninhalt
+resource_state_direct#:#Direkt an die KI
+resource_state_waiting#:#Wartet auf Verarbeitung
+resource_action_include#:#Verwenden
+resource_action_exclude#:#Nicht verwenden
+resource_action_update#:#Aktualisieren
+resource_action_remove#:#Entfernen
+resource_msg_include#:#Die Ressource wird wieder verwendet.
+resource_msg_exclude#:#Die Ressource wird nicht mehr verwendet.
+resource_remove_confirm#:#Soll diese Ressource entfernt werden? Sie wird auch aus der Dokumentensuche gelöscht.
+resource_removed#:#Ressource entfernt.
+resource_page_context_title#:#Inhalt dieser Seite
+resource_page_context_saved#:#Abbild des Seiteninhalts gespeichert.
+resource_page_context_empty#:#Die Seite enthält keinen Text, der übernommen werden kann.

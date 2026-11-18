@@ -306,3 +306,32 @@ show_sources_label#:#Show Sources
 show_sources_info#:#If enabled, RAG citations are shown to users. If disabled, sources are stripped server-side and users see only the AI answer.
 allow_source_downloads_label#:#Allow Source Downloads
 allow_source_downloads_info#:#If enabled, users can download the background files cited as sources. Requires "Show Sources" to be active.
+tab_resources#:#Resources
+resources_info#:#Resources are contents the chat uses in addition to the conversation. Each resource is a snapshot from the time it was added: changes of its source take effect after "Update" only. Excluded resources are kept but not used.
+resources_none#:#This chat has no resources yet.
+resources_add_files#:#Add Files
+resources_add_page_context#:#Add Page Content
+resources_files_byline#:#Each file becomes a resource of its own. Allowed file types: %s
+resources_files_added#:#%s resource(s) added.
+resource_title#:#Title
+resource_type#:#Type
+resource_snapshot#:#Snapshot
+resource_state#:#Processing
+resource_used#:#Used
+resource_included#:#Yes
+resource_excluded#:#No
+resource_type_file#:#File
+resource_type_page_context#:#Page content
+resource_state_direct#:#Sent to the AI directly
+resource_state_waiting#:#Waiting for processing
+resource_action_include#:#Use
+resource_action_exclude#:#Do not use
+resource_action_update#:#Update
+resource_action_remove#:#Remove
+resource_msg_include#:#The resource is used again.
+resource_msg_exclude#:#The resource is no longer used.
+resource_remove_confirm#:#Remove this resource? It is also deleted from the document search.
+resource_removed#:#Resource removed.
+resource_page_context_title#:#Content of this page
+resource_page_context_saved#:#Snapshot of the page content saved.
+resource_page_context_empty#:#The page contains no text that could be taken.

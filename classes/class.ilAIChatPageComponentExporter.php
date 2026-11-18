@@ -147,7 +147,15 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
      */
     private function addBackgroundFiles(DOMDocument $xml, DOMElement $config_element, ChatConfig $chat_config): void
     {
-        $background_files = $chat_config->getBackgroundFiles();
+        // All resources, also excluded ones; the resource of each file is written with it
+        $background_files = [];
+        $resource_of_file = [];
+        foreach (\ILIAS\Plugin\pcaic\Model\ChatResource::getByChatId($chat_config->getChatId()) as $resource) {
+            foreach ($resource->getAttachments() as $attachment) {
+                $background_files[] = (string) $attachment->getResourceId();
+                $resource_of_file[(string) $attachment->getResourceId()] = $resource;
+            }
+        }
         if (empty($background_files)) {
             return;
         }
@@ -189,6 +197,13 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
             $file_element->setAttribute('description', $file_metadata['description']);
             if ($export_path) {
                 $file_element->setAttribute('original_path', $export_path);
+            }
+            $resource = $resource_of_file[$resource_id] ?? null;
+            if ($resource !== null) {
+                $file_element->setAttribute('resource_type', $resource->getType());
+                $file_element->setAttribute('resource_title', $resource->getTitle());
+                $file_element->setAttribute('resource_enabled', $resource->isEnabled() ? '1' : '0');
+                $file_element->setAttribute('resource_snapshot_at', (string) $resource->getSnapshotAt());
             }
             $files_element->appendChild($file_element);
         }

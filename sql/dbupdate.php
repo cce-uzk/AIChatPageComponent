@@ -1015,3 +1015,86 @@ if ($db->tableExists('pcaic_attachments') && !$db->tableColumnExists('pcaic_atta
     );
 }
 ?>
+<#17>
+<?php
+/**
+ * Step 17: Resources of a chat (v1.12.0)
+ *
+ * pcaic_resources: what a chat may use besides the conversation: uploaded files, the content of
+ * its page and, later, objects of the container. Each resource is a snapshot from the time it was
+ * added or updated, has its own collection in the RAG service and can be excluded.
+ *   type          file | page_context
+ *   enabled       1 = used for answers, 0 = kept but excluded
+ *   snapshot_at   time of the snapshot that is in use
+ *
+ * pcaic_attachments:
+ *   resource_ref  resource the file belongs to (background files); NULL for uploads in the chat
+ *
+ * Existing background files become one resource each. Their copies in the RAG shared the
+ * collection of the chat: they are queued for deletion and uploaded again into the collection
+ * of their resource by the next request or the cron job.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if (!$db->tableExists('pcaic_resources')) {
+    $db->createTable('pcaic_resources', [
+        'id' => ['type' => 'integer', 'length' => 4, 'notnull' => true],
+        'chat_id' => ['type' => 'text', 'length' => 255, 'notnull' => true],
+        'type' => ['type' => 'text', 'length' => 32, 'notnull' => true],
+        'title' => ['type' => 'text', 'length' => 255, 'notnull' => false],
+        'source_ref_id' => ['type' => 'integer', 'length' => 4, 'notnull' => false],
+        'enabled' => ['type' => 'integer', 'length' => 1, 'notnull' => true, 'default' => 1],
+        'snapshot_at' => ['type' => 'timestamp', 'notnull' => false],
+        'created_by' => ['type' => 'integer', 'length' => 4, 'notnull' => false],
+        'created_at' => ['type' => 'timestamp', 'notnull' => false],
+    ]);
+    $db->addPrimaryKey('pcaic_resources', ['id']);
+    $db->createSequence('pcaic_resources');
+    $db->addIndex('pcaic_resources', ['chat_id'], 'i1');
+}
+
+if ($db->tableExists('pcaic_attachments') && !$db->tableColumnExists('pcaic_attachments', 'resource_ref')) {
+    $db->addTableColumn('pcaic_attachments', 'resource_ref', ['type' => 'integer', 'length' => 4, 'notnull' => false]);
+    $db->addIndex('pcaic_attachments', ['resource_ref'], 'i5');
+}
+
+$result = $db->query(
+    "SELECT id, chat_id, user_id, timestamp, rag_remote_file_id FROM pcaic_attachments"
+    . " WHERE background_file = 1 AND resource_ref IS NULL"
+);
+$rows = [];
+while ($row = $db->fetchAssoc($result)) {
+    $rows[] = $row;
+}
+foreach ($rows as $row) {
+    $resource_id = $db->nextId('pcaic_resources');
+    $db->insert('pcaic_resources', [
+        'id' => ['integer', $resource_id],
+        'chat_id' => ['text', $row['chat_id']],
+        'type' => ['text', 'file'],
+        'enabled' => ['integer', 1],
+        'snapshot_at' => ['timestamp', $row['timestamp']],
+        'created_by' => ['integer', (int) $row['user_id']],
+        'created_at' => ['timestamp', $row['timestamp']],
+    ]);
+
+    if (!empty($row['rag_remote_file_id']) && $db->tableExists('pcaic_rag_deletions')) {
+        $db->insert('pcaic_rag_deletions', [
+            'id' => ['integer', $db->nextId('pcaic_rag_deletions')],
+            'remote_file_id' => ['text', $row['rag_remote_file_id']],
+            'entity_id' => ['text', $row['chat_id']],
+            'attempts' => ['integer', 0],
+            'next_try' => ['timestamp', date('Y-m-d H:i:s')],
+            'created_at' => ['timestamp', date('Y-m-d H:i:s')],
+        ]);
+    }
+
+    $db->manipulate(
+        "UPDATE pcaic_attachments SET resource_ref = " . $db->quote($resource_id, 'integer')
+        . ", rag_collection_id = NULL, rag_remote_file_id = NULL, rag_uploaded_at = NULL, rag_status = NULL,"
+        . " rag_status_error = NULL, rag_failed_count = 0, rag_processing_failures = 0, rag_retry_at = NULL"
+        . " WHERE id = " . $db->quote((int) $row['id'], 'integer')
+    );
+}
+?>

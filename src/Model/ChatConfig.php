@@ -449,7 +449,7 @@ class ChatConfig
     }
 
     /**
-     * @return string[] Resource IDs of the background files
+     * @return string[] Resource IDs of the background files of included resources
      */
     public function getBackgroundFiles(): array
     {
@@ -460,6 +460,7 @@ class ChatConfig
         $query = "SELECT resource_id FROM pcaic_attachments " .
                  "WHERE chat_id = " . $db->quote($this->chat_id, 'text') . " " .
                  "AND background_file = 1 " .
+                 "AND " . ChatResource::usableAttachmentCondition() . " " .
                  "ORDER BY timestamp ASC";
 
         $result = $db->query($query);

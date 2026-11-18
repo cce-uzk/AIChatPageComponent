@@ -19,6 +19,7 @@ use ILIAS\Plugin\pcaic\Model\ChatConfig;
 use ILIAS\Plugin\pcaic\Model\ChatSession;
 use ILIAS\Plugin\pcaic\Model\ChatMessage;
 use ILIAS\Plugin\pcaic\Model\Attachment;
+use ILIAS\Plugin\pcaic\Model\ChatResource;
 use ILIAS\Plugin\pcaic\Service\StreamKeepAlive;
 use ILIAS\Plugin\pcaic\Validation\FileTypePolicy;
 use platform\AIChatPageComponentException;
@@ -642,16 +643,17 @@ abstract class AIChatPageComponentLLM
                 $this->logger->debug("File handling disabled - skipping background files processing");
             }
 
-            if ($chat_config->isIncludePageContext()) {
-                $page_context = $this->getPageContext($chat_config);
-                if (!empty($page_context)) {
-                    $context_resources[] = [
-                        'kind' => 'page_context',
-                        'title' => 'Page Context',
-                        'content' => $page_context,
-                        'mime_type' => 'text/plain'
-                    ];
-                }
+            $page_context = $this->getPageContextForRequest(
+                $chat_config,
+                $file_handling_enabled && $this->isRagEnabledForChat($chat_config)
+            );
+            if ($page_context !== null) {
+                $context_resources[] = [
+                    'kind' => 'page_context',
+                    'title' => 'Page Context',
+                    'content' => $page_context,
+                    'mime_type' => 'text/plain'
+                ];
             }
 
             $ai_messages = $this->processChatMessages($session, $recent_limit, $rag_active, $file_handling_enabled);
@@ -751,16 +753,17 @@ abstract class AIChatPageComponentLLM
                 );
             }
 
-            if ($chat_config->isIncludePageContext()) {
-                $page_context = $this->getPageContext($chat_config);
-                if (!empty($page_context)) {
-                    $context_resources[] = [
-                        'kind' => 'page_context',
-                        'title' => 'Page Context',
-                        'content' => $page_context,
-                        'mime_type' => 'text/plain'
-                    ];
-                }
+            $page_context = $this->getPageContextForRequest(
+                $chat_config,
+                $file_handling_enabled && $this->isRagEnabledForChat($chat_config)
+            );
+            if ($page_context !== null) {
+                $context_resources[] = [
+                    'kind' => 'page_context',
+                    'title' => 'Page Context',
+                    'content' => $page_context,
+                    'mime_type' => 'text/plain'
+                ];
             }
 
             // History from the frontend, limited like the stored history
@@ -878,7 +881,16 @@ abstract class AIChatPageComponentLLM
             global $DIC;
             $irss = $DIC->resourceStorage();
 
+            // The content of the page is added by getPageContextForRequest(), also without file handling
+            $page_context = ChatResource::findPageContext($chat_config->getChatId());
+            $page_context_files = $page_context === null
+                ? []
+                : array_map(fn(Attachment $a): string => (string) $a->getResourceId(), $page_context->getAttachments());
+
             foreach ($background_files as $file_id) {
+                if (in_array($file_id, $page_context_files, true)) {
+                    continue;
+                }
                 try {
                     $identification = $irss->manage()->find($file_id);
                     if ($identification === null) {
@@ -1139,7 +1151,8 @@ abstract class AIChatPageComponentLLM
             $query = "SELECT rag_collection_id, resource_id, rag_status FROM pcaic_attachments " .
                      "WHERE chat_id = " . $db->quote($chat_config->getChatId(), 'text') . " " .
                      "AND rag_collection_id IS NOT NULL " .
-                     "AND " . self::ragCollectionOwnerCondition($user_id);
+                     "AND " . self::ragCollectionOwnerCondition($user_id) . " " .
+                     "AND " . ChatResource::usableAttachmentCondition();
 
             // A collection is searched only while it holds a file of the RAG file types: files of
             // other types are removed from the RAG by the cron job, until then they are not searched
@@ -1163,6 +1176,43 @@ abstract class AIChatPageComponentLLM
         }
 
         return array_unique($collection_ids);
+    }
+
+    /**
+     * Content of the page to add to a request directly, see ChatResource::TYPE_PAGE_CONTEXT
+     *
+     * The snapshot of the page content is a resource: searched in the RAG if the RAG is used,
+     * otherwise added as it was stored. Chats without the resource (from before resources
+     * existed) still use the current content of the page if "include page context" is set.
+     *
+     * @param bool $searched_in_rag The resources of the chat are searched in the RAG for this request
+     * @return string|null Null if nothing is to be added
+     */
+    protected function getPageContextForRequest(ChatConfig $chat_config, bool $searched_in_rag): ?string
+    {
+        $resource = ChatResource::findPageContext($chat_config->getChatId());
+        if ($resource === null) {
+            $live = $chat_config->isIncludePageContext() ? $this->getPageContext($chat_config) : '';
+            return $live !== '' ? $live : null;
+        }
+        if (!$resource->isEnabled() || $searched_in_rag) {
+            return null;
+        }
+        foreach ($resource->getAttachments() as $attachment) {
+            $text = $attachment->getTextContent();
+            if ($text !== null && trim($text) !== '') {
+                return $text;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Current text of the page containing the chat, for the snapshot of the page content resource
+     */
+    public function getPageContextText(ChatConfig $chat_config): string
+    {
+        return $this->getPageContext($chat_config);
     }
 
     /**
@@ -1732,7 +1782,7 @@ abstract class AIChatPageComponentLLM
             global $DIC;
             $db = $DIC->database();
 
-            $query = "SELECT id, resource_id, message_id
+            $query = "SELECT id, resource_id, message_id, resource_ref
                       FROM pcaic_attachments
                       WHERE chat_id = " . $db->quote($chat_config->getChatId(), 'text') . "
                       AND background_file = 1
@@ -1801,7 +1851,11 @@ abstract class AIChatPageComponentLLM
                     }
                     $claimed = true;
 
-                    $entity_id = $chat_config->getChatId();
+                    // Collection of the resource the file belongs to
+                    $entity_id = Attachment::backgroundEntityId(
+                        $chat_config->getChatId(),
+                        isset($att_row['resource_ref']) ? (int) $att_row['resource_ref'] : null
+                    );
                     $stream = $irss->consume()->stream($identification);
 
                     // Temporary file with the original name, the RAG validates the extension

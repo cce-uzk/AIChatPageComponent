@@ -76,7 +76,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $allowed = ["create", "save", "edit", "update", "cancel",
                             "showBasicTab", "saveBasic",
                             "showAdvancedTab", "saveAdvanced",
-                            "showStatisticsTab", "clearHistory"];
+                            "showStatisticsTab", "clearHistory",
+                            "showResourcesTab", "resourceAction", "confirmRemoveResource", "removeResource",
+                            "showAddResourceFiles", "saveResourceFiles", "addPageContextResource"];
                 if (in_array($cmd, $allowed)) {
                     $this->$cmd();
                 } else {
@@ -146,7 +148,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             'char_limit' => $defaults['characters_limit'],
             'disclaimer' => $defaults['disclaimer'],
             'persistent' => false,
-            'include_page_context' => true,
             'enable_chat_uploads' => false,
             'enable_streaming' => true,
         ];
@@ -206,53 +207,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $ui_factory = $DIC->ui()->factory();
 
-        // File types per service are checked again on upload
-        $file_handling_enabled = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
-        $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
-
-        // Allowed types depend on RAG, see getBackgroundFileExtensions()
-        $allowed_extensions = $this->getAllowedBackgroundFileExtensions($a_create);
-
-        if (!$file_handling_enabled) {
-            $file_upload = $ui_factory->input()->field()->text(
-                $this->plugin->txt('background_files_upload_label'),
-                $this->plugin->txt('setting_disabled_by_admin_info')
-            )->withValue($this->plugin->txt('setting_disabled_by_admin'))->withDisabled(true)->withDedicatedName('background_files');
-        } elseif (!$background_files_enabled) {
-            // Placeholder if background files are disabled globally
-            $file_upload = $ui_factory->input()->field()->text(
-                $this->plugin->txt('background_files_upload_label'),
-                $this->plugin->txt('setting_disabled_by_admin_info')
-            )->withValue($this->plugin->txt('background_files_disabled'))->withDisabled(true)->withDedicatedName('background_files');
-        } else {
-            $extensions_display = implode(', ', array_map('strtoupper', $allowed_extensions));
-            $info_text = 'Upload background files for AI context. Allowed types: ' . $extensions_display;
-
-            require_once(__DIR__ . '/class.ilAIChatPageComponentFileUploadHandlerGUI.php');
-            $upload_handler = new ilAIChatPageComponentFileUploadHandlerGUI();
-
-            // MIME types and extensions, because browsers do not recognise every MIME type (e.g. .md)
-            $allowed_accept_values = FileUploadValidator::extensionsToAcceptValues($allowed_extensions);
-
-            $file_upload = $ui_factory->input()->field()->file(
-                $upload_handler,
-                $this->plugin->txt('background_files_upload_label')
-            )->withByline($info_text)
-             ->withDedicatedName('background_files')
-             ->withMaxFiles(10)
-             ->withAcceptedMimeTypes($allowed_accept_values);
-
-            if (!$a_create && isset($prop['background_files'])) {
-                $existing_file_ids = is_string($prop['background_files']) ?
-                    json_decode($prop['background_files'], true) :
-                    $prop['background_files'];
-
-                if (is_array($existing_file_ids) && !empty($existing_file_ids)) {
-                    $file_upload = $file_upload->withValue($existing_file_ids);
-                }
-            }
-        }
-
         $defaults = $this->getAIChatDefaults();
 
         $prop = [];
@@ -295,17 +249,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $prop = $old_properties;
             }
 
-        }
-
-        // Only if file upload is available (not the disabled placeholder)
-        if (!$a_create && $file_handling_enabled && $background_files_enabled && isset($prop['background_files'])) {
-            $existing_file_ids = is_string($prop['background_files']) ?
-                json_decode($prop['background_files'], true) :
-                $prop['background_files'];
-
-            if (is_array($existing_file_ids) && !empty($existing_file_ids)) {
-                $file_upload = $file_upload->withValue($existing_file_ids);
-            }
         }
 
         $chat_title = $ui_factory->input()->field()->text(
@@ -392,11 +335,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('persistent_chat_label'),
             $this->plugin->txt('persistent_chat_info')
         )->withDedicatedName('persistent')->withValue($this->toBool($prop['persistent'] ?? false));
-
-        $include_context = $ui_factory->input()->field()->checkbox(
-            $this->plugin->txt('include_page_context_label'),
-            $this->plugin->txt('include_page_context_info')
-        )->withDedicatedName('include_page_context')->withValue($this->toBool($prop['include_page_context'] ?? true));
 
         // File handling must be known before the file-related fields are built
         $effective_ai_service = $ai_service_value ?? 'ramses';
@@ -525,9 +463,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
 
         // Chat behaviour
+        // The page content is a resource (resources tab)
         $behavior_fields = [
             'persistent' => $persistent,
-            'include_page_context' => $include_context,
         ];
         if ($file_handling_enabled_for_service) {
             $behavior_fields['enable_chat_uploads'] = $enable_chat_uploads;
@@ -544,14 +482,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('section_behavior_info')
         );
 
-        // Background files
-        if ($file_handling_enabled_for_service && $background_files_enabled) {
-            $sections[] = $ui_factory->input()->field()->section(
-                ['background_files' => $file_upload],
-                $this->plugin->txt('section_background_files_label'),
-                $this->plugin->txt('section_background_files_info')
-            );
-        }
+        // Background files are resources (resources tab)
 
         // Legal (create mode only)
         if ($tab !== 'basic') {
@@ -577,31 +508,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $chat_id = $properties['chat_id'] ?? uniqid('chat_', true);
         }
 
-        // Only if file handling and background files are enabled
         $file_handling_enabled = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
-        $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
-
-        $file_ids = [];
-        if ($file_handling_enabled && $background_files_enabled) {
-            $background_files = $form_data['background_files'] ?? [];
-
-            if (is_array($background_files)) {
-                foreach ($background_files as $file_data) {
-                    if (is_string($file_data)) {
-                        // The upload handler returns the resource ID directly, as array or as JSON string
-                        $file_ids[] = $file_data;
-                    } elseif (is_array($file_data) && isset($file_data['resource_id'])) {
-                        $file_ids[] = $file_data['resource_id'];
-                    }
-                }
-            } elseif (is_string($background_files)) {
-                $decoded = json_decode($background_files, true);
-                if (is_array($decoded)) {
-                    $file_ids = $decoded;
-                }
-            }
-        }
-
         $page_info = $this->getPageInfo();
 
         try {
@@ -625,11 +532,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $chat_config->setMaxMemory((int) ($form_data['max_memory'] ?? 10));
             $chat_config->setCharLimit((int) ($form_data['char_limit'] ?? 2000));
 
-            $this->saveBackgroundFilesToAttachments($chat_id, $file_ids, $chat_config, $a_create);
-
             $chat_config->setIsOnline((bool) ($form_data['is_online'] ?? true));
             $chat_config->setPersistent((bool) ($form_data['persistent'] ?? true));
-            $chat_config->setIncludePageContext((bool) ($form_data['include_page_context'] ?? true));
+            // The page content is added as resource; chats from before keep their setting
+            if ($a_create) {
+                $chat_config->setIncludePageContext(false);
+            }
             // Chat uploads and streaming can only be enabled if they are enabled globally
             $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
             if ($file_handling_enabled && $chat_uploads_globally_enabled) {
@@ -744,6 +652,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->ctrl->getLinkTarget($this, 'showBasicTab')
         );
         $tabs->addTab(
+            'resources',
+            $this->plugin->txt('tab_resources'),
+            $this->ctrl->getLinkTarget($this, 'showResourcesTab')
+        );
+        $tabs->addTab(
             'advanced',
             $this->plugin->txt('tab_advanced_settings'),
             $this->ctrl->getLinkTarget($this, 'showAdvancedTab')
@@ -761,37 +674,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $this->addEditTabs('basic');
         $form = $this->initForm(false, 'basic');
-        $this->tpl->setContent($DIC->ui()->renderer()->render($form) . $this->renderBackgroundFileStatus());
-    }
-
-    /**
-     * Processing state of the background files below the settings form
-     *
-     * Saving uploads new files to the RAG and returns to this tab, so the tutor
-     * sees right away whether the files can be searched yet.
-     */
-    private function renderBackgroundFileStatus(): string
-    {
-        global $DIC;
-        $chat_id = $this->getChatIdForEdit();
-        if ($chat_id === '') {
-            return '';
-        }
-
-        $pending = false;
-        $panel = $this->getBackgroundFileStatusPanel($chat_id, false, $pending);
-        if ($panel === null) {
-            return '';
-        }
-
-        $components = [$panel];
-        if ($pending) {
-            // The form does not update by itself
-            array_unshift($components, $DIC->ui()->factory()->messageBox()->info(
-                $this->plugin->txt('rag_file_status_reload_hint')
-            ));
-        }
-        return $DIC->ui()->renderer()->render($components);
+        $this->tpl->setContent($DIC->ui()->renderer()->render($form));
     }
 
     public function saveBasic(): void
@@ -824,21 +707,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
 
         $file_handling_enabled = (\platform\AIChatPageComponentConfig::get('enable_file_handling') ?? '1') === '1';
-        $background_files_enabled = FileUploadValidator::isUploadEnabled('background');
-
-        $file_ids = [];
-        if ($file_handling_enabled && $background_files_enabled) {
-            $background_files = $form_data['background_files'] ?? [];
-            if (is_array($background_files)) {
-                foreach ($background_files as $file_data) {
-                    if (is_string($file_data)) {
-                        $file_ids[] = $file_data;
-                    } elseif (is_array($file_data) && isset($file_data['resource_id'])) {
-                        $file_ids[] = $file_data['resource_id'];
-                    }
-                }
-            }
-        }
 
         $page_info = $this->getPageInfo();
 
@@ -851,11 +719,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $chat_config->setTitle($form_data['chat_title'] ?? '');
             $chat_config->setSystemPrompt($form_data['system_prompt'] ?? '');
 
-            $this->saveBackgroundFilesToAttachments($chat_id, $file_ids, $chat_config, false);
-
             $chat_config->setIsOnline((bool) ($form_data['is_online'] ?? true));
             $chat_config->setPersistent((bool) ($form_data['persistent'] ?? true));
-            $chat_config->setIncludePageContext((bool) ($form_data['include_page_context'] ?? true));
 
             $chat_uploads_globally_enabled = FileUploadValidator::isUploadEnabled('chat');
             if ($file_handling_enabled && $chat_uploads_globally_enabled) {
@@ -1915,291 +1780,426 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Store the background files of the chat as attachments (message_id NULL)
-     *
-     * Removed files are deleted on edit; new files are uploaded to the RAG if RAG is used.
+     * Resources of the chat: uploaded files and the content of the page, each a snapshot that is
+     * used until it is updated, see ChatResource
      */
-    private function saveBackgroundFilesToAttachments(string $chat_id, array $new_file_ids, \ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config, bool $is_create): void
+    public function showResourcesTab(): void
     {
         global $DIC;
-        $db = $DIC->database();
+        $this->addEditTabs('resources');
 
-        $user_id = $DIC->user()->getId();
+        $chat_config = $this->getChatConfigForEdit();
+        if ($chat_config === null) {
+            $this->tpl->setContent('');
+            return;
+        }
+        $this->migrateLivePageContext($chat_config);
 
-        $llm = $this->getLLMInstanceForChat($chat_config);
-        $ai_service = \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
+        $f = $DIC->ui()->factory();
+        $components = [$f->messageBox()->info($this->plugin->txt('resources_info'))];
 
-        // New files go to the RAG under the same conditions as in the chat and the cron job:
-        // RAG enabled for the service and the chat, file handling allowed. If RAG is switched on
-        // with this save, the files are uploaded afterwards (see "RAG was activated").
-        $enable_rag = $llm->isRagEnabledForChat($chat_config) && $llm->isFileHandlingEnabledForService($ai_service);
-
-        $this->logger->debug("RAG configuration check", [
-            'enable_rag' => $enable_rag,
-            'ai_service' => $ai_service
-        ]);
-
-        // File types: enforced here, the file input of the browser can be bypassed
-        $policy = $llm->getFileTypePolicy();
-        $irss = $DIC->resourceStorage();
-        $rejected_titles = [];
-
-        // Background files only: files users uploaded in the chat but not sent yet have no message either
-        $existing_query = "SELECT id, resource_id FROM pcaic_attachments " .
-                         "WHERE chat_id = " . $db->quote($chat_id, 'text') . " " .
-                         "AND message_id IS NULL AND background_file = 1";
-        $existing_result = $db->query($existing_query);
-        $existing_files = [];
-        while ($row = $db->fetchAssoc($existing_result)) {
-            $existing_files[$row['resource_id']] = (int) $row['id'];
+        $toolbar = [];
+        if ($this->isBackgroundFileUploadAvailable($chat_config)) {
+            $toolbar[] = $f->button()->standard(
+                $this->plugin->txt('resources_add_files'),
+                $this->ctrl->getLinkTarget($this, 'showAddResourceFiles')
+            );
+        }
+        if (\ILIAS\Plugin\pcaic\Model\ChatResource::findPageContext($chat_config->getChatId()) === null) {
+            $toolbar[] = $f->button()->standard(
+                $this->plugin->txt('resources_add_page_context'),
+                $this->ctrl->getLinkTarget($this, 'addPageContextResource')
+            );
+        }
+        foreach ($toolbar as $button) {
+            $DIC->toolbar()->addComponent($button);
         }
 
-        if (!$is_create) {
-            $files_to_delete = array_diff(array_keys($existing_files), $new_file_ids);
-            foreach ($files_to_delete as $resource_id) {
-                $attachment_id = $existing_files[$resource_id];
-                try {
-                    $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
-
-                    // Also if RAG is off now: the file must not stay in the RAG
-                    if ($attachment->isInRAG()) {
-                        $this->deleteFileFromRAG($attachment, $chat_id, $chat_config);
-                    }
-
-                    $attachment->delete();
-
-                    $this->logger->info("Deleted background file attachment", [
-                        'chat_id' => $chat_id,
-                        'resource_id' => $resource_id,
-                        'attachment_id' => $attachment_id
-                    ]);
-                } catch (\Exception $e) {
-                    $this->logger->error("Failed to delete background file attachment", [
-                        'resource_id' => $resource_id,
-                        'chat_id' => $chat_id,
-                        'error' => $e->getMessage()
-                    ]);
-                }
-            }
+        $resources = \ILIAS\Plugin\pcaic\Model\ChatResource::getByChatId($chat_config->getChatId());
+        if (empty($resources)) {
+            $components[] = $f->messageBox()->info($this->plugin->txt('resources_none'));
+        } else {
+            $components[] = $this->buildResourceTable($chat_config, $resources);
         }
 
-        foreach ($new_file_ids as $resource_id) {
-            if (isset($existing_files[$resource_id])) {
-                continue;
-            }
-
-            $target = \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_NONE;
-            try {
-                $identification = $irss->manage()->find($resource_id);
-                if ($identification !== null) {
-                    $revision = $irss->manage()->getCurrentRevision($identification);
-                    $target = $policy->target((string) $revision->getInformation()->getSuffix(), $enable_rag);
-                    if ($target === \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_NONE) {
-                        $rejected_titles[] = $revision->getTitle();
-                        $irss->manage()->remove($identification, new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder());
-                    }
-                }
-            } catch (\Exception $e) {
-                $this->logger->warning("File type check of background file failed", [
-                    'resource_id' => $resource_id,
-                    'error' => $e->getMessage()
-                ]);
-            }
-            if ($target === \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_NONE) {
-                $this->logger->info("Background file not saved, file type not allowed", ['resource_id' => $resource_id]);
-                continue;
-            }
-
-            try {
-                $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment();
-                $attachment->setMessageId(null);
-                $attachment->setBackgroundFile(true);
-                $attachment->setChatId($chat_id);
-                $attachment->setUserId($user_id);
-                $attachment->setResourceId($resource_id);
-                $attachment->setTimestamp(date('Y-m-d H:i:s'));
-
-                $this->logger->debug("Processing new background file", [
-                    'resource_id' => $resource_id,
-                    'chat_id' => $chat_id,
-                    'enable_rag' => $enable_rag
-                ]);
-
-                // Only file types of the RAG go to the RAG, the others are sent to the AI service directly
-                if ($enable_rag && $target === \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_RAG) {
-                    $this->logger->debug("Calling uploadFileToRAG", ['resource_id' => $resource_id]);
-                    $this->uploadFileToRAG($attachment, $chat_id, $chat_config);
-                    $this->logger->debug("uploadFileToRAG completed", [
-                        'resource_id' => $resource_id,
-                        'has_rag_collection_id' => $attachment->getRAGCollectionId() !== null,
-                        'has_rag_remote_file_id' => $attachment->getRAGRemoteFileId() !== null
-                    ]);
-                }
-
-                $attachment->save();
-                if ($attachment->isInRAG()) {
-                    \ai\AIChatPageComponentRAGStatus::markUploaded((int) $attachment->getId());
-                } elseif ($target !== \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_RAG) {
-                    if ($enable_rag) {
-                        // Not a file type of the RAG: no upload is attempted
-                        \ai\AIChatPageComponentRAGStatus::markSkipped((int) $attachment->getId());
-                    }
-                } elseif ($enable_rag) {
-                    // Upload failed: the cron job or the next chat request uploads it again
-                    \ai\AIChatPageComponentRAGStatus::markPending((int) $attachment->getId());
-                }
-
-                $this->logger->info("Saved background file attachment", [
-                    'chat_id' => $chat_id,
-                    'resource_id' => $resource_id,
-                    'rag_collection_id' => $attachment->getRAGCollectionId(),
-                    'rag_remote_file_id' => $attachment->getRAGRemoteFileId()
-                ]);
-
-            } catch (\Exception $e) {
-                $this->logger->error("Failed to save background file attachment", [
-                    'resource_id' => $resource_id,
-                    'chat_id' => $chat_id,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-
-        if ($rejected_titles !== []) {
-            $this->tpl->setOnScreenMessage('info', sprintf(
-                $this->plugin->txt('background_files_type_rejected'),
-                implode(', ', $rejected_titles),
-                implode(', ', array_map('strtoupper', $policy->uploadTypes($enable_rag)))
-            ), true);
-        }
-    }
-
-    private function deleteFileFromRAG(\ILIAS\Plugin\pcaic\Model\Attachment $attachment, string $chat_id, \ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): void
-    {
-        try {
-            $this->logger->debug("Starting RAG deletion", [
-                'resource_id' => $attachment->getResourceId(),
-                'chat_id' => $chat_id,
-                'rag_remote_file_id' => $attachment->getRAGRemoteFileId()
-            ]);
-
-            if (!$attachment->getRAGRemoteFileId()) {
-                $this->logger->warning("No RAG remote file ID to delete", ['resource_id' => $attachment->getResourceId()]);
-                return;
-            }
-
-            $llm = $this->getLLMInstanceForChat($chat_config);
-
-            $llm->deleteFileFromRAG($attachment->getRAGRemoteFileId(), $chat_id);
-
-            $this->logger->info("File deleted from RAG successfully", [
-                'resource_id' => $attachment->getResourceId(),
-                'rag_remote_file_id' => $attachment->getRAGRemoteFileId(),
-                'chat_id' => $chat_id,
-                'ai_service' => $chat_config->getAiService()
-            ]);
-
-        } catch (\Exception $e) {
-            $this->logger->error("Failed to delete file from RAG", [
-                'resource_id' => $attachment->getResourceId(),
-                'chat_id' => $chat_id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            // The attachment is deleted even if the RAG deletion fails
-        }
+        $this->tpl->setContent($DIC->ui()->renderer()->render($components));
     }
 
     /**
-     * Upload the file of an attachment to the RAG and store the RAG references
+     * Table of the resources with the actions include/exclude, update and remove
+     *
+     * @param \ILIAS\Plugin\pcaic\Model\ChatResource[] $resources
      */
-    private function uploadFileToRAG(\ILIAS\Plugin\pcaic\Model\Attachment $attachment, string $chat_id, \ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): void
+    private function buildResourceTable(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config, array $resources)
     {
         global $DIC;
+        $f = $DIC->ui()->factory();
 
-        try {
-            $this->logger->debug("Starting RAG upload", [
-                'resource_id' => $attachment->getResourceId(),
-                'chat_id' => $chat_id
-            ]);
+        $llm = $this->getLLMInstanceForChat($chat_config);
+        $rag_active = $llm->isRagEnabledForChat($chat_config)
+            && $llm->isFileHandlingEnabledForService(\ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService()));
 
-            $irss = $DIC->resourceStorage();
-            $identification = $irss->manage()->find($attachment->getResourceId());
-            if (!$identification) {
-                $this->logger->warning("File not found in IRSS", ['resource_id' => $attachment->getResourceId()]);
-                return;
+        $records = [];
+        $disabled = [];
+        foreach ($resources as $resource) {
+            $id = (string) $resource->getId();
+            $records[$id] = [
+                'title' => $resource->getTitle(),
+                'type' => $this->plugin->txt('resource_type_' . $resource->getType()),
+                'snapshot' => $resource->getSnapshotAt() ? $this->formatStoredDateTime((string) $resource->getSnapshotAt()) : '',
+                'state' => $this->getResourceStateLabel($resource, $rag_active),
+                'included' => $this->plugin->txt($resource->isEnabled() ? 'resource_included' : 'resource_excluded'),
+            ];
+            // Uploaded files have no source to take a new snapshot from
+            if ($resource->getType() === \ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_FILE) {
+                $disabled[$id][] = 'update';
             }
-
-            $this->logger->debug("File found in IRSS");
-
-            $stream = $irss->consume()->stream($identification);
-            $content = $stream->getStream()->getContents();
-
-            $revision = $irss->manage()->getCurrentRevision($identification);
-            $original_filename = $revision->getTitle();
-            $suffix = $revision->getInformation()->getSuffix();
-
-            $this->logger->debug("File downloaded from IRSS", [
-                'filename' => $original_filename,
-                'suffix' => $suffix,
-                'size' => strlen($content)
-            ]);
-
-            // Temporary file with the original name, the RAG validates the extension
-            $safe_filename = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $original_filename);
-            $temp_file = sys_get_temp_dir() . '/' . $safe_filename;
-            file_put_contents($temp_file, $content);
-
-            $this->logger->debug("Temp file created", [
-                'temp_path' => $temp_file,
-                'exists' => file_exists($temp_file)
-            ]);
-
-            $llm = $this->getLLMInstanceForChat($chat_config);
-            $this->logger->debug("LLM instance created, calling uploadFileToRAG", [
-                'ai_service' => $chat_config->getAiService()
-            ]);
-
-            $rag_result = $llm->uploadFileToRAG($temp_file, $chat_id, $original_filename);
-
-            $this->logger->debug("RAG upload returned", ['result' => $rag_result]);
-
-            $attachment->setRagCollectionId($rag_result['collection_id']);
-            $attachment->setRagRemoteFileId($rag_result['remote_file_id']);
-            $attachment->setRagUploadedAt(date('Y-m-d H:i:s'));
-
-            if (!$chat_config->getRAGCollectionId()) {
-                $chat_config->setRAGCollectionId($rag_result['collection_id']);
-            }
-
-            @unlink($temp_file);
-
-            $this->logger->info("File uploaded to RAG successfully", [
-                'resource_id' => $attachment->getResourceId(),
-                'collection_id' => $rag_result['collection_id'],
-                'remote_file_id' => $rag_result['remote_file_id'],
-                'ai_service' => $chat_config->getAiService()
-            ]);
-
-        } catch (\Exception $e) {
-            $this->logger->error("Failed to upload file to RAG", [
-                'resource_id' => $attachment->getResourceId(),
-                'chat_id' => $chat_id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            $this->logger->debug("RAG upload configuration", [
-                'ai_service' => $chat_config->getAiService(),
-                'rag_api_url' => \ai\AIChatPageComponentRAG::getApiUrl(),
-                'application_id' => \platform\AIChatPageComponentConfig::get('rag_application_id'),
-                'instance_id' => \platform\AIChatPageComponentConfig::get('rag_instance_id'),
-                'client_key_set' => \ai\AIChatPageComponentRAG::getClientKey() !== ''
-            ]);
-
-            // The attachment is stored without RAG
+            $disabled[$id][] = $resource->isEnabled() ? 'include' : 'exclude';
         }
+
+        $columns = [
+            'title' => $f->table()->column()->text($this->plugin->txt('resource_title')),
+            'type' => $f->table()->column()->text($this->plugin->txt('resource_type')),
+            'snapshot' => $f->table()->column()->text($this->plugin->txt('resource_snapshot')),
+            'state' => $f->table()->column()->text($this->plugin->txt('resource_state')),
+            'included' => $f->table()->column()->text($this->plugin->txt('resource_used')),
+        ];
+
+        $uri = new \ILIAS\Data\URI(ILIAS_HTTP_PATH . '/' . $this->ctrl->getLinkTarget($this, 'resourceAction'));
+        [$url_builder, $action_token, $ids_token] = (new \ILIAS\UI\URLBuilder($uri))
+            ->acquireParameters(self::RESOURCE_TABLE_NAMESPACE, 'action', 'ids');
+        $actions = [];
+        foreach (['include', 'exclude', 'update', 'remove'] as $action) {
+            $actions[$action] = $f->table()->action()->single(
+                $this->plugin->txt('resource_action_' . $action),
+                $url_builder->withParameter($action_token, $action),
+                $ids_token
+            );
+        }
+
+        $retrieval = new \ILIAS\Plugin\pcaic\Table\ResourceTableRetrieval($records, $disabled);
+        $title = $this->plugin->txt('tab_resources');
+        // The order of the parameters changed with ILIAS 10
+        $first = (new \ReflectionMethod($f->table(), 'data'))->getParameters()[0]->getName();
+        $table = $first === 'data_retrieval'
+            ? $f->table()->data($retrieval, $title, $columns)
+            : $f->table()->data($title, $columns, $retrieval);
+
+        return $table->withActions($actions)->withRequest($DIC->http()->request());
+    }
+
+    private const RESOURCE_TABLE_NAMESPACE = ['pcaic', 'resource'];
+
+    /**
+     * State of a resource for editors
+     */
+    private function getResourceStateLabel(\ILIAS\Plugin\pcaic\Model\ChatResource $resource, bool $rag_active): string
+    {
+        if (!$rag_active) {
+            return $this->plugin->txt('resource_state_direct');
+        }
+        $state = $resource->getDisplayState();
+        if ($state === null) {
+            return $this->plugin->txt('resource_state_waiting');
+        }
+        if ($state === \ai\AIChatPageComponentRAGStatus::SKIPPED) {
+            return $this->plugin->txt('resource_state_direct');
+        }
+        $key = 'rag_upload_' . ($state === \ai\AIChatPageComponentRAGStatus::PENDING ? 'processing' : $state) . '_short';
+        return $this->plugin->txt($key);
+    }
+
+    /**
+     * Action of the resource table for the selected resource
+     */
+    public function resourceAction(): void
+    {
+        $params = $this->request->getQueryParams();
+        $prefix = implode('_', self::RESOURCE_TABLE_NAMESPACE) . '_';
+        $action = (string) ($params[$prefix . 'action'] ?? '');
+        $ids = $params[$prefix . 'ids'] ?? [];
+        $id = (int) (is_array($ids) ? ($ids[0] ?? 0) : $ids);
+
+        $resource = $this->getResourceOfChat($id);
+        if ($resource === null) {
+            $this->tpl->setOnScreenMessage('failure', $this->lng->txt('msg_no_perm_write'), true);
+            $this->ctrl->redirect($this, 'showResourcesTab');
+            return;
+        }
+
+        switch ($action) {
+            case 'include':
+            case 'exclude':
+                $resource->setEnabled($action === 'include');
+                $resource->save();
+                $this->tpl->setOnScreenMessage('success', $this->plugin->txt('resource_msg_' . $action), true);
+                break;
+            case 'update':
+                if ($resource->getType() === \ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_PAGE_CONTEXT) {
+                    $this->snapshotPageContext($this->getChatConfigForEdit(), $resource);
+                }
+                break;
+            case 'remove':
+                $this->ctrl->setParameter($this, 'resource_id', $id);
+                $this->ctrl->redirect($this, 'confirmRemoveResource');
+                return;
+        }
+        $this->ctrl->redirect($this, 'showResourcesTab');
+    }
+
+    public function confirmRemoveResource(): void
+    {
+        $this->addEditTabs('resources');
+        $id = (int) ($this->request->getQueryParams()['resource_id'] ?? 0);
+        $resource = $this->getResourceOfChat($id);
+        if ($resource === null) {
+            $this->ctrl->redirect($this, 'showResourcesTab');
+            return;
+        }
+
+        $this->ctrl->setParameter($this, 'resource_id', $id);
+        $confirmation = new ilConfirmationGUI();
+        $confirmation->setFormAction($this->ctrl->getFormAction($this));
+        $confirmation->setHeaderText($this->plugin->txt('resource_remove_confirm'));
+        $confirmation->setConfirm($this->lng->txt('remove'), 'removeResource');
+        $confirmation->setCancel($this->lng->txt('cancel'), 'showResourcesTab');
+        $confirmation->addItem('resource_id', (string) $id, $resource->getTitle());
+        $this->tpl->setContent($confirmation->getHTML());
+    }
+
+    public function removeResource(): void
+    {
+        $id = (int) ($this->request->getQueryParams()['resource_id'] ?? 0);
+        $resource = $this->getResourceOfChat($id);
+        if ($resource !== null) {
+            $resource->delete();
+            $this->tpl->setOnScreenMessage('success', $this->plugin->txt('resource_removed'), true);
+        }
+        $this->ctrl->setParameter($this, 'resource_id', null);
+        $this->ctrl->redirect($this, 'showResourcesTab');
+    }
+
+    public function showAddResourceFiles(): void
+    {
+        global $DIC;
+        $this->addEditTabs('resources');
+        $this->tpl->setContent($DIC->ui()->renderer()->render($this->buildAddResourceFilesForm()));
+    }
+
+    public function saveResourceFiles(): void
+    {
+        global $DIC;
+        $chat_config = $this->getChatConfigForEdit();
+        $form = $this->buildAddResourceFilesForm()->withRequest($DIC->http()->request());
+        $data = $form->getData();
+        if ($chat_config === null || $data === null || $form->getError() !== null) {
+            $this->addEditTabs('resources');
+            $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+            return;
+        }
+
+        $file_ids = [];
+        foreach ((array) ($data['files']['files'] ?? []) as $file) {
+            if (is_string($file) && $file !== '') {
+                $file_ids[] = $file;
+            } elseif (is_array($file) && isset($file['resource_id'])) {
+                $file_ids[] = (string) $file['resource_id'];
+            }
+        }
+
+        $added = $this->addFileResources($chat_config, $file_ids);
+        if ($added > 0) {
+            $this->tpl->setOnScreenMessage('success', sprintf($this->plugin->txt('resources_files_added'), $added), true);
+        }
+        $this->ctrl->redirect($this, 'showResourcesTab');
+    }
+
+    private function buildAddResourceFilesForm()
+    {
+        global $DIC;
+        $f = $DIC->ui()->factory();
+
+        require_once(__DIR__ . '/class.ilAIChatPageComponentFileUploadHandlerGUI.php');
+        $extensions = $this->getAllowedBackgroundFileExtensions(false);
+        $input = $f->input()->field()->file(
+            new ilAIChatPageComponentFileUploadHandlerGUI(),
+            $this->plugin->txt('background_files_upload_label')
+        )->withByline(sprintf($this->plugin->txt('resources_files_byline'), implode(', ', array_map('strtoupper', $extensions))))
+         ->withMaxFiles(10)
+         ->withRequired(true)
+         ->withAcceptedMimeTypes(FileUploadValidator::extensionsToAcceptValues($extensions));
+
+        return $f->input()->container()->form()->standard(
+            $this->ctrl->getFormAction($this, 'saveResourceFiles'),
+            ['files' => $f->input()->field()->section(['files' => $input], $this->plugin->txt('resources_add_files'))]
+        );
+    }
+
+    /**
+     * Add uploaded files as resources, one resource per file
+     *
+     * File types are checked here: the file input of the browser can be bypassed. Files of
+     * other types are removed from the Resource Storage. The RAG upload follows right away.
+     *
+     * @param string[] $file_ids Identifications in the Resource Storage
+     * @return int Number of resources added
+     */
+    private function addFileResources(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config, array $file_ids): int
+    {
+        global $DIC;
+        $irss = $DIC->resourceStorage();
+        $llm = $this->getLLMInstanceForChat($chat_config);
+        $ai_service = \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
+        $rag_active = $llm->isRagEnabledForChat($chat_config) && $llm->isFileHandlingEnabledForService($ai_service);
+        $policy = $llm->getFileTypePolicy();
+
+        $added = 0;
+        $rejected = [];
+        foreach (array_unique($file_ids) as $file_id) {
+            $identification = $irss->manage()->find($file_id);
+            if ($identification === null) {
+                continue;
+            }
+            $revision = $irss->manage()->getCurrentRevision($identification);
+            $suffix = (string) $revision->getInformation()->getSuffix();
+            if ($policy->target($suffix, $rag_active) === \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::TARGET_NONE) {
+                $rejected[] = $revision->getTitle();
+                $irss->manage()->remove($identification, new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder());
+                continue;
+            }
+
+            $resource = new \ILIAS\Plugin\pcaic\Model\ChatResource();
+            $resource->setChatId($chat_config->getChatId());
+            $resource->setType(\ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_FILE);
+            $resource->setTitle($revision->getTitle());
+            $resource->setSnapshotAt(date('Y-m-d H:i:s'));
+            $resource->setCreatedBy($DIC->user()->getId());
+            $resource->save();
+            $resource->addFile($file_id, $DIC->user()->getId());
+            $added++;
+        }
+
+        if (!empty($rejected)) {
+            $this->tpl->setOnScreenMessage('failure', sprintf(
+                $this->plugin->txt('background_files_type_rejected'),
+                implode(', ', $rejected),
+                implode(', ', $policy->uploadTypes($rag_active))
+            ), true);
+        }
+
+        $this->syncResourcesToRag($chat_config);
+        return $added;
+    }
+
+    /**
+     * Upload new snapshots to the RAG, as the next chat request would do
+     */
+    private function syncResourcesToRag(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): void
+    {
+        try {
+            $llm = $this->getLLMInstanceForChat($chat_config);
+            $ai_service = \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
+            if ($llm->isRagEnabledForChat($chat_config) && $llm->isFileHandlingEnabledForService($ai_service)) {
+                $llm->syncBackgroundFilesToRAG($chat_config, time() + 20);
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning("Upload of resources to the RAG failed, the cron job retries: " . $e->getMessage());
+        }
+    }
+
+    public function addPageContextResource(): void
+    {
+        $chat_config = $this->getChatConfigForEdit();
+        if ($chat_config !== null && \ILIAS\Plugin\pcaic\Model\ChatResource::findPageContext($chat_config->getChatId()) === null) {
+            $this->snapshotPageContext($chat_config, null);
+        }
+        $this->ctrl->redirect($this, 'showResourcesTab');
+    }
+
+    /**
+     * Store the current text of the page as snapshot of the page content resource
+     *
+     * @param \ILIAS\Plugin\pcaic\Model\ChatResource|null $resource Existing resource to update, or null to add one
+     */
+    private function snapshotPageContext(?\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config, ?\ILIAS\Plugin\pcaic\Model\ChatResource $resource): bool
+    {
+        global $DIC;
+        if ($chat_config === null) {
+            return false;
+        }
+        $text = $this->getLLMInstanceForChat($chat_config)->getPageContextText($chat_config);
+        if (trim($text) === '') {
+            $this->tpl->setOnScreenMessage('info', $this->plugin->txt('resource_page_context_empty'), true);
+            return false;
+        }
+
+        if ($resource === null) {
+            $resource = new \ILIAS\Plugin\pcaic\Model\ChatResource();
+            $resource->setChatId($chat_config->getChatId());
+            $resource->setType(\ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_PAGE_CONTEXT);
+            $resource->setTitle($this->plugin->txt('resource_page_context_title'));
+            $resource->setCreatedBy($DIC->user()->getId());
+        } else {
+            // The new snapshot replaces the old one, also in the RAG
+            foreach ($resource->getAttachments() as $attachment) {
+                $attachment->delete();
+            }
+        }
+        $resource->setSnapshotAt(date('Y-m-d H:i:s'));
+        $resource->save();
+        $resource->addFile(
+            \ILIAS\Plugin\pcaic\Model\ChatResource::storeText($text, \ILIAS\Plugin\pcaic\Model\ChatResource::PAGE_CONTEXT_FILENAME),
+            $DIC->user()->getId()
+        );
+
+        $this->syncResourcesToRag($chat_config);
+        $this->tpl->setOnScreenMessage('success', $this->plugin->txt('resource_page_context_saved'), true);
+        return true;
+    }
+
+    /**
+     * Chats from before resources existed used the current page content if "include page context" was set:
+     * they keep using it, now as snapshot taken when an editor opens the resources
+     */
+    private function migrateLivePageContext(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): void
+    {
+        if (!$chat_config->isIncludePageContext()
+            || \ILIAS\Plugin\pcaic\Model\ChatResource::findPageContext($chat_config->getChatId()) !== null) {
+            return;
+        }
+        if ($this->snapshotPageContext($chat_config, null)) {
+            $chat_config->setIncludePageContext(false);
+            $chat_config->save();
+        }
+    }
+
+    private function getChatConfigForEdit(): ?\ILIAS\Plugin\pcaic\Model\ChatConfig
+    {
+        $chat_id = $this->getChatIdForEdit();
+        if ($chat_id === '') {
+            return null;
+        }
+        $chat_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($chat_id);
+        return $chat_config->exists() ? $chat_config : null;
+    }
+
+    /**
+     * Files can be added if file handling is allowed for the service and background files are allowed
+     */
+    private function isBackgroundFileUploadAvailable(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): bool
+    {
+        $llm = $this->getLLMInstanceForChat($chat_config);
+        $ai_service = \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService());
+        return $llm->isFileHandlingEnabledForService($ai_service) && FileUploadValidator::isUploadEnabled('background');
+    }
+
+    /**
+     * Resource with this ID if it belongs to the chat being edited
+     */
+    private function getResourceOfChat(int $id): ?\ILIAS\Plugin\pcaic\Model\ChatResource
+    {
+        $resource = $id > 0 ? \ILIAS\Plugin\pcaic\Model\ChatResource::find($id) : null;
+        return $resource !== null && $resource->getChatId() === $this->getChatIdForEdit() ? $resource : null;
     }
 
     /**
