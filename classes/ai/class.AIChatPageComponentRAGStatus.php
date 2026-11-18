@@ -76,6 +76,9 @@ class AIChatPageComponentRAGStatus
 
     private const DELETION_CHECK_KEY = 'rag_deletions_checked_at';
 
+    /** @var string Fingerprint of the RAG file types the attachments were last reconciled with */
+    private const FILE_TYPES_KEY = 'rag_file_types_fingerprint';
+
     /**
      * Delay before the next attempt after $failed_count failures in a row
      */
@@ -610,6 +613,108 @@ class AIChatPageComponentRAGStatus
     /**
      * Remember a file the RAG did not delete yet
      */
+    /**
+     * Move files into or out of the RAG after the file types of the RAG or of ILIAS changed
+     *
+     * The retrieval searches whole collections and cannot leave out a single file, so a file
+     * whose type no longer belongs in the RAG is deleted there. Files that were skipped because
+     * of their type and now belong in the RAG are released for the upload. Runs only if the
+     * types changed since the last complete run.
+     *
+     * @param int $deadline No further file is handled after this time (Unix timestamp)
+     * @return array{removed: int, released: int}|null Null if the types did not change or the time ran out
+     */
+    public static function reconcileFileTypes(
+        \ILIAS\Plugin\pcaic\Validation\FileTypePolicy $policy,
+        int $deadline
+    ): ?array {
+        $fingerprint = $policy->ragTypesFingerprint();
+        if ((string) \platform\AIChatPageComponentConfig::get(self::FILE_TYPES_KEY) === $fingerprint) {
+            return null;
+        }
+
+        $db = self::db();
+        $result = $db->query(
+            "SELECT a.id, a.resource_id, a.chat_id, a.user_id, a.background_file, a.message_id,"
+            . " a.rag_remote_file_id, a.rag_status, m.session_id"
+            . " FROM pcaic_attachments a LEFT JOIN pcaic_messages m ON m.message_id = a.message_id"
+            . " WHERE (a.rag_remote_file_id IS NOT NULL AND a.rag_remote_file_id <> '')"
+            . " OR a.rag_status = " . $db->quote(self::SKIPPED, 'text')
+        );
+        $rows = [];
+        while ($row = $db->fetchAssoc($result)) {
+            $rows[] = $row;
+        }
+
+        $stats = ['removed' => 0, 'released' => 0];
+        foreach ($rows as $row) {
+            if (time() >= $deadline) {
+                // Continued by the next run: the fingerprint is stored only after a complete run
+                return null;
+            }
+
+            $suffix = \ILIAS\Plugin\pcaic\Model\Attachment::suffixOfResource((string) $row['resource_id']);
+            if ($suffix === '') {
+                continue;
+            }
+            $belongs_in_rag = $policy->isRagType($suffix);
+            $remote_file_id = (string) ($row['rag_remote_file_id'] ?? '');
+
+            if ($remote_file_id !== '' && !$belongs_in_rag) {
+                $entity_id = self::entityOfAttachment($row);
+                if ($entity_id === '') {
+                    continue;
+                }
+                self::queueDeletion($remote_file_id, $entity_id);
+                $db->manipulate(
+                    "UPDATE pcaic_attachments SET rag_collection_id = NULL, rag_remote_file_id = NULL, rag_uploaded_at = NULL,"
+                    . " rag_status = " . $db->quote(self::SKIPPED, 'text') . ", rag_status_error = NULL,"
+                    . " rag_failed_count = 0, rag_processing_failures = 0, rag_retry_at = NULL"
+                    . " WHERE id = " . $db->quote((int) $row['id'], 'integer')
+                    . " AND rag_remote_file_id = " . $db->quote($remote_file_id, 'text')
+                );
+                $stats['removed']++;
+            } elseif ($remote_file_id === '' && $row['rag_status'] === self::SKIPPED && $belongs_in_rag) {
+                // Background files and unsent chat uploads are uploaded when their status is empty;
+                // sent chat uploads are picked up by the cron job as due retry
+                $sent_chat_upload = (int) $row['background_file'] === 0 && !empty($row['message_id']);
+                $db->manipulate(
+                    "UPDATE pcaic_attachments SET"
+                    . " rag_status = " . ($sent_chat_upload ? $db->quote(self::PENDING, 'text') : "NULL") . ","
+                    . " rag_retry_at = " . ($sent_chat_upload ? $db->quote(date('Y-m-d H:i:s'), 'timestamp') : "NULL")
+                    . " WHERE id = " . $db->quote((int) $row['id'], 'integer')
+                    . " AND rag_status = " . $db->quote(self::SKIPPED, 'text')
+                );
+                $stats['released']++;
+            }
+        }
+
+        \platform\AIChatPageComponentConfig::set(self::FILE_TYPES_KEY, $fingerprint);
+        if ($stats['removed'] + $stats['released'] > 0) {
+            self::logger()->info("RAG file types changed: " . $stats['removed'] . " files removed from the RAG, "
+                . $stats['released'] . " files released for the upload");
+        }
+        return $stats;
+    }
+
+    /**
+     * Entity a file was uploaded to the RAG with: the chat for background files, the session for chat uploads
+     *
+     * @param array $row Attachment row with background_file, chat_id, user_id and session_id
+     */
+    private static function entityOfAttachment(array $row): string
+    {
+        if ((int) $row['background_file'] === 1) {
+            return (string) $row['chat_id'];
+        }
+        if (!empty($row['session_id'])) {
+            return (string) $row['session_id'];
+        }
+        // Chat upload not sent yet: uploaded for the session of the user
+        $session = \ILIAS\Plugin\pcaic\Model\ChatSession::findForUserAndChat((int) $row['user_id'], (string) $row['chat_id']);
+        return $session !== null ? (string) $session->getSessionId() : '';
+    }
+
     public static function queueDeletion(string $remote_file_id, string $entity_id): void
     {
         $db = self::db();

@@ -932,6 +932,46 @@ class Attachment
         $this->background_file = $background_file;
     }
 
+    /** @var array<string, string> Resource ID => extension, for the requests of one process */
+    private static array $suffix_cache = [];
+
+    /**
+     * Lower-case file extension, decides where the file goes (see FileTypePolicy)
+     */
+    public function getSuffix(): string
+    {
+        $suffix = strtolower(pathinfo($this->getTitle(), PATHINFO_EXTENSION));
+        if ($suffix === '' && $this->resource_id !== null) {
+            $suffix = self::suffixOfResource($this->resource_id);
+        }
+        return $suffix;
+    }
+
+    /**
+     * Lower-case file extension of a stored resource; empty if the resource is not found
+     */
+    public static function suffixOfResource(string $resource_id): string
+    {
+        if (!isset(self::$suffix_cache[$resource_id])) {
+            $suffix = '';
+            try {
+                global $DIC;
+                $irss = $DIC->resourceStorage();
+                $identification = $irss->manage()->find($resource_id);
+                if ($identification !== null) {
+                    $revision = $irss->manage()->getCurrentRevision($identification);
+                    $suffix = strtolower((string) $revision->getInformation()->getSuffix());
+                    if ($suffix === '') {
+                        $suffix = strtolower(pathinfo((string) $revision->getTitle(), PATHINFO_EXTENSION));
+                    }
+                }
+            } catch (\Throwable $e) {
+            }
+            self::$suffix_cache[$resource_id] = $suffix;
+        }
+        return self::$suffix_cache[$resource_id];
+    }
+
     /**
      * Plain text files, whose content is sent to the AI service as text
      */

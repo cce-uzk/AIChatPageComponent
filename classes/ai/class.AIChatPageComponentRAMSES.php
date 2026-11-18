@@ -16,6 +16,7 @@ declare(strict_types=1);
 namespace ai;
 
 use platform\AIChatPageComponentException;
+use ILIAS\Plugin\pcaic\Validation\FileTypePolicy;
 
 /**
  * KI:connect.nrw (formerly RAMSES), OpenAI-compatible chat completions API
@@ -161,11 +162,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             $plugin->txt('config_streaming_info')
         )->withValue($streaming_enabled === '1');
 
-        $file_handling_enabled = \platform\AIChatPageComponentConfig::get('ramses_file_handling_enabled') ?? '1';
-        $inputs['ramses_file_handling_enabled'] = $ui_factory->input()->field()->checkbox(
-            $plugin->txt('config_file_handling'),
-            $plugin->txt('config_file_handling_info')
-        )->withValue($file_handling_enabled === '1');
+        $inputs['ramses_file_handling_enabled'] = self::buildFileHandlingInput('ramses');
 
         $rag_enabled = \platform\AIChatPageComponentConfig::get('ramses_enable_rag') ?? '1';
         $inputs['ramses_enable_rag'] = $ui_factory->input()->field()->checkbox(
@@ -178,6 +175,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
 
     public function saveConfiguration(array $form_data): void
     {
+        $form_data = self::flattenFileHandlingInput($form_data, 'ramses');
         foreach ($form_data as $key => $value) {
             if ($value instanceof \ILIAS\Data\Password) {
                 $value = $value->toString();
@@ -223,7 +221,7 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
             'rag' => true,
             'multimodal' => true,
             'file_types' => ['txt', 'csv', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'],
-            'rag_file_types' => ['txt', 'csv', 'pdf'],
+            'rag_file_types' => FileTypePolicy::getConfiguredRagTypes(),
             'max_tokens' => null,
         ];
     }
@@ -325,17 +323,6 @@ class AIChatPageComponentRAMSES extends AIChatPageComponentLLM
         return true;
     }
 
-    /**
-     * In RAG mode, RAG file types go to the RAG service, all other types are sent as images or text
-     */
-    public function getAllowedFileTypes(bool $rag_enabled): array
-    {
-        $multimodal = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'csv'];
-        if ($rag_enabled) {
-            return array_values(array_unique(array_merge($this->getRagFileTypes(), $multimodal)));
-        }
-        return $multimodal;
-    }
 
     public function sendMessagesArray(array $messages, ?array $context_resources = null): string
     {

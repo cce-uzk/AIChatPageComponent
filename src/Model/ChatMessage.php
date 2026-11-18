@@ -290,12 +290,30 @@ class ChatMessage
             return [];
         }
 
+        return self::formatSources($this->metadata);
+    }
+
+    /** Maximum length of the passage text sent to the browser, in characters */
+    public const SOURCE_TEXT_LIMIT = 5000;
+
+    /**
+     * Sources of the RAG (see AIChatPageComponentRAG::chunksToSources()) in the format used by the frontend
+     *
+     * The order is kept: source N belongs to citation [N].
+     *
+     * @return array<int, array{filename: string, pages: array, url: ?string, excerpt: ?string, text: ?string}>
+     */
+    public static function formatSources(array $metadata): array
+    {
         $sources = [];
-        foreach ($this->metadata as $source) {
+        foreach (array_values($metadata) as $source) {
+            $text = isset($source['text']) ? trim((string) $source['text']) : '';
             $sources[] = [
-                'filename' => $source['filename'] ?? 'Unknown',
-                'pages' => $source['page_numbers'] ?? [],
-                'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null
+                'filename' => (string) ($source['filename'] ?? 'Unknown'),
+                'pages' => is_array($source['page_numbers'] ?? null) ? $source['page_numbers'] : [],
+                'url' => $source['url'] ?? null,
+                'excerpt' => $text === '' ? null : mb_substr($text, 0, 200) . (mb_strlen($text) > 200 ? '...' : ''),
+                'text' => $text === '' ? null : mb_substr($text, 0, self::SOURCE_TEXT_LIMIT),
             ];
         }
         return $sources;
