@@ -16,6 +16,7 @@ declare(strict_types=1);
 namespace ILIAS\Plugin\pcaic\Tests;
 
 use ai\AIChatPageComponentRAGStatus;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -38,9 +39,7 @@ class RAGStatusTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider retryDelayProvider
-     */
+    #[DataProvider('retryDelayProvider')]
     public function testRetryDelay(int $failed_count, int $expected): void
     {
         $this->assertSame($expected, AIChatPageComponentRAGStatus::retryDelay($failed_count));
@@ -108,9 +107,7 @@ class RAGStatusTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider uploadErrorProvider
-     */
+    #[DataProvider('uploadErrorProvider')]
     public function testPermanentUploadErrors(int $http_code, bool $expected): void
     {
         $this->assertSame($expected, AIChatPageComponentRAGStatus::isPermanentUploadError($http_code));
@@ -132,9 +129,7 @@ class RAGStatusTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider checkIntervalProvider
-     */
+    #[DataProvider('checkIntervalProvider')]
     public function testCheckInterval(?int $seconds_since_upload, int $expected): void
     {
         $this->assertSame($expected, AIChatPageComponentRAGStatus::checkInterval($seconds_since_upload));
@@ -155,9 +150,7 @@ class RAGStatusTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider remoteStatusProvider
-     */
+    #[DataProvider('remoteStatusProvider')]
     public function testMapRemoteStatus(string $remote, string $expected): void
     {
         $this->assertSame($expected, AIChatPageComponentRAGStatus::mapRemoteStatus($remote));
@@ -181,9 +174,7 @@ class RAGStatusTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider completedStateProvider
-     */
+    #[DataProvider('completedStateProvider')]
     public function testCompletedState(?int $chunks, ?bool $has_text, ?bool $probe, string $expected): void
     {
         $this->assertSame($expected, AIChatPageComponentRAGStatus::completedState($chunks, $has_text, $probe));
