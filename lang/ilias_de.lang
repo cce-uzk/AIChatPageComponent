@@ -262,6 +262,12 @@ rag_image_only_query#:#Bitte sieh dir das angehängte Bild an.
 rag_upload_rejected#:#Konnte nicht für die Dokumentensuche verarbeitet werden; Datei bei Bedarf entfernen und erneut hochladen
 rag_upload_empty#:#Kein durchsuchbarer Text gefunden
 rag_upload_scanned#:#Bereit (gescanntes Dokument: die Texterkennung kann unvollständig sein)
+rag_upload_processing_short#:#Wird verarbeitet …
+rag_upload_completed_short#:#Durchsuchbar
+rag_upload_failed_short#:#Neuer Versuch folgt
+rag_upload_rejected_short#:#Nicht durchsuchbar
+rag_upload_empty_short#:#Kein Text gefunden
+rag_upload_scanned_short#:#Scan, durchsuchbar
 stat_is_online#:#Online
 stat_goto_page#:#Zur Seite springen
 stat_toggle_online#:#Online schalten

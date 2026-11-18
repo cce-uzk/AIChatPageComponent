@@ -391,6 +391,16 @@ class AIChatPageComponent {
         empty: container.dataset.ragUploadEmpty || 'No searchable text found',
         scanned: container.dataset.ragUploadScanned || 'Ready (scanned document: text recognition may be incomplete)',
       },
+      // Shown in the file bubble; the long texts above are the tooltip and the screen reader text
+      ragUploadStatusShort: {
+        pending: container.dataset.ragUploadProcessingShort || 'Processing …',
+        processing: container.dataset.ragUploadProcessingShort || 'Processing …',
+        completed: container.dataset.ragUploadCompletedShort || 'Searchable',
+        failed: container.dataset.ragUploadFailedShort || 'Retrying',
+        rejected: container.dataset.ragUploadRejectedShort || 'Not searchable',
+        empty: container.dataset.ragUploadEmptyShort || 'No text found',
+        scanned: container.dataset.ragUploadScannedShort || 'Scan, searchable',
+      },
       pageLabel: container.dataset.pageLabel || 'Seite',
       pagesLabel: container.dataset.pagesLabel || 'Seiten',
       tableCopy: container.dataset.tableCopy || 'Copy table',
@@ -1620,6 +1630,7 @@ class AIChatPageComponent {
 
       attachments.forEach((attachment) => {
         debug('AIChatPageComponent: Processing attachment for display:', attachment);
+        const previousBubble = attachmentsDiv.lastElementChild;
 
         if (attachment.is_image || attachment.file_type === 'image') {
           this.createImageAttachment(attachment, attachmentsDiv);
@@ -1630,7 +1641,9 @@ class AIChatPageComponent {
         } else if (attachment.download_url) {
           this.createGenericAttachment(attachment, attachmentsDiv);
         }
-        this.appendRagStatusBadge(attachmentsDiv, attachment);
+        if (attachmentsDiv.lastElementChild !== previousBubble) {
+          this.appendRagStatusBadge(attachmentsDiv.lastElementChild, attachment);
+        }
       });
 
       if (role === 'user') {
@@ -2640,6 +2653,7 @@ class AIChatPageComponent {
                 margin-top: 2px;
             `;
       const sizeKB = Math.round(attachment.size / 1024);
+      typeInfo.className = 'ai-chat-file-meta';
       typeInfo.textContent = `PDF • ${sizeKB} KB`;
 
       fileInfoContainer.appendChild(filename);
@@ -2741,6 +2755,7 @@ class AIChatPageComponent {
             margin-top: 2px;
         `;
     const sizeKB = Math.round(attachment.size / 1024);
+    typeInfo.className = 'ai-chat-file-meta';
     typeInfo.textContent = `${docType} • ${sizeKB} KB`;
 
     fileInfoContainer.appendChild(filename);
@@ -2824,6 +2839,7 @@ class AIChatPageComponent {
         `;
     const ext = attachment.title ? attachment.title.split('.').pop().toUpperCase() : 'FILE';
     const sizeKB = Math.round(attachment.size / 1024);
+    typeInfo.className = 'ai-chat-file-meta';
     typeInfo.textContent = `${ext} • ${sizeKB} KB`;
 
     fileInfoContainer.appendChild(filename);
@@ -3375,7 +3391,7 @@ class AIChatPageComponent {
         debug('AIChatPageComponent: Creating document preview for attachment', index);
         this.createUploadDocumentPreview(attachment, index);
       }
-      this.appendRagStatusBadge(this.attachmentsList, attachment);
+      this.appendRagStatusBadge(this.attachmentsList.lastElementChild, attachment);
     });
 
     debug('AIChatPageComponent: updateAttachmentsDisplay completed');
@@ -3501,6 +3517,7 @@ class AIChatPageComponent {
             margin-top: 1px;
         `;
     const sizeKB = attachment.size ? Math.round(attachment.size / 1024) : '?';
+    typeInfo.className = 'ai-chat-file-meta';
     typeInfo.textContent = `${docType} • ${sizeKB} KB`;
 
     fileInfoContainer.appendChild(filename);
@@ -3853,26 +3870,39 @@ class AIChatPageComponent {
   }
 
   /**
-   * Show the processing state of an uploaded file in the document search next to the file
+   * Show the processing state of an uploaded file in the document search inside its bubble
    *
-   * Files that are not handled by the document search have no state. While a file
-   * is being processed, the state is queried from the server.
+   * File cards get the short state in their line with type and size, images a label on
+   * the image. The full text is the tooltip and is announced by screen readers. Files that
+   * are not handled by the document search have no state. While a file is being processed,
+   * the state is queried from the server.
    *
-   * @param {HTMLElement} container - Element the badge is appended to
+   * @param {HTMLElement|null} bubble - Bubble of the file
    * @param {Object} attachment - Attachment data with id and rag_status
    */
-  appendRagStatusBadge(container, attachment) {
-    if (!container || !attachment || !this.lang.ragUploadStatus[attachment.rag_status]) {
+  appendRagStatusBadge(bubble, attachment) {
+    if (!bubble || !attachment || !this.lang.ragUploadStatus[attachment.rag_status]) {
       return;
     }
 
-    const badge = document.createElement('div');
+    const badge = document.createElement('span');
     badge.className = 'ai-chat-rag-status';
     // Announced by screen readers when the state changes, the badge may be outside the message log
     badge.setAttribute('role', 'status');
     badge.dataset.attachmentId = attachment.id;
+    badge.innerHTML = '<span class="ai-chat-rag-status-icon" aria-hidden="true"></span>'
+      + '<span class="ai-chat-rag-status-text"></span>';
+
+    const meta = bubble.querySelector('.ai-chat-file-meta');
+    if (meta) {
+      meta.appendChild(badge);
+    } else {
+      // Images: label on the image
+      bubble.classList.add('ai-chat-rag-status-host');
+      badge.classList.add('ai-chat-rag-status-overlay');
+      bubble.appendChild(badge);
+    }
     this.setRagStatusBadge(badge, attachment.rag_status);
-    container.appendChild(badge);
 
     if (this.isRagStatusPending(attachment.rag_status)) {
       this.startRagStatusPolling();
@@ -3881,7 +3911,10 @@ class AIChatPageComponent {
 
   setRagStatusBadge(badge, status) {
     badge.dataset.status = status;
-    badge.textContent = this.lang.ragUploadStatus[status];
+    badge.title = this.lang.ragUploadStatus[status];
+    badge.setAttribute('aria-label', this.lang.ragUploadStatus[status]);
+    badge.querySelector('.ai-chat-rag-status-text').textContent = this.lang.ragUploadStatusShort[status]
+      || this.lang.ragUploadStatus[status];
   }
 
   isRagStatusPending(status) {

@@ -262,6 +262,12 @@ rag_image_only_query#:#Please look at the attached image.
 rag_upload_rejected#:#Could not be processed for the document search; remove the file and upload it again if necessary
 rag_upload_empty#:#No searchable text found
 rag_upload_scanned#:#Ready (scanned document: text recognition may be incomplete)
+rag_upload_processing_short#:#Processing …
+rag_upload_completed_short#:#Searchable
+rag_upload_failed_short#:#Retrying
+rag_upload_rejected_short#:#Not searchable
+rag_upload_empty_short#:#No text found
+rag_upload_scanned_short#:#Scan, searchable
 stat_is_online#:#Online
 stat_goto_page#:#Go to Page
 stat_toggle_online#:#Set Online

@@ -1729,21 +1729,101 @@
     font-size: 0.85em;
 }
 
+/* State of a file in the document search, inside its bubble */
 .ai-chat-rag-status {
-    align-self: center;
-    padding: 2px 8px;
-    border-radius: var(--chat-radius-small);
-    background: var(--chat-surface-sm);
-    color: var(--chat-text-secondary);
-    font-size: 0.8em;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    color: #666;
 }
 
+/* Narrow cards: the state moves to its own line instead of overflowing */
+.ai-chat-file-meta:has(.ai-chat-rag-status) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+/* In the line with type and size of a file card */
+.ai-chat-file-meta .ai-chat-rag-status::before {
+    content: '·';
+    margin: 0 2px 0 4px;
+}
+
+.ai-chat-rag-status-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    font-size: 0.95em;
+    line-height: 1;
+}
+
+.ai-chat-rag-status[data-status="completed"] .ai-chat-rag-status-icon::before,
+.ai-chat-rag-status[data-status="scanned"] .ai-chat-rag-status-icon::before { content: '✓'; font-weight: 700; }
+.ai-chat-rag-status[data-status="failed"] .ai-chat-rag-status-icon::before { content: '↻'; }
+.ai-chat-rag-status[data-status="rejected"] .ai-chat-rag-status-icon::before,
+.ai-chat-rag-status[data-status="empty"] .ai-chat-rag-status-icon::before { content: '!'; font-weight: 700; }
+
+/* File cards are white in both themes */
+.ai-chat-rag-status[data-status="completed"] { color: #2e7d32; }
 .ai-chat-rag-status[data-status="failed"],
 .ai-chat-rag-status[data-status="rejected"],
 .ai-chat-rag-status[data-status="empty"],
-.ai-chat-rag-status[data-status="scanned"] {
-    border-left: 3px solid var(--chat-warning);
+.ai-chat-rag-status[data-status="scanned"] { color: #b45309; }
+
+/* Spinner while processing */
+.ai-chat-rag-status[data-status="pending"] .ai-chat-rag-status-icon,
+.ai-chat-rag-status[data-status="processing"] .ai-chat-rag-status-icon {
+    width: 0.8em;
+    height: 0.8em;
+    border: 1.5px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: ai-chat-rag-spin 0.9s linear infinite;
 }
+
+@keyframes ai-chat-rag-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .ai-chat-rag-status-icon { animation: none !important; }
+}
+
+/* Images: label on the lower left corner of the image */
+.ai-chat-rag-status-host {
+    position: relative;
+    width: fit-content;
+}
+
+.ai-chat-rag-status-overlay {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    max-width: calc(100% - 12px);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.6);
+    pointer-events: auto;
+}
+
+.ai-chat-rag-status.ai-chat-rag-status-overlay { color: #fff; }
+.ai-chat-rag-status-overlay[data-status="completed"] .ai-chat-rag-status-icon { color: #81c784; }
+.ai-chat-rag-status-overlay[data-status="failed"] .ai-chat-rag-status-icon,
+.ai-chat-rag-status-overlay[data-status="rejected"] .ai-chat-rag-status-icon,
+.ai-chat-rag-status-overlay[data-status="empty"] .ai-chat-rag-status-icon,
+.ai-chat-rag-status-overlay[data-status="scanned"] .ai-chat-rag-status-icon { color: #ffb74d; }
+
+.ai-chat-rag-status-overlay .ai-chat-rag-status-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Small previews before sending: the symbol only, the text is the tooltip */
+.ai-chat-attachments .ai-chat-rag-status-overlay { left: 4px; bottom: 4px; padding: 3px; }
+.ai-chat-attachments .ai-chat-rag-status-overlay .ai-chat-rag-status-text { display: none; }
 
 .ai-chat-sources-row {
     display: flex;

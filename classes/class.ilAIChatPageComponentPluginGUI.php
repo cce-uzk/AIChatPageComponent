@@ -1692,6 +1692,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("RAG_UPLOAD_REJECTED", htmlspecialchars($this->plugin->txt('rag_upload_rejected')));
         $tpl->setVariable("RAG_UPLOAD_EMPTY", htmlspecialchars($this->plugin->txt('rag_upload_empty')));
         $tpl->setVariable("RAG_UPLOAD_SCANNED", htmlspecialchars($this->plugin->txt('rag_upload_scanned')));
+        // Short state shown in the file bubble; the long text above is its tooltip
+        foreach (['processing', 'completed', 'failed', 'rejected', 'empty', 'scanned'] as $rag_state) {
+            $tpl->setVariable(
+                'RAG_UPLOAD_' . strtoupper($rag_state) . '_SHORT',
+                htmlspecialchars($this->plugin->txt('rag_upload_' . $rag_state . '_short'))
+            );
+        }
         $tpl->setVariable("PAGE_LABEL", htmlspecialchars($this->plugin->txt('page_label')));
         $tpl->setVariable("PAGES_LABEL", htmlspecialchars($this->plugin->txt('pages_label')));
         $this->setRenderingLabels($tpl);
