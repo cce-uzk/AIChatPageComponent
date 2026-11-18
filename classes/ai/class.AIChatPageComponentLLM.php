@@ -1103,6 +1103,22 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
+     * Whether a file in this state can contribute passages to the retrieval
+     *
+     * Files that failed, are empty or are not meant for the RAG are not searched. Files still
+     * processing are searched: their local state is updated at most once per minute, the RAG
+     * may have processed them already (e.g. a file uploaded just before the question).
+     */
+    public static function isSearchableRagStatus(?string $status): bool
+    {
+        return !in_array($status, [
+            AIChatPageComponentRAGStatus::FAILED,
+            AIChatPageComponentRAGStatus::EMPTY,
+            AIChatPageComponentRAGStatus::SKIPPED,
+        ], true);
+    }
+
+    /**
      * Collections the retrieval may search for a request
      *
      * Background files belong to the chat and are searched for everybody. Files uploaded
@@ -1120,7 +1136,7 @@ abstract class AIChatPageComponentLLM
         $collection_ids = [];
 
         try {
-            $query = "SELECT rag_collection_id, resource_id FROM pcaic_attachments " .
+            $query = "SELECT rag_collection_id, resource_id, rag_status FROM pcaic_attachments " .
                      "WHERE chat_id = " . $db->quote($chat_config->getChatId(), 'text') . " " .
                      "AND rag_collection_id IS NOT NULL " .
                      "AND " . self::ragCollectionOwnerCondition($user_id);
@@ -1133,6 +1149,9 @@ abstract class AIChatPageComponentLLM
             while ($row = $db->fetchAssoc($result)) {
                 $collection_id = (string) ($row['rag_collection_id'] ?? '');
                 if ($collection_id === '' || in_array($collection_id, $collection_ids, true)) {
+                    continue;
+                }
+                if (!self::isSearchableRagStatus($row['rag_status'] ?? null)) {
                     continue;
                 }
                 if ($policy->isRagType(Attachment::suffixOfResource((string) $row['resource_id']))) {
