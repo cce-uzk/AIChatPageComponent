@@ -289,6 +289,7 @@ tab_settings#:#Settings
 tab_advanced_settings#:#Advanced Settings
 section_general_label#:#General Settings
 section_general_info#:#Title, visibility and system prompt of this chat
+section_general_create_info#:#Title, visibility and system prompt. All other settings (AI service, behaviour, background files, disclaimer) follow after saving.
 section_ai_config_label#:#AI Service & Configuration
 section_ai_config_info#:#AI service, memory limit and character limit for this chat
 section_behavior_label#:#Chat Behaviour

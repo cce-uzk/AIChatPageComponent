@@ -289,6 +289,7 @@ tab_settings#:#Einstellungen
 tab_advanced_settings#:#Erweiterte Einstellungen
 section_general_label#:#Grundeinstellungen
 section_general_info#:#Titel, Sichtbarkeit und System-Prompt des Chats
+section_general_create_info#:#Titel, Sichtbarkeit und System-Prompt. Alle weiteren Einstellungen (KI-Dienst, Verhalten, Hintergrunddateien, Hinweistext) folgen nach dem Speichern.
 section_ai_config_label#:#KI-Dienst & Konfiguration
 section_ai_config_info#:#KI-Dienst, Gedächtnis und Zeichenlimit für diesen Chat
 section_behavior_label#:#Chat-Verhalten
