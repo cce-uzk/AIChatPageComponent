@@ -273,6 +273,8 @@ try {
             // onmessage for HTTP 200, the body of an error response is not accessible
             echo "data: " . json_encode(['type' => 'start']) . "\n\n";
             flush();
+            // Signs of life while the RAG searches or the AI service has not started the answer
+            \ILIAS\Plugin\pcaic\Service\StreamKeepAlive::enable();
 
             $llm = createLLMInstance($ai_service);
             $llm->setStreaming($streaming_enabled);

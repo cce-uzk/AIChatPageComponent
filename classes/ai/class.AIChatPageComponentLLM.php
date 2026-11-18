@@ -19,6 +19,7 @@ use ILIAS\Plugin\pcaic\Model\ChatConfig;
 use ILIAS\Plugin\pcaic\Model\ChatSession;
 use ILIAS\Plugin\pcaic\Model\ChatMessage;
 use ILIAS\Plugin\pcaic\Model\Attachment;
+use ILIAS\Plugin\pcaic\Service\StreamKeepAlive;
 use ILIAS\Plugin\pcaic\Validation\FileTypePolicy;
 use platform\AIChatPageComponentException;
 
@@ -419,6 +420,8 @@ abstract class AIChatPageComponentLLM
         curl_setopt($curl, CURLOPT_TIMEOUT, static::REQUEST_TIMEOUT);
 
         if (!$this->isStreaming()) {
+            // Answer without streaming in the stream endpoint (streaming disabled for the chat)
+            StreamKeepAlive::attach($curl);
             return $state;
         }
 
@@ -457,20 +460,18 @@ abstract class AIChatPageComponentLLM
                         ob_flush();
                     }
                     flush();
+                    StreamKeepAlive::touch();
                 }
             }
 
             return strlen($chunk);
         });
 
-        // Called by cURL about once per second, also while no data arrives.
-        // CURLOPT_XFERINFOFUNCTION is available from PHP 8.2, the older
-        // CURLOPT_PROGRESSFUNCTION works the same way for this purpose.
-        $progress_option = defined('CURLOPT_XFERINFOFUNCTION')
-            ? constant('CURLOPT_XFERINFOFUNCTION')
-            : CURLOPT_PROGRESSFUNCTION;
+        // Called by cURL about once per second, also while no data arrives
         curl_setopt($curl, CURLOPT_NOPROGRESS, false);
-        curl_setopt($curl, $progress_option, function () use ($state): int {
+        curl_setopt($curl, StreamKeepAlive::progressOption(), function () use ($state): int {
+            // The browser gets a sign of life while the AI service has not started the answer
+            StreamKeepAlive::beat();
             $now = microtime(true);
             if ($state->finished_at !== null && $now - $state->finished_at > static::STREAM_END_GRACE) {
                 $state->ended_after_finish = true;

@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 namespace ai;
 
+use ILIAS\Plugin\pcaic\Service\StreamKeepAlive;
 use platform\AIChatPageComponentException;
 
 require_once __DIR__ . '/class.AIChatPageComponentRAGBindingLostException.php';
@@ -720,6 +721,8 @@ class AIChatPageComponentRAG
         }
 
         AIChatPageComponentLLM::applyProxySettings($curl);
+        // The document search can take more than a minute: a streamed answer gets signs of life meanwhile
+        StreamKeepAlive::attach($curl);
 
         $response = curl_exec($curl);
         $http_code = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
