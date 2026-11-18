@@ -2450,8 +2450,6 @@ a.ai-chat-footnote-link:hover,
     border-top: 1px solid var(--chat-border);
     padding-top: 6px;
     line-height: 1.5;
-    max-height: 120px;
-    overflow-y: auto;
 }
 
 

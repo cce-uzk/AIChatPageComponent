@@ -455,6 +455,20 @@ class AIChatPageComponent {
       .join(''));
   }
 
+  /**
+   * Text of a passage for display: the full text, or the excerpt of answers stored by older versions
+   *
+   * The RAG cuts documents into overlapping passages, so a passage may begin in the middle
+   * of a word ("ierung schrittweise ..."); such a start is marked with an ellipsis.
+   *
+   * @param {Object} source
+   * @returns {string}
+   */
+  static passageText(source) {
+    const text = String((source && (source.text || source.excerpt)) || '').trim();
+    return /^\p{Ll}/u.test(text) ? `…${text}` : text;
+  }
+
   /** Maximum width of the unfolded file name of a source chip, in pixels */
   static get CHIP_NAME_WIDTH() { return 160; }
 
@@ -2352,8 +2366,9 @@ class AIChatPageComponent {
           html += `<div class="ai-chat-tooltip-pages">${this.escapeHtml(pageLabel)} ${this.escapeHtml(sourceData.pages.join(', '))}</div>`;
         }
 
-        if (sourceData.excerpt) {
-          html += `<div class="ai-chat-tooltip-excerpt">${this.renderMarkdown(sourceData.excerpt)}</div>`;
+        const passageText = AIChatPageComponent.passageText(sourceData);
+        if (passageText) {
+          html += `<div class="ai-chat-tooltip-excerpt">${this.renderMarkdown(passageText)}</div>`;
         }
         html += '</div>';
       });
@@ -4946,7 +4961,7 @@ class AIChatPageComponent {
       }
       const text = document.createElement('div');
       text.className = 'ai-chat-source-passage-text';
-      text.innerHTML = this.renderMarkdown(source.text || source.excerpt);
+      text.innerHTML = this.renderMarkdown(AIChatPageComponent.passageText(source));
       body.appendChild(text);
       passage.appendChild(body);
 
