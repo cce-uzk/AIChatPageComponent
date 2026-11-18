@@ -1913,28 +1913,41 @@
 
 .ai-chat-sources-toggle.active .ai-chat-sources-chevron { transform: rotate(180deg); }
 
-/* Collapsible panel */
+/* Collapsible panel: grows to the height of its content, so that only the chat scrolls
+   (the grid row animates from 0 to the content height) */
 .ai-chat-sources-section {
     width: 100%;
-    max-height: 0;
-    overflow: hidden;
+    display: grid;
+    grid-template-rows: 0fr;
     opacity: 0;
-    transition: max-height 0.3s ease, opacity 0.2s ease, margin 0.3s ease;
+    visibility: hidden;
+    transition: grid-template-rows 0.3s ease, opacity 0.2s ease, margin 0.3s ease, padding 0.3s ease, visibility 0.3s;
     margin-top: 0;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: var(--chat-radius-small);
 }
 
 .ai-chat-sources-section.open {
-    max-height: 400px;
+    grid-template-rows: 1fr;
     opacity: 1;
+    visibility: visible;
     margin-top: 12px;
     padding: 12px;
     background: var(--chat-surface-xs);
-    border-radius: var(--chat-radius-small);
-    border: 1px solid var(--chat-border);
-    overflow-y: auto;
+    border-color: var(--chat-border);
 }
 
-.ai-chat-sources-list { display: flex; flex-direction: column; gap: 6px; }
+/* Clipped for the animation; the margin keeps the hover shift and focus outlines of the entries visible */
+.ai-chat-sources-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    overflow: hidden;
+    overflow: clip;
+    overflow-clip-margin: 6px;
+}
 
 .ai-chat-source-item {
     display: flex;
@@ -2118,8 +2131,7 @@
     border-left: 2px solid var(--chat-border);
     color: var(--chat-text-primary);
     font-size: 12px;
-    max-height: 240px;
-    overflow-y: auto;
+    overflow-wrap: anywhere;
 }
 
 .ai-chat-source-passage.cited .ai-chat-source-passage-body { border-left-color: var(--chat-accent); }
