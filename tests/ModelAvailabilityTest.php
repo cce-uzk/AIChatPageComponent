@@ -18,6 +18,7 @@ namespace ILIAS\Plugin\pcaic\Tests;
 use ai\AIChatPageComponentLLM;
 use ai\AIChatPageComponentOpenAI;
 use ai\AIChatPageComponentRAMSES;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use platform\AIChatPageComponentConfig;
 use ReflectionMethod;
@@ -39,9 +40,7 @@ class ModelAvailabilityTest extends TestCase
         ]);
     }
 
-    /**
-     * @dataProvider chatModelProvider
-     */
+    #[DataProvider('chatModelProvider')]
     public function testChatModelsAreRecognised(string $model_id): void
     {
         $this->assertFalse(AIChatPageComponentLLM::looksLikeNonChatModel($model_id));
@@ -58,9 +57,7 @@ class ModelAvailabilityTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider nonChatModelProvider
-     */
+    #[DataProvider('nonChatModelProvider')]
     public function testNonChatModelsAreRecognised(string $model_id): void
     {
         $this->assertTrue(AIChatPageComponentLLM::looksLikeNonChatModel($model_id));
