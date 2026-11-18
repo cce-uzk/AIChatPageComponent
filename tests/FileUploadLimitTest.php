@@ -16,6 +16,7 @@ declare(strict_types=1);
 namespace ILIAS\Plugin\pcaic\Tests;
 
 use ILIAS\Plugin\pcaic\Validation\FileUploadValidator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use platform\AIChatPageComponentConfig;
 
@@ -45,9 +46,9 @@ class FileUploadLimitTest extends TestCase
     }
 
     /**
-     * @dataProvider configuredSizeProvider
      * @param mixed $configured
      */
+    #[DataProvider('configuredSizeProvider')]
     public function testMaxFileSize($configured, int $expected_mb): void
     {
         AIChatPageComponentConfig::reset(['max_file_size_mb' => $configured]);
@@ -73,9 +74,7 @@ class FileUploadLimitTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider iniSizeProvider
-     */
+    #[DataProvider('iniSizeProvider')]
     public function testIniSizeToBytes(string $value, int $expected): void
     {
         $this->assertSame($expected, FileUploadValidator::iniSizeToBytes($value));
