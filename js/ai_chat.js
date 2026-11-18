@@ -419,6 +419,25 @@ class AIChatPageComponent {
     return { renderPending: false, sources: null, sourcesRow: null };
   }
 
+  /**
+   * Convert the RAG citation markers (0-based) into 1-based references, as the server does
+   * for the final answer (AIChatPageComponentRAG::convertCitationMarkers)
+   *
+   * Models vary the format: [cit-0], (cit-0), <cit-0>, other dashes, spaces and several
+   * markers in one bracket ([cit-0, cit-2]). All become [1], [1][3].
+   *
+   * @param {string} text
+   * @returns {string}
+   */
+  static convertCitationMarkers(text) {
+    const dash = '[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]';
+    const marker = `cit\\s*${dash}\\s*\\d+`;
+    const pattern = new RegExp(`[\\[(<]\\s*(${marker}(?:\\s*,\\s*${marker})*)\\s*[\\])>]`, 'gi');
+    return text.replace(pattern, (match, list) => list.match(/\d+/g)
+      .map((n) => `[${parseInt(n, 10) + 1}]`)
+      .join(''));
+  }
+
   /** Maximum width of the unfolded file name of a source chip, in pixels */
   static get CHIP_NAME_WIDTH() { return 160; }
 
@@ -1361,8 +1380,7 @@ class AIChatPageComponent {
         return;
       }
       // RAG citations [cit-N] (0-based) are shown as [N+1], as in the final message
-      const rawContent = (contentEl.dataset.rawContent || '')
-        .replace(/\[cit-(\d+)\]/gi, (m, n) => `[${parseInt(n, 10) + 1}]`);
+      const rawContent = AIChatPageComponent.convertCitationMarkers(contentEl.dataset.rawContent || '');
       contentEl.innerHTML = this.renderMarkdown(rawContent);
       this.decorateRenderedContent(contentEl);
       if (state.sourcesRow) {

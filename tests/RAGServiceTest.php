@@ -45,6 +45,10 @@ class RAGServiceTest extends TestCase
             'comma separated' => ['A [cit-0, cit-2] B', 'A [1][3] B'],
             'case insensitive' => ['[CIT-9]', '[10]'],
             'other brackets untouched' => ['Keep [1] and [x]', 'Keep [1] and [x]'],
+            'round and angle brackets' => ['A(cit-0) B<cit-1>', 'A[1] B[2]'],
+            'other dashes and spaces' => ["A[cit\u{2013}0] B[ cit \u{2212} 2 ]", 'A[1] B[3]'],
+            'mixed list' => ['A (cit-0,cit–1)', 'A [1][2]'],
+            'similar text untouched' => ['(cite-1) (2023) <citation>', '(cite-1) (2023) <citation>'],
         ];
     }
 
