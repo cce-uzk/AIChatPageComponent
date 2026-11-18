@@ -400,6 +400,10 @@ class AIChatPageComponent {
       citationMoreSources: container.dataset.citationMoreSources || '%s more sources',
       sourcePrevious: container.dataset.sourcePrevious || 'Previous source',
       sourceNext: container.dataset.sourceNext || 'Next source',
+      sourcesUnused: container.dataset.sourcesUnused || 'Found but not used (%s)',
+      sourcePassage: container.dataset.sourcePassage || 'Passage %s',
+      sourcePassageCited: container.dataset.sourcePassageCited || 'cited in the answer',
+      sourceOpenPage: container.dataset.sourceOpenPage || 'Open at page %s',
       alerts: {
         note: container.dataset.alertNote || 'Note',
         tip: container.dataset.alertTip || 'Tip',
@@ -1477,7 +1481,7 @@ class AIChatPageComponent {
       const sourcesRow = this.renderSourcesRow(effectiveSources);
       messageEl.appendChild(sourcesRow);
       // Chips use the original source indices
-      this.convertFootnotesToChips(contentEl, sourcesRow, effectiveSources);
+      this.markUsedSources(sourcesRow, this.convertFootnotesToChips(contentEl, sourcesRow, effectiveSources));
     }
 
     const actionsEl = this.createMessageActions();
@@ -1646,7 +1650,7 @@ class AIChatPageComponent {
         sourcesRow = this.renderSourcesRow(sources);
         messageDiv.appendChild(sourcesRow);
 
-        this.convertFootnotesToChips(contentWrapper, sourcesRow, sources);
+        this.markUsedSources(sourcesRow, this.convertFootnotesToChips(contentWrapper, sourcesRow, sources));
       }
 
       const actionsDiv = document.createElement('div');
@@ -4818,6 +4822,16 @@ class AIChatPageComponent {
                 ${downloadBtn}
             `;
 
+      // Citation numbers of the passages of this file; the passages with their full text
+      const nums = Object.entries(origToDedup)
+        .filter(([, dIdx]) => parseInt(dIdx, 10) === dedupIdx + 1)
+        .map(([origIdx]) => parseInt(origIdx, 10));
+      item.dataset.sourceNums = nums.join(',');
+      const passages = this.renderSourcePassages(nums.map((num) => ({ num, source: sources[num - 1] })));
+      if (passages) {
+        item.appendChild(passages);
+      }
+
       // Anchors for all original indices of this item, so that the chips
       // can still find it via getElementById
       Object.entries(origToDedup).forEach(([origIdx, dIdx]) => {
@@ -4853,6 +4867,105 @@ class AIChatPageComponent {
   }
 
   /**
+   * Passages of one file in the source list, each with its full text to unfold
+   *
+   * PDFs that may be shown in the browser get a link to the page of the passage.
+   *
+   * @param {Array<{num: number, source: Object}>} entries - Passages with their citation number (1-based)
+   * @returns {HTMLElement|null} Null if no passage has a text
+   */
+  renderSourcePassages(entries) {
+    const withText = entries.filter(({ source }) => source && (source.text || source.excerpt));
+    if (withText.length === 0) {
+      return null;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'ai-chat-source-passages';
+
+    withText.forEach(({ num, source }, i) => {
+      const passage = document.createElement('details');
+      passage.className = 'ai-chat-source-passage';
+      passage.dataset.sourceNum = String(num);
+
+      const pages = Array.isArray(source.pages) ? source.pages : [];
+      const pageLabel = pages.length > 0
+        ? ` · ${this.escapeHtml(this.container.dataset.pageLabel || 'S.')} ${this.escapeHtml(pages.join(', '))}`
+        : '';
+      const summary = document.createElement('summary');
+      summary.innerHTML = `<span class="ai-chat-source-passage-title">${this.escapeHtml(this.lang.sourcePassage.replace('%s', i + 1))}${pageLabel}</span>`;
+      passage.appendChild(summary);
+
+      const body = document.createElement('div');
+      body.className = 'ai-chat-source-passage-body';
+      const firstPage = parseInt(pages[0], 10);
+      if (this.safeUrl(source.view_url) && firstPage > 0) {
+        const open = document.createElement('a');
+        open.className = 'ai-chat-source-passage-open';
+        open.href = `${source.view_url}#page=${firstPage}`;
+        open.target = '_blank';
+        open.rel = 'noopener noreferrer';
+        open.textContent = this.lang.sourceOpenPage.replace('%s', firstPage);
+        body.appendChild(open);
+      }
+      const text = document.createElement('div');
+      text.className = 'ai-chat-source-passage-text';
+      text.innerHTML = this.renderMarkdown(source.text || source.excerpt);
+      body.appendChild(text);
+      passage.appendChild(body);
+
+      container.appendChild(passage);
+    });
+
+    return container;
+  }
+
+  /**
+   * Separate the files cited in the answer from those only found by the search
+   *
+   * Cited passages are marked; files without a cited passage move into a closed group
+   * at the end of the list. Without any citation the list stays as it is.
+   *
+   * @param {HTMLElement} sourcesRow - Sources row element
+   * @param {Set<number>} citedNums - Cited source numbers (1-based)
+   */
+  markUsedSources(sourcesRow, citedNums) {
+    if (!sourcesRow || !citedNums || citedNums.size === 0) return;
+
+    const list = sourcesRow.querySelector('.ai-chat-sources-list');
+    if (!list) return;
+
+    const items = [...list.querySelectorAll(':scope > .ai-chat-source-item')];
+    const unused = [];
+    items.forEach((item) => {
+      const nums = (item.dataset.sourceNums || '').split(',').map((n) => parseInt(n, 10));
+      if (!nums.some((num) => citedNums.has(num))) {
+        unused.push(item);
+      }
+      item.querySelectorAll('.ai-chat-source-passage').forEach((passage) => {
+        if (citedNums.has(parseInt(passage.dataset.sourceNum, 10))) {
+          passage.classList.add('cited');
+          const badge = document.createElement('span');
+          badge.className = 'ai-chat-source-passage-cited';
+          badge.textContent = this.lang.sourcePassageCited;
+          passage.querySelector('summary').appendChild(badge);
+        }
+      });
+    });
+
+    // Citations that match no file (should not happen): nothing to separate
+    if (unused.length === 0 || unused.length === items.length) return;
+
+    const group = document.createElement('details');
+    group.className = 'ai-chat-sources-unused';
+    const summary = document.createElement('summary');
+    summary.textContent = this.lang.sourcesUnused.replace('%s', unused.length);
+    group.appendChild(summary);
+    unused.forEach((item) => group.appendChild(item));
+    list.appendChild(group);
+  }
+
+  /**
    * Replace the citation placeholders of an answer with source chips
    *
    * A placeholder citing several sources ([1, 2] or [1][2]) becomes one chip with
@@ -4863,9 +4976,11 @@ class AIChatPageComponent {
    * @param {HTMLElement} sourcesRow - Sources row element
    * @param {Array} sources - Sources array
    * @param {boolean} [withTooltips=true] - Tooltips with file name, pages and excerpt
+   * @returns {Set<number>} Cited source numbers (1-based) that match a source
    */
   convertFootnotesToChips(contentEl, sourcesRow, sources, withTooltips = true) {
-    if (!contentEl || !sourcesRow || !sources || sources.length === 0) return;
+    const cited = new Set();
+    if (!contentEl || !sourcesRow || !sources || sources.length === 0) return cited;
 
     const { sourcesId } = sourcesRow.dataset;
     const self = this;
@@ -4944,6 +5059,13 @@ class AIChatPageComponent {
           item.classList.add('highlighted');
           setTimeout(() => item.classList.remove('highlighted'), 2000);
         });
+        // Unfold the cited passages
+        nums.forEach((num) => {
+          const passage = sourcesRow.querySelector(`.ai-chat-source-passage[data-source-num="${num}"]`);
+          if (passage) {
+            passage.open = true;
+          }
+        });
       };
       chip.addEventListener('click', openSources);
       chip.addEventListener('keydown', (e) => {
@@ -4959,11 +5081,13 @@ class AIChatPageComponent {
       const nums = [...new Set(marker.dataset.cite.split(',').map((n) => parseInt(n, 10)))]
         .filter((num) => num > 0 && sources[num - 1]);
       if (nums.length > 0) {
+        nums.forEach((num) => cited.add(num));
         marker.replaceWith(createSourceChip(nums));
       } else {
         marker.replaceWith(document.createTextNode(marker.textContent));
       }
     });
+    return cited;
   }
 }
 

@@ -1958,6 +1958,84 @@
     100% { background: var(--chat-accent-highlight); }
 }
 
+/* Passages of a file: full text to unfold, below the file row */
+.ai-chat-source-item:has(.ai-chat-source-passages) { flex-wrap: wrap; }
+.ai-chat-source-item:has(.ai-chat-source-passage[open]):hover { transform: none; }
+
+.ai-chat-source-passages {
+    flex-basis: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: calc(1.5em + 10px);
+}
+
+.ai-chat-source-passage summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--chat-text-secondary);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ai-chat-source-passage summary::before {
+    content: '▸';
+    font-size: 10px;
+    transition: transform 0.15s ease;
+}
+
+.ai-chat-source-passage[open] summary::before { transform: rotate(90deg); }
+.ai-chat-source-passage summary::-webkit-details-marker { display: none; }
+.ai-chat-source-passage summary { list-style: none; }
+
+.ai-chat-source-passage-cited {
+    font-size: 11px;
+    color: var(--chat-accent);
+    background: var(--chat-accent-glow);
+    padding: 1px 8px;
+    border-radius: 10px;
+}
+
+.ai-chat-source-passage-body {
+    margin: 6px 0 4px;
+    padding: 8px 10px;
+    border-left: 2px solid var(--chat-border);
+    color: var(--chat-text-primary);
+    font-size: 12px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.ai-chat-source-passage.cited .ai-chat-source-passage-body { border-left-color: var(--chat-accent); }
+
+.ai-chat-source-passage-open {
+    display: inline-block;
+    margin-bottom: 6px;
+    color: var(--chat-link);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.ai-chat-source-passage-open:hover { text-decoration: underline; }
+
+.ai-chat-source-passage-text > :first-child { margin-top: 0; }
+.ai-chat-source-passage-text > :last-child { margin-bottom: 0; }
+
+/* Files the search found but the answer does not cite */
+.ai-chat-sources-unused { margin-top: 6px; }
+
+.ai-chat-sources-unused > summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--chat-text-secondary);
+    padding: 4px 2px;
+}
+
+.ai-chat-sources-unused[open] > summary { margin-bottom: 6px; }
+.ai-chat-sources-unused > .ai-chat-source-item { opacity: 0.85; margin-bottom: 6px; }
+
 
 /* ── Source Chips (inline in text) ───────────────────────────────────────────── */
 

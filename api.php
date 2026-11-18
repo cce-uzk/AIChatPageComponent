@@ -614,16 +614,7 @@ try {
                 ];
 
                 if ($msg->getRole() === 'assistant' && $show_sources && $msg->hasSources()) {
-                    $bg_urls = $chat_config->isAllowSourceDownloads()
-                        ? getBackgroundFileDownloadUrls($chat_id)
-                        : [];
-                    $formatted_msg['sources'] = array_map(function ($source) use ($bg_urls, $chat_id) {
-                        $filename = $source['filename'] ?? 'Unknown';
-                        $attachment_id = $bg_urls[$filename] ?? null;
-                        return array_merge($source, [
-                            'download_url' => $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null,
-                        ]);
-                    }, $msg->getFormattedSources());
+                    $formatted_msg['sources'] = buildClientSources($chat_config, $chat_id, $msg->getMetadata() ?? []);
                 }
 
                 $usage = $msg->getUsage();
@@ -857,9 +848,11 @@ try {
                     exit;
                 }
 
-                // Delivered as download via the Resource Storage
-                $download_consumer = $DIC->resourceStorage()->consume()->download($resource_id);
-                $download_consumer->run();
+                // Delivered via the Resource Storage: PDFs on request in the browser (see buildClientSources()),
+                // everything else as download
+                $consume = $DIC->resourceStorage()->consume();
+                $inline = ($data['inline'] ?? '') === '1' && isInlineViewable((string) $attachment->getTitle());
+                ($inline ? $consume->inline($resource_id) : $consume->download($resource_id))->run();
             } catch (\Exception $e) {
                 $logger->warning("Background file download failed", [
                     'attachment_id' => $attachment_id,
@@ -1235,7 +1228,11 @@ function stripSourcesFromResponse(string $text): string
  * Sources of an answer as sent to the browser
  *
  * @param array $metadata Sources from the AI service (see AIChatPageComponentLLM::getLastResponseMetadata())
- * @return array<int, array{filename: string, pages: array, url: ?string, excerpt: ?string, download_url: ?string}>
+ * Source N belongs to citation [N]. Download and view links only for background files of
+ * the chat, and only if the chat allows source downloads.
+ *
+ * @return array<int, array{filename: string, pages: array, url: ?string, excerpt: ?string, text: ?string,
+ *     download_url: ?string, view_url: ?string}>
  */
 function buildClientSources(ChatConfig $chat_config, string $chat_id, array $metadata): array
 {
@@ -1243,17 +1240,27 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
         ? getBackgroundFileDownloadUrls($chat_id)
         : [];
 
-    return array_map(static function ($source) use ($bg_urls, $chat_id): array {
-        $filename = $source['filename'] ?? 'Unknown';
-        $attachment_id = $bg_urls[$filename] ?? null;
-        return [
-            'filename' => $filename,
-            'pages' => $source['page_numbers'] ?? [],
-            'url' => $source['url'] ?? null,
-            'excerpt' => isset($source['text']) ? mb_substr($source['text'], 0, 200) . '...' : null,
-            'download_url' => $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null,
-        ];
-    }, array_values($metadata));
+    return array_map(static function (array $source) use ($bg_urls, $chat_id): array {
+        $attachment_id = $bg_urls[$source['filename']] ?? null;
+        $download_url = $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null;
+        return array_merge($source, [
+            'download_url' => $download_url,
+            // PDFs open in the viewer of the browser, which can jump to the page of the passage
+            'view_url' => $download_url !== null && isInlineViewable((string) $source['filename'])
+                ? $download_url . '&inline=1'
+                : null,
+        ]);
+    }, \ILIAS\Plugin\pcaic\Model\ChatMessage::formatSources($metadata));
+}
+
+/**
+ * Whether a background file may be shown in the browser instead of being downloaded
+ *
+ * PDFs only: shown inline, other types such as HTML would run in the context of ILIAS.
+ */
+function isInlineViewable(string $filename): bool
+{
+    return strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'pdf';
 }
 
 /**

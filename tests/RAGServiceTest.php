@@ -52,6 +52,29 @@ class RAGServiceTest extends TestCase
         ];
     }
 
+    public function testSourcesForTheBrowserKeepOrderAndFullText(): void
+    {
+        $long = str_repeat('a', 300);
+        $sources = \ILIAS\Plugin\pcaic\Model\ChatMessage::formatSources([
+            ['filename' => 'a.pdf', 'page_numbers' => [3], 'text' => " $long "],
+            ['filename' => 'b.txt', 'text' => 'Short'],
+            ['filename' => 'c.txt'],
+        ]);
+
+        $this->assertSame(['a.pdf', 'b.txt', 'c.txt'], array_column($sources, 'filename'));
+        $this->assertSame([3], $sources[0]['pages']);
+        $this->assertSame($long, $sources[0]['text']);
+        $this->assertSame(str_repeat('a', 200) . '...', $sources[0]['excerpt']);
+        $this->assertSame('Short', $sources[1]['excerpt']);
+        $this->assertSame([], $sources[1]['pages']);
+        $this->assertNull($sources[2]['text']);
+
+        $limited = \ILIAS\Plugin\pcaic\Model\ChatMessage::formatSources([
+            ['filename' => 'x', 'text' => str_repeat('b', \ILIAS\Plugin\pcaic\Model\ChatMessage::SOURCE_TEXT_LIMIT + 10)],
+        ]);
+        $this->assertSame(\ILIAS\Plugin\pcaic\Model\ChatMessage::SOURCE_TEXT_LIMIT, mb_strlen($limited[0]['text']));
+    }
+
     public function testChunksToSourcesKeepsReferenceOrder(): void
     {
         $sources = AIChatPageComponentRAG::chunksToSources([

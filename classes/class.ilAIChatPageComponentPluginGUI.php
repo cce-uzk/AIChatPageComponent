@@ -1699,6 +1699,10 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("CITATION_MORE_SOURCES", htmlspecialchars($this->plugin->txt('citation_more_sources')));
         $tpl->setVariable("SOURCE_PREVIOUS", htmlspecialchars($this->plugin->txt('source_previous')));
         $tpl->setVariable("SOURCE_NEXT", htmlspecialchars($this->plugin->txt('source_next')));
+        $tpl->setVariable("SOURCES_UNUSED", htmlspecialchars($this->plugin->txt('sources_unused')));
+        $tpl->setVariable("SOURCE_PASSAGE", htmlspecialchars($this->plugin->txt('source_passage')));
+        $tpl->setVariable("SOURCE_PASSAGE_CITED", htmlspecialchars($this->plugin->txt('source_passage_cited')));
+        $tpl->setVariable("SOURCE_OPEN_PAGE", htmlspecialchars($this->plugin->txt('source_open_page')));
         $tpl->setVariable("SCROLL_TO_BOTTOM", htmlspecialchars($this->plugin->txt('scroll_to_bottom')));
 
         $tpl->setVariable("MAX_FILE_SIZE_MB", FileUploadValidator::getMaxFileSizeMb());
