@@ -118,19 +118,74 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
 
             if ($data !== null) {
-                $flat_data = array_merge(...array_map(fn($s) => is_array($s) ? $s : [], $data));
+                $flat_data = array_merge(
+                    $this->getCreationDefaults(),
+                    ...array_map(fn($s) => is_array($s) ? $s : [], $data)
+                );
                 if ($this->saveForm($flat_data, true)) {
                     $this->tpl->setOnScreenMessage("success", $this->lng->txt("saved_successfully"), true);
-                    $this->returnToParent();
+                    $this->redirectToEditOfNewElement();
                     return;
-                } else {
                 }
-            } else {
             }
         }
 
         $renderer = $DIC->ui()->renderer();
         $this->tpl->setContent($renderer->render($form));
+    }
+
+    /**
+     * Settings of a new chat that the creation form does not ask for: the same values the
+     * full form proposes (defaults of the administration), RAG and chat uploads off
+     */
+    private function getCreationDefaults(): array
+    {
+        $defaults = $this->getAIChatDefaults();
+        return [
+            'max_memory' => $defaults['max_memory_messages'],
+            'char_limit' => $defaults['characters_limit'],
+            'disclaimer' => $defaults['disclaimer'],
+            'persistent' => false,
+            'include_page_context' => true,
+            'enable_chat_uploads' => false,
+            'enable_streaming' => true,
+        ];
+    }
+
+    /**
+     * Open the edit form of the element just created, where the other settings are made
+     *
+     * The page editor finds the element by its PC ID, which the page assigns when it is saved.
+     * Hierarchical IDs are only assigned when a page is loaded, so they are added to the page
+     * here. If either ID is not known, the page is shown as before.
+     */
+    private function redirectToEditOfNewElement(): void
+    {
+        $hier_id = '';
+        $pc_id = '';
+        try {
+            $content = $this->getPCGUI()->getContentObject();
+            $pc_id = is_object($content) ? $content->readPCId() : '';
+            if ($pc_id !== '') {
+                // In the DOM the element was inserted into; the XML of the page object is
+                // still the one before the insertion
+                $page = $this->getPCGUI()->getPage();
+                $page->addHierIDs();
+                $hier_id = (string) ($page->getHierIdsForPCIds([$pc_id])[$pc_id] ?? '');
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning("Edit form of the new chat element not opened: " . $e->getMessage());
+        }
+
+        if ($hier_id === '' || $pc_id === '') {
+            $this->logger->info("New chat element without hierarchical or PC ID ('$hier_id', '$pc_id'), returning to the page");
+            $this->returnToParent();
+            return;
+        }
+
+        $this->ctrl->setParameterByClass(ilPageEditorGUI::class, 'hier_id', $hier_id);
+        $this->ctrl->setParameterByClass(ilPageEditorGUI::class, 'pc_id', $pc_id);
+        $this->ctrl->redirectByClass(ilPCPluggedGUI::class, 'edit');
     }
 
     public function edit(): void
@@ -261,12 +316,25 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $is_online = $ui_factory->input()->field()->checkbox(
             $this->plugin->txt('chat_online_label'),
             $this->plugin->txt('chat_online_info')
-        )->withDedicatedName('is_online')->withValue($this->toBool($prop['is_online'] ?? true));
+        )->withDedicatedName('is_online')->withValue($this->toBool($prop['is_online'] ?? !$a_create));
 
         $system_prompt = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('system_prompt_label'),
             $this->plugin->txt('system_prompt_info')
         )->withDedicatedName('system_prompt')->withMaxLimit(12000)->withValue($prop['system_prompt'] ?? $defaults['prompt']);
+
+        // A new chat gets title, visibility and system prompt only; after saving, the edit
+        // form with its tabs opens for all other settings (see create())
+        if ($a_create) {
+            return $ui_factory->input()->container()->form()->standard(
+                $this->ctrl->getFormAction($this, 'create'),
+                [$ui_factory->input()->field()->section(
+                    ['chat_title' => $chat_title, 'is_online' => $is_online, 'system_prompt' => $system_prompt],
+                    $this->plugin->txt('section_general_label'),
+                    $this->plugin->txt('section_general_create_info')
+                )]
+            );
+        }
 
         $default_ai_service = \platform\AIChatPageComponentConfig::get('selected_ai_service') ?: 'ramses';
         $force_default_service = \platform\AIChatPageComponentConfig::get('force_default_ai_service') ?: '0';
