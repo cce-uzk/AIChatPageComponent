@@ -391,6 +391,16 @@ class AIChatPageComponent {
         empty: container.dataset.ragUploadEmpty || 'No searchable text found',
         scanned: container.dataset.ragUploadScanned || 'Ready (scanned document: text recognition may be incomplete)',
       },
+      // Shown in the file bubble; the long texts above are the tooltip and the screen reader text
+      ragUploadStatusShort: {
+        pending: container.dataset.ragUploadProcessingShort || 'Processing …',
+        processing: container.dataset.ragUploadProcessingShort || 'Processing …',
+        completed: container.dataset.ragUploadCompletedShort || 'Searchable',
+        failed: container.dataset.ragUploadFailedShort || 'Retrying',
+        rejected: container.dataset.ragUploadRejectedShort || 'Not searchable',
+        empty: container.dataset.ragUploadEmptyShort || 'No text found',
+        scanned: container.dataset.ragUploadScannedShort || 'Scan, searchable',
+      },
       pageLabel: container.dataset.pageLabel || 'Seite',
       pagesLabel: container.dataset.pagesLabel || 'Seiten',
       tableCopy: container.dataset.tableCopy || 'Copy table',
@@ -400,6 +410,13 @@ class AIChatPageComponent {
       citationMoreSources: container.dataset.citationMoreSources || '%s more sources',
       sourcePrevious: container.dataset.sourcePrevious || 'Previous source',
       sourceNext: container.dataset.sourceNext || 'Next source',
+      sourcesUnused: container.dataset.sourcesUnused || 'Found but not used (%s)',
+      sourcePassage: container.dataset.sourcePassage || 'Passage %s',
+      sourcePassageCited: container.dataset.sourcePassageCited || 'cited in the answer',
+      sourceOpenPage: container.dataset.sourceOpenPage || 'Open at page %s',
+      sourcePassagesToggle: container.dataset.sourcePassagesToggle || 'Show or hide the passages',
+      sourcePassagesOne: container.dataset.sourcePassagesOne || '1 passage',
+      sourcePassagesMany: container.dataset.sourcePassagesMany || '%s passages',
       alerts: {
         note: container.dataset.alertNote || 'Note',
         tip: container.dataset.alertTip || 'Tip',
@@ -417,6 +434,39 @@ class AIChatPageComponent {
    */
   static createStreamState() {
     return { renderPending: false, sources: null, sourcesRow: null };
+  }
+
+  /**
+   * Convert the RAG citation markers (0-based) into 1-based references, as the server does
+   * for the final answer (AIChatPageComponentRAG::convertCitationMarkers)
+   *
+   * Models vary the format: [cit-0], (cit-0), <cit-0>, other dashes, spaces and several
+   * markers in one bracket ([cit-0, cit-2]). All become [1], [1][3].
+   *
+   * @param {string} text
+   * @returns {string}
+   */
+  static convertCitationMarkers(text) {
+    const dash = '[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]';
+    const marker = `cit\\s*${dash}\\s*\\d+`;
+    const pattern = new RegExp(`[\\[(<]\\s*(${marker}(?:\\s*,\\s*${marker})*)\\s*[\\])>]`, 'gi');
+    return text.replace(pattern, (match, list) => list.match(/\d+/g)
+      .map((n) => `[${parseInt(n, 10) + 1}]`)
+      .join(''));
+  }
+
+  /**
+   * Text of a passage for display: the full text, or the excerpt of answers stored by older versions
+   *
+   * The RAG cuts documents into overlapping passages, so a passage may begin in the middle
+   * of a word ("ierung schrittweise ..."); such a start is marked with an ellipsis.
+   *
+   * @param {Object} source
+   * @returns {string}
+   */
+  static passageText(source) {
+    const text = String((source && (source.text || source.excerpt)) || '').trim();
+    return /^\p{Ll}/u.test(text) ? `…${text}` : text;
   }
 
   /** Maximum width of the unfolded file name of a source chip, in pixels */
@@ -1361,8 +1411,7 @@ class AIChatPageComponent {
         return;
       }
       // RAG citations [cit-N] (0-based) are shown as [N+1], as in the final message
-      const rawContent = (contentEl.dataset.rawContent || '')
-        .replace(/\[cit-(\d+)\]/gi, (m, n) => `[${parseInt(n, 10) + 1}]`);
+      const rawContent = AIChatPageComponent.convertCitationMarkers(contentEl.dataset.rawContent || '');
       contentEl.innerHTML = this.renderMarkdown(rawContent);
       this.decorateRenderedContent(contentEl);
       if (state.sourcesRow) {
@@ -1459,7 +1508,7 @@ class AIChatPageComponent {
       const sourcesRow = this.renderSourcesRow(effectiveSources);
       messageEl.appendChild(sourcesRow);
       // Chips use the original source indices
-      this.convertFootnotesToChips(contentEl, sourcesRow, effectiveSources);
+      this.markUsedSources(sourcesRow, this.convertFootnotesToChips(contentEl, sourcesRow, effectiveSources));
     }
 
     const actionsEl = this.createMessageActions();
@@ -1598,6 +1647,7 @@ class AIChatPageComponent {
 
       attachments.forEach((attachment) => {
         debug('AIChatPageComponent: Processing attachment for display:', attachment);
+        const previousBubble = attachmentsDiv.lastElementChild;
 
         if (attachment.is_image || attachment.file_type === 'image') {
           this.createImageAttachment(attachment, attachmentsDiv);
@@ -1608,7 +1658,9 @@ class AIChatPageComponent {
         } else if (attachment.download_url) {
           this.createGenericAttachment(attachment, attachmentsDiv);
         }
-        this.appendRagStatusBadge(attachmentsDiv, attachment);
+        if (attachmentsDiv.lastElementChild !== previousBubble) {
+          this.appendRagStatusBadge(attachmentsDiv.lastElementChild, attachment);
+        }
       });
 
       if (role === 'user') {
@@ -1628,7 +1680,7 @@ class AIChatPageComponent {
         sourcesRow = this.renderSourcesRow(sources);
         messageDiv.appendChild(sourcesRow);
 
-        this.convertFootnotesToChips(contentWrapper, sourcesRow, sources);
+        this.markUsedSources(sourcesRow, this.convertFootnotesToChips(contentWrapper, sourcesRow, sources));
       }
 
       const actionsDiv = document.createElement('div');
@@ -2314,8 +2366,9 @@ class AIChatPageComponent {
           html += `<div class="ai-chat-tooltip-pages">${this.escapeHtml(pageLabel)} ${this.escapeHtml(sourceData.pages.join(', '))}</div>`;
         }
 
-        if (sourceData.excerpt) {
-          html += `<div class="ai-chat-tooltip-excerpt">${this.renderMarkdown(sourceData.excerpt)}</div>`;
+        const passageText = AIChatPageComponent.passageText(sourceData);
+        if (passageText) {
+          html += `<div class="ai-chat-tooltip-excerpt">${this.renderMarkdown(passageText)}</div>`;
         }
         html += '</div>';
       });
@@ -2618,6 +2671,7 @@ class AIChatPageComponent {
                 margin-top: 2px;
             `;
       const sizeKB = Math.round(attachment.size / 1024);
+      typeInfo.className = 'ai-chat-file-meta';
       typeInfo.textContent = `PDF • ${sizeKB} KB`;
 
       fileInfoContainer.appendChild(filename);
@@ -2719,6 +2773,7 @@ class AIChatPageComponent {
             margin-top: 2px;
         `;
     const sizeKB = Math.round(attachment.size / 1024);
+    typeInfo.className = 'ai-chat-file-meta';
     typeInfo.textContent = `${docType} • ${sizeKB} KB`;
 
     fileInfoContainer.appendChild(filename);
@@ -2802,6 +2857,7 @@ class AIChatPageComponent {
         `;
     const ext = attachment.title ? attachment.title.split('.').pop().toUpperCase() : 'FILE';
     const sizeKB = Math.round(attachment.size / 1024);
+    typeInfo.className = 'ai-chat-file-meta';
     typeInfo.textContent = `${ext} • ${sizeKB} KB`;
 
     fileInfoContainer.appendChild(filename);
@@ -3353,7 +3409,7 @@ class AIChatPageComponent {
         debug('AIChatPageComponent: Creating document preview for attachment', index);
         this.createUploadDocumentPreview(attachment, index);
       }
-      this.appendRagStatusBadge(this.attachmentsList, attachment);
+      this.appendRagStatusBadge(this.attachmentsList.lastElementChild, attachment);
     });
 
     debug('AIChatPageComponent: updateAttachmentsDisplay completed');
@@ -3479,6 +3535,7 @@ class AIChatPageComponent {
             margin-top: 1px;
         `;
     const sizeKB = attachment.size ? Math.round(attachment.size / 1024) : '?';
+    typeInfo.className = 'ai-chat-file-meta';
     typeInfo.textContent = `${docType} • ${sizeKB} KB`;
 
     fileInfoContainer.appendChild(filename);
@@ -3831,26 +3888,39 @@ class AIChatPageComponent {
   }
 
   /**
-   * Show the processing state of an uploaded file in the document search next to the file
+   * Show the processing state of an uploaded file in the document search inside its bubble
    *
-   * Files that are not handled by the document search have no state. While a file
-   * is being processed, the state is queried from the server.
+   * File cards get the short state in their line with type and size, images a label on
+   * the image. The full text is the tooltip and is announced by screen readers. Files that
+   * are not handled by the document search have no state. While a file is being processed,
+   * the state is queried from the server.
    *
-   * @param {HTMLElement} container - Element the badge is appended to
+   * @param {HTMLElement|null} bubble - Bubble of the file
    * @param {Object} attachment - Attachment data with id and rag_status
    */
-  appendRagStatusBadge(container, attachment) {
-    if (!container || !attachment || !this.lang.ragUploadStatus[attachment.rag_status]) {
+  appendRagStatusBadge(bubble, attachment) {
+    if (!bubble || !attachment || !this.lang.ragUploadStatus[attachment.rag_status]) {
       return;
     }
 
-    const badge = document.createElement('div');
+    const badge = document.createElement('span');
     badge.className = 'ai-chat-rag-status';
     // Announced by screen readers when the state changes, the badge may be outside the message log
     badge.setAttribute('role', 'status');
     badge.dataset.attachmentId = attachment.id;
+    badge.innerHTML = '<span class="ai-chat-rag-status-icon" aria-hidden="true"></span>'
+      + '<span class="ai-chat-rag-status-text"></span>';
+
+    const meta = bubble.querySelector('.ai-chat-file-meta');
+    if (meta) {
+      meta.appendChild(badge);
+    } else {
+      // Images: label on the image
+      bubble.classList.add('ai-chat-rag-status-host');
+      badge.classList.add('ai-chat-rag-status-overlay');
+      bubble.appendChild(badge);
+    }
     this.setRagStatusBadge(badge, attachment.rag_status);
-    container.appendChild(badge);
 
     if (this.isRagStatusPending(attachment.rag_status)) {
       this.startRagStatusPolling();
@@ -3859,7 +3929,10 @@ class AIChatPageComponent {
 
   setRagStatusBadge(badge, status) {
     badge.dataset.status = status;
-    badge.textContent = this.lang.ragUploadStatus[status];
+    badge.title = this.lang.ragUploadStatus[status];
+    badge.setAttribute('aria-label', this.lang.ragUploadStatus[status]);
+    badge.querySelector('.ai-chat-rag-status-text').textContent = this.lang.ragUploadStatusShort[status]
+      || this.lang.ragUploadStatus[status];
   }
 
   isRagStatusPending(status) {
@@ -4800,6 +4873,16 @@ class AIChatPageComponent {
                 ${downloadBtn}
             `;
 
+      // Citation numbers of the passages of this file; the passages with their full text
+      const nums = Object.entries(origToDedup)
+        .filter(([, dIdx]) => parseInt(dIdx, 10) === dedupIdx + 1)
+        .map(([origIdx]) => parseInt(origIdx, 10));
+      item.dataset.sourceNums = nums.join(',');
+      const passages = this.renderSourcePassages(nums.map((num) => ({ num, source: sources[num - 1] })));
+      if (passages) {
+        this.addSourcePassagesToggle(item, passages, source.pages);
+      }
+
       // Anchors for all original indices of this item, so that the chips
       // can still find it via getElementById
       Object.entries(origToDedup).forEach(([origIdx, dIdx]) => {
@@ -4835,6 +4918,167 @@ class AIChatPageComponent {
   }
 
   /**
+   * Passages of one file in the source list, each with its full text to unfold
+   *
+   * PDFs that may be shown in the browser get a link to the page of the passage.
+   *
+   * @param {Array<{num: number, source: Object}>} entries - Passages with their citation number (1-based)
+   * @returns {HTMLElement|null} Null if no passage has a text
+   */
+  renderSourcePassages(entries) {
+    const withText = entries.filter(({ source }) => source && (source.text || source.excerpt));
+    if (withText.length === 0) {
+      return null;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'ai-chat-source-passages';
+
+    withText.forEach(({ num, source }, i) => {
+      const passage = document.createElement('details');
+      passage.className = 'ai-chat-source-passage';
+      passage.dataset.sourceNum = String(num);
+
+      const pages = Array.isArray(source.pages) ? source.pages : [];
+      const pageLabel = pages.length > 0
+        ? ` · ${this.escapeHtml(this.container.dataset.pageLabel || 'S.')} ${this.escapeHtml(pages.join(', '))}`
+        : '';
+      const summary = document.createElement('summary');
+      summary.innerHTML = `<span class="ai-chat-source-passage-title">${this.escapeHtml(this.lang.sourcePassage.replace('%s', i + 1))}${pageLabel}</span>`;
+      passage.appendChild(summary);
+
+      const body = document.createElement('div');
+      body.className = 'ai-chat-source-passage-body';
+      const firstPage = parseInt(pages[0], 10);
+      if (this.safeUrl(source.view_url) && firstPage > 0) {
+        const open = document.createElement('a');
+        open.className = 'ai-chat-source-passage-open';
+        open.href = `${source.view_url}#page=${firstPage}`;
+        open.target = '_blank';
+        open.rel = 'noopener noreferrer';
+        open.textContent = this.lang.sourceOpenPage.replace('%s', firstPage);
+        body.appendChild(open);
+      }
+      const text = document.createElement('div');
+      text.className = 'ai-chat-source-passage-text';
+      text.innerHTML = this.renderMarkdown(AIChatPageComponent.passageText(source));
+      body.appendChild(text);
+      passage.appendChild(body);
+
+      container.appendChild(passage);
+    });
+
+    return container;
+  }
+
+  /**
+   * Add the passages of a file to its entry in the source list, closed
+   *
+   * The pages of the file (or the number of passages) become a button that shows and
+   * hides the passages; a click on the rest of the entry does the same.
+   *
+   * @param {HTMLElement} item - Entry of the file
+   * @param {HTMLElement} passages - Passages of the file
+   * @param {Array} pages - Pages of the file
+   */
+  addSourcePassagesToggle(item, passages, pages) {
+    passages.hidden = true;
+    passages.id = `${item.id}-passages`;
+    item.appendChild(passages);
+    item.classList.add('ai-chat-source-has-passages');
+
+    const count = passages.querySelectorAll('.ai-chat-source-passage').length;
+    const label = Array.isArray(pages) && pages.length > 0
+      ? `${this.container.dataset.pageLabel || 'S.'} ${pages.join(', ')}`
+      : (count === 1 ? this.lang.sourcePassagesOne : this.lang.sourcePassagesMany.replace('%s', count));
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'ai-chat-source-pages ai-chat-source-passages-toggle';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', passages.id);
+    toggle.title = this.lang.sourcePassagesToggle;
+    toggle.innerHTML = `<span>${this.escapeHtml(label)}</span><svg class="ai-chat-source-passages-chevron" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/></svg>`;
+
+    // Replaces the plain page label
+    const plain = item.querySelector(':scope > .ai-chat-source-pages');
+    if (plain) {
+      plain.replaceWith(toggle);
+    } else {
+      const download = item.querySelector(':scope > .ai-chat-source-download');
+      item.insertBefore(toggle, download || passages);
+    }
+
+    item.addEventListener('click', (e) => {
+      // Links, the download and the passages themselves keep their own behaviour
+      if (e.target.closest('a, .ai-chat-source-passages') && !e.target.closest('.ai-chat-source-passages-toggle')) {
+        return;
+      }
+      this.setSourcePassagesOpen(item, passages.hidden);
+    });
+  }
+
+  /**
+   * Show or hide the passages of a file in the source list
+   *
+   * @param {HTMLElement} item - Entry of the file
+   * @param {boolean} open
+   */
+  setSourcePassagesOpen(item, open) {
+    const passages = item.querySelector(':scope > .ai-chat-source-passages');
+    const toggle = item.querySelector('.ai-chat-source-passages-toggle');
+    if (!passages || !toggle) return;
+    passages.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    item.classList.toggle('ai-chat-source-passages-open', open);
+  }
+
+  /**
+   * Separate the files cited in the answer from those only found by the search
+   *
+   * Cited passages are marked; files without a cited passage move into a closed group
+   * at the end of the list. Without any citation the list stays as it is.
+   *
+   * @param {HTMLElement} sourcesRow - Sources row element
+   * @param {Set<number>} citedNums - Cited source numbers (1-based)
+   */
+  markUsedSources(sourcesRow, citedNums) {
+    if (!sourcesRow || !citedNums || citedNums.size === 0) return;
+
+    const list = sourcesRow.querySelector('.ai-chat-sources-list');
+    if (!list) return;
+
+    const items = [...list.querySelectorAll(':scope > .ai-chat-source-item')];
+    const unused = [];
+    items.forEach((item) => {
+      const nums = (item.dataset.sourceNums || '').split(',').map((n) => parseInt(n, 10));
+      if (!nums.some((num) => citedNums.has(num))) {
+        unused.push(item);
+      }
+      item.querySelectorAll('.ai-chat-source-passage').forEach((passage) => {
+        if (citedNums.has(parseInt(passage.dataset.sourceNum, 10))) {
+          passage.classList.add('cited');
+          const badge = document.createElement('span');
+          badge.className = 'ai-chat-source-passage-cited';
+          badge.textContent = this.lang.sourcePassageCited;
+          passage.querySelector('summary').appendChild(badge);
+        }
+      });
+    });
+
+    // Citations that match no file (should not happen): nothing to separate
+    if (unused.length === 0 || unused.length === items.length) return;
+
+    const group = document.createElement('details');
+    group.className = 'ai-chat-sources-unused';
+    const summary = document.createElement('summary');
+    summary.textContent = this.lang.sourcesUnused.replace('%s', unused.length);
+    group.appendChild(summary);
+    unused.forEach((item) => group.appendChild(item));
+    list.appendChild(group);
+  }
+
+  /**
    * Replace the citation placeholders of an answer with source chips
    *
    * A placeholder citing several sources ([1, 2] or [1][2]) becomes one chip with
@@ -4845,9 +5089,11 @@ class AIChatPageComponent {
    * @param {HTMLElement} sourcesRow - Sources row element
    * @param {Array} sources - Sources array
    * @param {boolean} [withTooltips=true] - Tooltips with file name, pages and excerpt
+   * @returns {Set<number>} Cited source numbers (1-based) that match a source
    */
   convertFootnotesToChips(contentEl, sourcesRow, sources, withTooltips = true) {
-    if (!contentEl || !sourcesRow || !sources || sources.length === 0) return;
+    const cited = new Set();
+    if (!contentEl || !sourcesRow || !sources || sources.length === 0) return cited;
 
     const { sourcesId } = sourcesRow.dataset;
     const self = this;
@@ -4926,6 +5172,14 @@ class AIChatPageComponent {
           item.classList.add('highlighted');
           setTimeout(() => item.classList.remove('highlighted'), 2000);
         });
+        // Unfold the cited passages
+        nums.forEach((num) => {
+          const passage = sourcesRow.querySelector(`.ai-chat-source-passage[data-source-num="${num}"]`);
+          if (passage) {
+            self.setSourcePassagesOpen(passage.closest('.ai-chat-source-item'), true);
+            passage.open = true;
+          }
+        });
       };
       chip.addEventListener('click', openSources);
       chip.addEventListener('keydown', (e) => {
@@ -4941,11 +5195,13 @@ class AIChatPageComponent {
       const nums = [...new Set(marker.dataset.cite.split(',').map((n) => parseInt(n, 10)))]
         .filter((num) => num > 0 && sources[num - 1]);
       if (nums.length > 0) {
+        nums.forEach((num) => cited.add(num));
         marker.replaceWith(createSourceChip(nums));
       } else {
         marker.replaceWith(document.createTextNode(marker.textContent));
       }
     });
+    return cited;
   }
 }
 

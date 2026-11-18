@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 namespace ai;
 
+use ILIAS\Plugin\pcaic\Service\StreamKeepAlive;
 use platform\AIChatPageComponentException;
 
 require_once __DIR__ . '/class.AIChatPageComponentRAGBindingLostException.php';
@@ -48,7 +49,7 @@ class AIChatPageComponentRAG
     public const DEFAULT_API_URL = 'https://oski-rag.itcc.uni-koeln.de';
 
     /** @var string Default file types that are sent to the RAG */
-    public const DEFAULT_FILE_TYPES = 'txt,csv,pdf';
+    public const DEFAULT_FILE_TYPES = 'pdf,txt';
 
     /** @var int Default maximum number of chunks selected by the reranker */
     public const DEFAULT_TOP_K = 10;
@@ -171,7 +172,7 @@ class AIChatPageComponentRAG
         $inputs['rag_allowed_file_types'] = $ui_factory->input()->field()->text(
             $plugin->txt('config_rag_allowed_file_types'),
             $plugin->txt('config_rag_allowed_file_types_info')
-        )->withMaxLength(500)->withValue(implode(',', self::getFileTypes()));
+        )->withMaxLength(500)->withValue(implode(',', \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::getConfiguredRagTypes()));
 
         $top_k = \platform\AIChatPageComponentConfig::get('rag_top_k');
         $inputs['rag_top_k'] = $ui_factory->input()->field()->numeric(
@@ -201,8 +202,37 @@ class AIChatPageComponentRAG
                 $value = max(1, (int) ($value ?: self::DEFAULT_TOP_K));
             }
 
+            if ($key === 'rag_allowed_file_types') {
+                $value = implode(',', \ILIAS\Plugin\pcaic\Validation\FileTypePolicy::normalize((string) $value));
+            }
+
             \platform\AIChatPageComponentConfig::set($key, $value);
         }
+    }
+
+    /**
+     * Keep the file types of a list that are supported; the others are reported on screen
+     *
+     * @param string[] $types
+     * @param string[] $supported
+     * @return string Comma-separated list of the supported types
+     */
+    public static function keepSupportedFileTypes(array $types, array $supported): string
+    {
+        $dropped = array_values(array_diff($types, $supported));
+        if ($dropped !== []) {
+            try {
+                global $DIC;
+                $plugin = \ilAIChatPageComponentPlugin::getInstance();
+                $DIC->ui()->mainTemplate()->setOnScreenMessage('info', sprintf(
+                    $plugin->txt('config_file_types_unsupported'),
+                    implode(', ', $dropped),
+                    implode(', ', $supported)
+                ), true);
+            } catch (\Throwable $e) {
+            }
+        }
+        return implode(',', array_values(array_intersect($types, $supported)));
     }
 
     public static function getDefaultConfiguration(): array
@@ -630,15 +660,21 @@ class AIChatPageComponentRAG
     }
 
     /**
-     * Convert [cit-0] / [cit-0, cit-2] into 1-based references ([1], [1][3])
+     * Convert the citation markers of the RAG (0-based) into 1-based references
+     *
+     * Models vary the format: [cit-0], (cit-0), <cit-0>, other dashes, spaces and several
+     * markers in one bracket ([cit-0, cit-2]). All become [1], [1][3]. The browser converts
+     * the streamed text the same way (convertCitationMarkers in ai_chat.js).
      */
     public static function convertCitationMarkers(string $text): string
     {
+        $dash = '[\-\x{2010}-\x{2015}\x{2212}\x{FE58}\x{FE63}\x{FF0D}]';
+        $marker = 'cit\s*' . $dash . '\s*\d+';
         return preg_replace_callback(
-            '/\[\s*(cit-\d+(?:\s*,\s*cit-\d+)*)\s*\]/i',
+            '/[\[(<]\s*(' . $marker . '(?:\s*,\s*' . $marker . ')*)\s*[\])>]/iu',
             static function (array $match): string {
-                preg_match_all('/cit-(\d+)/i', $match[1], $numbers);
-                return implode('', array_map(fn($n) => '[' . ((int) $n + 1) . ']', $numbers[1]));
+                preg_match_all('/\d+/', $match[1], $numbers);
+                return implode('', array_map(fn($n) => '[' . ((int) $n + 1) . ']', $numbers[0]));
             },
             $text
         ) ?? $text;
@@ -691,6 +727,8 @@ class AIChatPageComponentRAG
         }
 
         AIChatPageComponentLLM::applyProxySettings($curl);
+        // The document search can take more than a minute: a streamed answer gets signs of life meanwhile
+        StreamKeepAlive::attach($curl);
 
         $response = curl_exec($curl);
         $http_code = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);

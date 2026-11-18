@@ -257,4 +257,17 @@ class RAGStatusTest extends TestCase
             \ai\AIChatPageComponentLLM::ragCollectionOwnerCondition(42)
         );
     }
+
+    public function testOnlyFilesThatCanContributeAreSearched(): void
+    {
+        // Still processing: the RAG may be done before the local state is updated
+        foreach ([AIChatPageComponentRAGStatus::COMPLETED, AIChatPageComponentRAGStatus::SCANNED,
+                  AIChatPageComponentRAGStatus::PROCESSING, AIChatPageComponentRAGStatus::PENDING, null] as $status) {
+            $this->assertTrue(\ai\AIChatPageComponentLLM::isSearchableRagStatus($status), (string) $status);
+        }
+        foreach ([AIChatPageComponentRAGStatus::FAILED, AIChatPageComponentRAGStatus::EMPTY,
+                  AIChatPageComponentRAGStatus::SKIPPED] as $status) {
+            $this->assertFalse(\ai\AIChatPageComponentLLM::isSearchableRagStatus($status), $status);
+        }
+    }
 }
