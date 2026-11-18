@@ -16,6 +16,7 @@ declare(strict_types=1);
 namespace ILIAS\Plugin\pcaic\Tests;
 
 use ai\AIChatPageComponentRAG;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use platform\AIChatPageComponentConfig;
 
@@ -29,9 +30,7 @@ class RAGServiceTest extends TestCase
         AIChatPageComponentConfig::reset();
     }
 
-    /**
-     * @dataProvider citationProvider
-     */
+    #[DataProvider('citationProvider')]
     public function testConvertCitationMarkers(string $input, string $expected): void
     {
         $this->assertSame($expected, AIChatPageComponentRAG::convertCitationMarkers($input));
@@ -129,7 +128,9 @@ class RAGServiceTest extends TestCase
         $second = AIChatPageComponentRAG::getNumericIds('chat_123');
 
         $this->assertSame($first, $second);
-        $this->assertContainsOnly('int', $first);
+        foreach ($first as $id) {
+            $this->assertIsInt($id);
+        }
         $this->assertNotSame($first[2], AIChatPageComponentRAG::getNumericIds('chat_456')[2]);
     }
 
