@@ -1710,6 +1710,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("SOURCE_PASSAGE", htmlspecialchars($this->plugin->txt('source_passage')));
         $tpl->setVariable("SOURCE_PASSAGE_CITED", htmlspecialchars($this->plugin->txt('source_passage_cited')));
         $tpl->setVariable("SOURCE_OPEN_PAGE", htmlspecialchars($this->plugin->txt('source_open_page')));
+        $tpl->setVariable("SOURCE_PASSAGES_TOGGLE", htmlspecialchars($this->plugin->txt('source_passages_toggle')));
+        $tpl->setVariable("SOURCE_PASSAGES_ONE", htmlspecialchars($this->plugin->txt('source_passages_one')));
+        $tpl->setVariable("SOURCE_PASSAGES_MANY", htmlspecialchars($this->plugin->txt('source_passages_many')));
         $tpl->setVariable("SCROLL_TO_BOTTOM", htmlspecialchars($this->plugin->txt('scroll_to_bottom')));
 
         $tpl->setVariable("MAX_FILE_SIZE_MB", FileUploadValidator::getMaxFileSizeMb());

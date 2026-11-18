@@ -225,6 +225,9 @@ sources_unused#:#Gefunden, aber nicht verwendet (%s)
 source_passage#:#Fundstelle %s
 source_passage_cited#:#in der Antwort zitiert
 source_open_page#:#Auf Seite %s öffnen
+source_passages_toggle#:#Fundstellen ein- oder ausblenden
+source_passages_one#:#1 Fundstelle
+source_passages_many#:#%s Fundstellen
 scroll_to_bottom#:#Zur neuesten Nachricht
 alert_note#:#Hinweis
 alert_tip#:#Tipp

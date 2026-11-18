@@ -2040,7 +2040,41 @@
 
 /* Passages of a file: full text to unfold, below the file row */
 .ai-chat-source-item:has(.ai-chat-source-passages) { flex-wrap: wrap; }
-.ai-chat-source-item:has(.ai-chat-source-passage[open]):hover { transform: none; }
+.ai-chat-source-item:has(.ai-chat-source-passage[open]):hover,
+.ai-chat-source-item.ai-chat-source-passages-open:hover { transform: none; }
+
+/* The passages are closed by default: the pages (or the number of passages) and the entry open them */
+.ai-chat-source-item.ai-chat-source-has-passages { cursor: pointer; }
+.ai-chat-source-passages[hidden] { display: none; }
+
+.ai-chat-source-passages-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 0;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.ai-chat-source-passages-toggle:hover,
+.ai-chat-source-passages-toggle[aria-expanded="true"] {
+    color: var(--chat-accent);
+    background: var(--chat-accent-glow);
+}
+
+.ai-chat-source-passages-toggle:focus-visible {
+    outline: 2px solid var(--chat-accent);
+    outline-offset: 1px;
+}
+
+.ai-chat-source-passages-chevron {
+    width: 10px;
+    height: 10px;
+    transition: transform 0.2s ease;
+}
+
+.ai-chat-source-passages-toggle[aria-expanded="true"] .ai-chat-source-passages-chevron { transform: rotate(180deg); }
 
 .ai-chat-source-passages {
     flex-basis: 100%;

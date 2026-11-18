@@ -225,6 +225,9 @@ sources_unused#:#Found but not used (%s)
 source_passage#:#Passage %s
 source_passage_cited#:#cited in the answer
 source_open_page#:#Open at page %s
+source_passages_toggle#:#Show or hide the passages
+source_passages_one#:#1 passage
+source_passages_many#:#%s passages
 scroll_to_bottom#:#Scroll to the latest message
 alert_note#:#Note
 alert_tip#:#Tip

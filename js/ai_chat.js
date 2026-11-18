@@ -414,6 +414,9 @@ class AIChatPageComponent {
       sourcePassage: container.dataset.sourcePassage || 'Passage %s',
       sourcePassageCited: container.dataset.sourcePassageCited || 'cited in the answer',
       sourceOpenPage: container.dataset.sourceOpenPage || 'Open at page %s',
+      sourcePassagesToggle: container.dataset.sourcePassagesToggle || 'Show or hide the passages',
+      sourcePassagesOne: container.dataset.sourcePassagesOne || '1 passage',
+      sourcePassagesMany: container.dataset.sourcePassagesMany || '%s passages',
       alerts: {
         note: container.dataset.alertNote || 'Note',
         tip: container.dataset.alertTip || 'Tip',
@@ -4862,7 +4865,7 @@ class AIChatPageComponent {
       item.dataset.sourceNums = nums.join(',');
       const passages = this.renderSourcePassages(nums.map((num) => ({ num, source: sources[num - 1] })));
       if (passages) {
-        item.appendChild(passages);
+        this.addSourcePassagesToggle(item, passages, source.pages);
       }
 
       // Anchors for all original indices of this item, so that the chips
@@ -4951,6 +4954,68 @@ class AIChatPageComponent {
     });
 
     return container;
+  }
+
+  /**
+   * Add the passages of a file to its entry in the source list, closed
+   *
+   * The pages of the file (or the number of passages) become a button that shows and
+   * hides the passages; a click on the rest of the entry does the same.
+   *
+   * @param {HTMLElement} item - Entry of the file
+   * @param {HTMLElement} passages - Passages of the file
+   * @param {Array} pages - Pages of the file
+   */
+  addSourcePassagesToggle(item, passages, pages) {
+    passages.hidden = true;
+    passages.id = `${item.id}-passages`;
+    item.appendChild(passages);
+    item.classList.add('ai-chat-source-has-passages');
+
+    const count = passages.querySelectorAll('.ai-chat-source-passage').length;
+    const label = Array.isArray(pages) && pages.length > 0
+      ? `${this.container.dataset.pageLabel || 'S.'} ${pages.join(', ')}`
+      : (count === 1 ? this.lang.sourcePassagesOne : this.lang.sourcePassagesMany.replace('%s', count));
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'ai-chat-source-pages ai-chat-source-passages-toggle';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', passages.id);
+    toggle.title = this.lang.sourcePassagesToggle;
+    toggle.innerHTML = `<span>${this.escapeHtml(label)}</span><svg class="ai-chat-source-passages-chevron" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/></svg>`;
+
+    // Replaces the plain page label
+    const plain = item.querySelector(':scope > .ai-chat-source-pages');
+    if (plain) {
+      plain.replaceWith(toggle);
+    } else {
+      const download = item.querySelector(':scope > .ai-chat-source-download');
+      item.insertBefore(toggle, download || passages);
+    }
+
+    item.addEventListener('click', (e) => {
+      // Links, the download and the passages themselves keep their own behaviour
+      if (e.target.closest('a, .ai-chat-source-passages') && !e.target.closest('.ai-chat-source-passages-toggle')) {
+        return;
+      }
+      this.setSourcePassagesOpen(item, passages.hidden);
+    });
+  }
+
+  /**
+   * Show or hide the passages of a file in the source list
+   *
+   * @param {HTMLElement} item - Entry of the file
+   * @param {boolean} open
+   */
+  setSourcePassagesOpen(item, open) {
+    const passages = item.querySelector(':scope > .ai-chat-source-passages');
+    const toggle = item.querySelector('.ai-chat-source-passages-toggle');
+    if (!passages || !toggle) return;
+    passages.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    item.classList.toggle('ai-chat-source-passages-open', open);
   }
 
   /**
@@ -5096,6 +5161,7 @@ class AIChatPageComponent {
         nums.forEach((num) => {
           const passage = sourcesRow.querySelector(`.ai-chat-source-passage[data-source-num="${num}"]`);
           if (passage) {
+            self.setSourcePassagesOpen(passage.closest('.ai-chat-source-item'), true);
             passage.open = true;
           }
         });
