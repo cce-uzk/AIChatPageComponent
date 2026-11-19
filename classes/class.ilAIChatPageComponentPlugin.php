@@ -242,34 +242,12 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements ilCro
                     if ($is_cut_paste) {
                         $logger->debug("PageComponent moved - preserving chat data");
                     } else {
-                        $new_chat_id = uniqid('chat_', true);
-
-                        $cloned_background_files = $this->cloneBackgroundFiles($old_config->getBackgroundFiles());
-
-                        $new_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($new_chat_id);
-                        $new_config->setPageId($old_config->getPageId());
-                        $new_config->setParentId($old_config->getParentId());
-                        $new_config->setParentType($old_config->getParentType());
-                        $new_config->setTitle($old_config->getTitle());
-                        $new_config->setSystemPrompt($old_config->getSystemPrompt());
-                        $new_config->setAiService($old_config->getAiService());
-                        $new_config->setMaxMemory($old_config->getMaxMemory());
-                        $new_config->setCharLimit($old_config->getCharLimit());
-                        $new_config->setBackgroundFiles($cloned_background_files);
-                        $new_config->setPersistent($old_config->isPersistent());
-                        $new_config->setIncludePageContext($old_config->isIncludePageContext());
-                        $new_config->setEnableChatUploads($old_config->isEnableChatUploads());
-                        $new_config->setEnableStreaming($old_config->isEnableStreaming());
-                        $new_config->setEnableRag($old_config->isEnableRag());
-                        $new_config->setIsOnline($old_config->isOnline());
-                        $new_config->setDisclaimer($old_config->getDisclaimer());
-                        $new_config->save();
+                        $new_chat_id = $this->copyChat($old_config);
 
                         $a_properties['chat_id'] = $new_chat_id;
                         $logger->info("PageComponent copied - created new chat configuration", [
                             'original_chat' => $old_chat_id,
-                            'new_chat' => $new_chat_id,
-                            'background_files_cloned' => count($cloned_background_files)
+                            'new_chat' => $new_chat_id
                         ]);
                     }
                 } else {
@@ -324,28 +302,8 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements ilCro
                 return;
             }
 
-            $new_chat_id = uniqid('chat_', true);
-            $cloned_background_files = $this->cloneBackgroundFiles($old_config->getBackgroundFiles());
-
-            $new_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($new_chat_id);
             // The page context is updated on first rendering (updateChatConfigPageContext())
-            $new_config->setPageId($old_config->getPageId());
-            $new_config->setParentId($old_config->getParentId());
-            $new_config->setParentType($old_config->getParentType());
-            $new_config->setTitle($old_config->getTitle());
-            $new_config->setSystemPrompt($old_config->getSystemPrompt());
-            $new_config->setAiService($old_config->getAiService());
-            $new_config->setMaxMemory($old_config->getMaxMemory());
-            $new_config->setCharLimit($old_config->getCharLimit());
-            $new_config->setBackgroundFiles($cloned_background_files);
-            $new_config->setPersistent($old_config->isPersistent());
-            $new_config->setIncludePageContext($old_config->isIncludePageContext());
-            $new_config->setEnableChatUploads($old_config->isEnableChatUploads());
-            $new_config->setEnableStreaming($old_config->isEnableStreaming());
-            $new_config->setEnableRag($old_config->isEnableRag());
-            $new_config->setIsOnline($old_config->isOnline());
-            $new_config->setDisclaimer($old_config->getDisclaimer());
-            $new_config->save();
+            $new_chat_id = $this->copyChat($old_config);
 
             $a_properties['chat_id'] = $new_chat_id;
 
@@ -727,40 +685,75 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements ilCro
     }
 
     /**
-     * Copy the background files for a real copy of the chat
+     * Copy a chat with all its settings and background files; sessions and messages are not copied
+     *
+     * @return string ID of the new chat
      */
-    private function cloneBackgroundFiles(array $file_ids): array
+    private function copyChat(\ILIAS\Plugin\pcaic\Model\ChatConfig $old_config): string
     {
-        if (empty($file_ids)) {
-            return [];
-        }
-
         global $DIC;
         $logger = $DIC->logger()->pcaic();
-        $irss = $DIC->resourceStorage();
-        $cloned_files = [];
+        $db = $DIC->database();
 
-        foreach ($file_ids as $file_id) {
+        $new_chat_id = uniqid('chat_', true);
+        $new_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($new_chat_id);
+        $new_config->setPageId($old_config->getPageId());
+        $new_config->setParentId($old_config->getParentId());
+        $new_config->setParentType($old_config->getParentType());
+        $new_config->setTitle($old_config->getTitle());
+        $new_config->setSystemPrompt($old_config->getSystemPrompt());
+        $new_config->setAiService($old_config->getAiService());
+        $new_config->setMaxMemory($old_config->getMaxMemory());
+        $new_config->setCharLimit($old_config->getCharLimit());
+        $new_config->setPersistent($old_config->isPersistent());
+        $new_config->setIncludePageContext($old_config->isIncludePageContext());
+        $new_config->setEnableChatUploads($old_config->isEnableChatUploads());
+        $new_config->setEnableStreaming($old_config->isEnableStreaming());
+        $new_config->setEnableRag($old_config->isEnableRag());
+        $new_config->setShowSources($old_config->isShowSources());
+        $new_config->setAllowSourceDownloads($old_config->isAllowSourceDownloads());
+        $new_config->setIsOnline($old_config->isOnline());
+        $new_config->setDisclaimer($old_config->getDisclaimer());
+        $new_config->setTemperature($old_config->getTemperature());
+        $new_config->setModel($old_config->getModel());
+        $new_config->save();
+
+        // Background files: copies in the Resource Storage; uploaded to the RAG on first use
+        $irss = $DIC->resourceStorage();
+        $stakeholder = new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder();
+        $result = $db->query(
+            "SELECT id FROM pcaic_attachments WHERE chat_id = " . $db->quote($old_config->getChatId(), 'text')
+            . " AND background_file = 1 ORDER BY timestamp ASC, id ASC"
+        );
+        $ids = [];
+        while ($row = $db->fetchAssoc($result)) {
+            $ids[] = (int) $row['id'];
+        }
+        foreach ($ids as $id) {
             try {
-                $original_identification = $irss->manage()->find($file_id);
-                if (!$original_identification) {
-                    $logger->warning("Background file not found during cloning", ['file_id' => $file_id]);
+                $original = \ILIAS\Plugin\pcaic\Model\Attachment::loadById($id);
+                $identification = $original !== null ? $irss->manage()->find((string) $original->getResourceId()) : null;
+                if ($identification === null) {
+                    $logger->warning("Background file not found during cloning", ['attachment_id' => $id]);
                     continue;
                 }
-
-                $stakeholder = new \ILIAS\Plugin\pcaic\Storage\ResourceStakeholder();
-                $new_identification = $irss->manage()->clone($original_identification, $stakeholder);
-                $cloned_files[] = $new_identification->serialize();
-
-            } catch (\Exception $e) {
+                $copy = new \ILIAS\Plugin\pcaic\Model\Attachment();
+                $copy->setMessageId(null);
+                $copy->setBackgroundFile(true);
+                $copy->setChatId($new_chat_id);
+                $copy->setUserId($original->getUserId());
+                $copy->setResourceId($irss->manage()->clone($identification, $stakeholder)->serialize());
+                $copy->setTimestamp($original->getTimestamp() ?? date('Y-m-d H:i:s'));
+                $copy->save();
+            } catch (\Throwable $e) {
                 $logger->warning("Background file cloning failed", [
-                    'file_id' => $file_id,
+                    'attachment_id' => $id,
                     'error' => $e->getMessage()
                 ]);
             }
         }
 
-        return $cloned_files;
+        return $new_chat_id;
     }
 
     /**
