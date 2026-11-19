@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 use ILIAS\Plugin\pcaic\Model\ChatConfig;
 use ILIAS\Plugin\pcaic\Model\Attachment;
+use ILIAS\Plugin\pcaic\Model\ChatResource;
 
 /**
  * Import of chats: creates a new chat with its own chat ID and background files
@@ -242,13 +243,23 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
             }
 
             try {
-                $attachment = new Attachment();
-                $attachment->setChatId($chat_id);
-                $attachment->setUserId($user_id);
-                $attachment->setResourceId($new_resource_id);
-                $attachment->setBackgroundFile(true);
-                $attachment->setTimestamp(date('Y-m-d H:i:s'));
-                $attachment->save();
+                // One resource per file; exports from before resources existed have no resource attributes
+                $type = (string) ($file_xml['resource_type'] ?? '') === ChatResource::TYPE_PAGE_CONTEXT
+                    ? ChatResource::TYPE_PAGE_CONTEXT
+                    : ChatResource::TYPE_FILE;
+                $snapshot_at = (string) ($file_xml['resource_snapshot_at'] ?? '');
+                $resource = new ChatResource();
+                $resource->setChatId($chat_id);
+                $resource->setType($type);
+                $resource->setTitle((string) ($file_xml['resource_title'] ?? $file_xml['filename'] ?? ''));
+                $resource->setEnabled((string) ($file_xml['resource_enabled'] ?? '1') !== '0');
+                $resource->setSnapshotAt($snapshot_at !== '' ? $snapshot_at : date('Y-m-d H:i:s'));
+                // Exports of earlier versions: shown with passages, download allowed (as before)
+                $resource->setSourceDisplay((string) ($file_xml['resource_source_display'] ?? \ILIAS\Plugin\pcaic\Model\ChatResource::SOURCE_FULL));
+                $resource->setAllowDownload((string) ($file_xml['resource_allow_download'] ?? '1') !== '0');
+                $resource->setCreatedBy($user_id);
+                $resource->save();
+                $attachment = $resource->addFile((string) $new_resource_id, $user_id);
 
                 $count++;
 

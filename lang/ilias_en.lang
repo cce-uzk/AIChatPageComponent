@@ -8,6 +8,7 @@ attach_file_title#:#Attach file
 attach_file_label#:#Attach file
 input_aria_label#:#Type your message
 send_aria_label#:#Send message
+send_disabled_processing#:#Please wait until the attached files are processed for the document search
 file_input_aria_label#:#Select files to attach
 remove_attachment#:#Remove attachment
 copy_message_title#:#Copy message to clipboard
@@ -132,7 +133,7 @@ stat_cleanup_done#:#Cleanup complete: %d sessions with %d messages deleted.
 stat_cleanup_nothing#:#No inactive sessions found.
 no_service_available#:#No AI service is currently available. Please contact your administrator.
 rag_unavailable#:#Document search is currently unavailable. Please try again later.
-rag_incomplete_notice#:#Some background files have not been processed yet. The answer may be incomplete.
+rag_incomplete_notice#:#Some files of this chat have not been processed yet. The answer may be incomplete.
 ai_service_busy#:#The AI service is currently busy or unavailable. Please try again in a moment.
 chat_online_label#:#Online
 chat_online_info#:#Content is published and can be used by all persons with the "Read access" permission.
@@ -306,3 +307,50 @@ show_sources_label#:#Show Sources
 show_sources_info#:#If enabled, RAG citations are shown to users. If disabled, sources are stripped server-side and users see only the AI answer.
 allow_source_downloads_label#:#Allow Source Downloads
 allow_source_downloads_info#:#If enabled, users can download the background files cited as sources. Requires "Show Sources" to be active.
+tab_resources#:#Resources
+resources_info#:#Resources are contents the chat uses in addition to the conversation. Each resource is a snapshot from the time it was added: changes of its source take effect after "Update" only. Excluded resources are kept but not used.
+resources_none#:#This chat has no resources yet.
+resources_add_files#:#Add Files
+resources_add_page_context#:#Add Page Content
+resources_files_byline#:#Each file becomes a resource of its own. Allowed file types: %s
+resources_files_added#:#%s resource(s) added.
+resource_title#:#Title
+resource_type#:#Type
+resource_snapshot#:#Snapshot
+resource_state#:#Processing
+resource_used#:#Used
+resource_included#:#Yes
+resource_excluded#:#No
+resource_type_file#:#File
+resource_type_page_context#:#Page content
+resource_state_direct#:#Sent to the AI directly
+resource_state_waiting#:#Waiting for processing
+resource_action_include#:#Use
+resource_action_exclude#:#Do not use
+resource_action_update#:#Update
+resource_action_remove#:#Remove
+resource_msg_include#:#The resource is used again.
+resource_msg_exclude#:#The resource is no longer used.
+resource_remove_confirm#:#Remove this resource? It is also deleted from the document search.
+resource_removed#:#Resource removed.
+resource_page_context_title#:#Content of this page
+resource_page_context_saved#:#Snapshot of the page content saved.
+resource_page_context_empty#:#The page contains no text that could be taken.
+resource_source#:#As source
+resource_source_full#:#With passages
+resource_source_name#:#Name only
+resource_source_hidden#:#Not shown
+resource_download#:#Download
+resource_download_allowed#:#Allowed
+resource_download_denied#:#Not allowed
+resource_download_not_possible#:#–
+resource_action_source_full#:#Show as source with passages
+resource_action_source_name#:#Show as source with name only
+resource_action_source_hidden#:#Do not show as source
+resource_action_download_allow#:#Allow download
+resource_action_download_deny#:#Do not allow download
+resource_msg_source#:#The display as source was changed.
+resource_msg_download#:#The download setting was changed.
+resources_source_info#:#"As source" sets how a resource is named below answers: with passages, with its name only (no passages, no download) or not at all (citations of it are removed from the answer; its content is still used for answers). A resource can only restrict more than the chat.
+resources_sources_inactive#:#This chat currently shows no sources ("Use RAG mode" and "Show sources" are needed). "As source" and "Download" take effect once both are active.
+resources_downloads_inactive#:#Source downloads are not allowed for this chat. "Download" takes effect once "Allow source downloads" is active.
