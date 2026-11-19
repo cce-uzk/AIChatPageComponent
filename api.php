@@ -683,9 +683,14 @@ try {
                 $session_id = $row['session_id'];
 
                 // Attachments are deleted individually, so that files are also removed from the RAG
+                // Also uploads of the user that were never sent
                 $attachments_query = "SELECT a.id FROM pcaic_attachments a " .
                                     "INNER JOIN pcaic_messages m ON a.message_id = m.message_id " .
-                                    "WHERE m.session_id = " . $db->quote($session_id, 'text');
+                                    "WHERE m.session_id = " . $db->quote($session_id, 'text') . " " .
+                                    "UNION SELECT id FROM pcaic_attachments " .
+                                    "WHERE chat_id = " . $db->quote($chat_id, 'text') . " " .
+                                    "AND user_id = " . $db->quote($user_id, 'integer') . " " .
+                                    "AND background_file = 0 AND message_id IS NULL";
                 $attachments_result = $db->query($attachments_query);
 
                 while ($attachment_row = $db->fetchAssoc($attachments_result)) {
@@ -833,10 +838,18 @@ try {
                 exit;
             }
 
-            // Only background files of this chat can be downloaded
+            // Only files of resources of this chat that may be downloaded, see ChatResource::isDownloadable()
             try {
                 $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
                 if (!$attachment->isBackgroundFile() || $attachment->getChatId() !== $chat_id) {
+                    http_response_code(403);
+                    exit;
+                }
+                $dl_resource = $attachment->getResourceRef() !== null
+                    ? \ILIAS\Plugin\pcaic\Model\ChatResource::find((int) $attachment->getResourceRef())
+                    : null;
+                if ($dl_resource === null || $dl_resource->getChatId() !== $chat_id
+                    || !$dl_resource->isDownloadable(true)) {
                     http_response_code(403);
                     exit;
                 }
@@ -1227,29 +1240,52 @@ function stripSourcesFromResponse(string $text): string
  * Sources of an answer as sent to the browser
  *
  * @param array $metadata Sources from the AI service (see AIChatPageComponentLLM::getLastResponseMetadata())
- * Source N belongs to citation [N]. Download and view links only for background files of
- * the chat, and only if the chat allows source downloads.
+ * Source N belongs to citation [N]. The source settings of the resources are applied (see
+ * ChatResource::restrictSources()): hidden sources become placeholders, sources shown with their
+ * name only lose their passages. Download and view links only for files of resources that may be
+ * downloaded, see ChatResource::isDownloadable().
  *
  * @return array<int, array{filename: string, pages: array, url: ?string, excerpt: ?string, text: ?string,
- *     download_url: ?string, view_url: ?string}>
+ *     download_url: ?string, view_url: ?string}|array{hidden: true}>
  */
 function buildClientSources(ChatConfig $chat_config, string $chat_id, array $metadata): array
 {
-    $bg_urls = $chat_config->isAllowSourceDownloads()
-        ? getBackgroundFileDownloadUrls($chat_id)
-        : [];
+    try {
+        $index = \ILIAS\Plugin\pcaic\Model\ChatResource::getRagIndex($chat_id);
+    } catch (\Exception $e) {
+        $index = ['files' => [], 'collections' => []];
+    }
+    $restricted = \ILIAS\Plugin\pcaic\Model\ChatResource::restrictSources($metadata, $index);
+    $formatted = \ILIAS\Plugin\pcaic\Model\ChatMessage::formatSources($restricted);
 
-    return array_map(static function (array $source) use ($bg_urls, $chat_id): array {
-        $attachment_id = $bg_urls[$source['filename']] ?? null;
-        $download_url = $attachment_id ? buildSecureDownloadUrl($chat_id, $attachment_id) : null;
-        return array_merge($source, [
+    $resources = [];
+    foreach ($index['files'] + $index['collections'] as $resource) {
+        $resources[$resource->getId()] = $resource;
+    }
+
+    $sources = [];
+    foreach ($formatted as $i => $source) {
+        if (!empty($source['hidden'])) {
+            $sources[] = $source;
+            continue;
+        }
+        $resource = $resources[$restricted[$i]['resource_id'] ?? 0] ?? null;
+        $download_url = null;
+        if ($resource !== null && $resource->isDownloadable($chat_config->isAllowSourceDownloads())) {
+            foreach ($resource->getAttachments() as $attachment) {
+                $download_url = buildSecureDownloadUrl($chat_id, (int) $attachment->getId());
+                break;
+            }
+        }
+        $sources[] = array_merge($source, [
             'download_url' => $download_url,
             // PDFs open in the viewer of the browser, which can jump to the page of the passage
             'view_url' => $download_url !== null && isInlineViewable((string) $source['filename'])
                 ? $download_url . '&inline=1'
                 : null,
         ]);
-    }, \ILIAS\Plugin\pcaic\Model\ChatMessage::formatSources($metadata));
+    }
+    return $sources;
 }
 
 /**
@@ -1260,34 +1296,6 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
 function isInlineViewable(string $filename): bool
 {
     return strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'pdf';
-}
-
-/**
- * Background files of the chat by file name, used for download links of sources
- *
- * @return array<string, int> file name => attachment ID
- */
-function getBackgroundFileDownloadUrls(string $chat_id): array
-{
-    $map = [];
-    try {
-        $attachments = \ILIAS\Plugin\pcaic\Model\Attachment::getByChatId($chat_id);
-        foreach ($attachments as $attachment) {
-            if (!$attachment->isBackgroundFile()) {
-                continue;
-            }
-            $title = $attachment->getTitle();
-            $id = $attachment->getId();
-            if ($title && $id) {
-                $map[$title] = $id;
-                // The RAG may replace spaces with underscores in file names
-                $map[str_replace(' ', '_', $title)] = $id;
-            }
-        }
-    } catch (\Exception $e) {
-        // Sources are shown without download links
-    }
-    return $map;
 }
 
 /**

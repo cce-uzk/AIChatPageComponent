@@ -307,6 +307,11 @@ class ChatMessage
     {
         $sources = [];
         foreach (array_values($metadata) as $source) {
+            // Placeholder of a source that is not shown, see ChatResource::restrictSources()
+            if (!empty($source['hidden'])) {
+                $sources[] = ['hidden' => true];
+                continue;
+            }
             $text = isset($source['text']) ? trim((string) $source['text']) : '';
             $sources[] = [
                 'filename' => (string) ($source['filename'] ?? 'Unknown'),

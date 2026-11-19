@@ -59,6 +59,9 @@ class Attachment
 
     protected bool $background_file = false;
 
+    /** @var int|null Resource the file belongs to (see ChatResource); null for uploads in the chat */
+    protected ?int $resource_ref = null;
+
     protected \ilDBInterface $db;
 
     protected ResourceStorage $resource_storage;
@@ -103,6 +106,7 @@ class Attachment
             $this->rag_retry_at = $row['rag_retry_at'] ?? null;
             $this->timestamp = $row['timestamp'];
             $this->background_file = (bool) ($row['background_file'] ?? 0);
+            $this->resource_ref = isset($row['resource_ref']) ? (int) $row['resource_ref'] : null;
         }
     }
 
@@ -130,11 +134,12 @@ class Attachment
                 "rag_remote_file_id = " . $this->db->quote($this->rag_remote_file_id, 'text') . ", " .
                 "rag_uploaded_at = " . $this->db->quote($this->rag_uploaded_at, 'timestamp') . ", " .
                 "background_file = " . $this->db->quote($this->background_file ? 1 : 0, 'integer') . ", " .
+                "resource_ref = " . $this->db->quote($this->resource_ref, 'integer') . ", " .
                 "timestamp = " . $this->db->quote($this->timestamp, 'timestamp') . " " .
                 "WHERE id = " . $this->db->quote($this->id, 'integer');
         } else {
             $this->id = $this->db->nextId('pcaic_attachments');
-            $query = "INSERT INTO pcaic_attachments (id, message_id, chat_id, user_id, resource_id, rag_collection_id, rag_remote_file_id, rag_uploaded_at, background_file, timestamp) " .
+            $query = "INSERT INTO pcaic_attachments (id, message_id, chat_id, user_id, resource_id, rag_collection_id, rag_remote_file_id, rag_uploaded_at, background_file, resource_ref, timestamp) " .
                 "VALUES (" .
                 $this->db->quote($this->id, 'integer') . ", " .
                 $this->db->quote($this->message_id, 'integer') . ", " .
@@ -145,6 +150,7 @@ class Attachment
                 $this->db->quote($this->rag_remote_file_id, 'text') . ", " .
                 $this->db->quote($this->rag_uploaded_at, 'timestamp') . ", " .
                 $this->db->quote($this->background_file ? 1 : 0, 'integer') . ", " .
+                $this->db->quote($this->resource_ref, 'integer') . ", " .
                 $this->db->quote($this->timestamp, 'timestamp') . ")";
         }
 
@@ -163,7 +169,9 @@ class Attachment
         if ($this->rag_remote_file_id && $this->rag_collection_id) {
             try {
                 global $DIC;
-                $entity_id = $this->background_file ? $this->chat_id : $this->getSessionIdFromMessage();
+                $entity_id = $this->background_file
+                    ? self::backgroundEntityId((string) $this->chat_id, $this->resource_ref)
+                    : $this->getSessionIdFromMessage();
 
                 if ($entity_id) {
                     require_once(__DIR__ . '/../../classes/ai/class.AIChatPageComponentLLM.php');
@@ -921,6 +929,25 @@ class Attachment
     public function getRAGStatus(): ?string
     {
         return $this->rag_status;
+    }
+
+    /**
+     * Entity of a background file in the RAG service: its resource, which has a collection of its
+     * own; files from before resources existed used the collection of the chat
+     */
+    public static function backgroundEntityId(string $chat_id, ?int $resource_ref): string
+    {
+        return $resource_ref !== null ? 'res_' . $resource_ref : $chat_id;
+    }
+
+    public function getResourceRef(): ?int
+    {
+        return $this->resource_ref;
+    }
+
+    public function setResourceRef(?int $resource_ref): void
+    {
+        $this->resource_ref = $resource_ref;
     }
 
     public function isBackgroundFile(): bool
