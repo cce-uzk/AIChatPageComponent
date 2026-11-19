@@ -32,6 +32,8 @@ require_once $plugin_dir . '/classes/ai/class.AIChatPageComponentOpenAI.php';
 require_once $plugin_dir . '/classes/ai/class.AIChatPageComponentLLMRegistry.php';
 require_once $plugin_dir . '/src/Model/Attachment.php';
 require_once $plugin_dir . '/src/Model/ChatMessage.php';
+require_once $plugin_dir . '/src/Model/ChatResource.php';
+require_once $plugin_dir . '/src/Table/ResourceTableRetrieval.php';
 require_once $plugin_dir . '/src/Validation/FileUploadValidator.php';
 require_once $plugin_dir . '/src/Validation/FileTypePolicy.php';
 require_once $plugin_dir . '/src/Service/StreamKeepAlive.php';

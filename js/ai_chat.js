@@ -231,6 +231,8 @@ class AIChatPageComponent {
     this.isLoading = false;
     this.messageHistory = [];
     this.attachments = [];
+    // Files being uploaded: the message is sent once they are in the upload area
+    this.uploadsInProgress = 0;
     this.currentRequest = null;
 
     if (!this.container) {
@@ -467,6 +469,55 @@ class AIChatPageComponent {
   static passageText(source) {
     const text = String((source && (source.text || source.excerpt)) || '').trim();
     return /^\p{Ll}/u.test(text) ? `…${text}` : text;
+  }
+
+  /**
+   * Whether a source is shown: sources of resources that are not shown as source are
+   * placeholders { hidden: true }, so that source N still belongs to citation [N]
+   *
+   * @param {Object|null} source
+   * @returns {boolean}
+   */
+  static isShownSource(source) {
+    return Boolean(source) && !source.hidden;
+  }
+
+  /**
+   * @param {Array|null} sources
+   * @returns {boolean} At least one source is shown
+   */
+  static hasShownSources(sources) {
+    return Array.isArray(sources) && sources.some((source) => AIChatPageComponent.isShownSource(source));
+  }
+
+  /**
+   * Remove the citations of sources that are not shown from a rendered answer
+   *
+   * @param {HTMLElement} contentEl - Element with the rendered answer
+   * @param {Array|null} sources
+   */
+  static removeHiddenCitations(contentEl, sources) {
+    if (!contentEl || !Array.isArray(sources) || !sources.some((source) => source && source.hidden)) {
+      return;
+    }
+    contentEl.querySelectorAll('.ai-chat-cite').forEach((marker) => {
+      const nums = marker.dataset.cite.split(',').map((n) => parseInt(n, 10));
+      const shown = nums.filter((num) => !(sources[num - 1] && sources[num - 1].hidden));
+      if (shown.length === nums.length) {
+        return;
+      }
+      if (shown.length > 0) {
+        marker.dataset.cite = shown.join(',');
+        marker.textContent = shown.map((num) => `[${num}]`).join('');
+        return;
+      }
+      // Without the space before it, so that no gap remains before the punctuation
+      const previous = marker.previousSibling;
+      if (previous && previous.nodeType === Node.TEXT_NODE) {
+        previous.textContent = previous.textContent.replace(/[ \t]+$/, '');
+      }
+      marker.remove();
+    });
   }
 
   /** Maximum width of the unfolded file name of a source chip, in pixels */
@@ -898,6 +949,11 @@ class AIChatPageComponent {
 
     if (this.isLoading) {
       debug('AIChatPageComponent: Request already in progress, skipping');
+      return;
+    }
+
+    // Also for Enter: the files of the message are not yet searchable
+    if (this.isWaitingForAttachments()) {
       return;
     }
 
@@ -1414,6 +1470,7 @@ class AIChatPageComponent {
       const rawContent = AIChatPageComponent.convertCitationMarkers(contentEl.dataset.rawContent || '');
       contentEl.innerHTML = this.renderMarkdown(rawContent);
       this.decorateRenderedContent(contentEl);
+      AIChatPageComponent.removeHiddenCitations(contentEl, state.sources);
       if (state.sourcesRow) {
         // Without tooltips: the chips are replaced with every frame
         this.convertFootnotesToChips(contentEl, state.sourcesRow, state.sources, false);
@@ -1436,8 +1493,13 @@ class AIChatPageComponent {
     const state = this.streamState;
     if (state.sourcesRow) {
       state.sourcesRow.remove();
+      state.sourcesRow = null;
     }
+    // Also if no source is shown: their citations are removed while streaming
     state.sources = sources;
+    if (!AIChatPageComponent.hasShownSources(sources)) {
+      return;
+    }
     state.sourcesRow = this.renderSourcesRow(sources);
     messageElement.messageEl.appendChild(state.sourcesRow);
   }
@@ -1495,6 +1557,7 @@ class AIChatPageComponent {
 
     contentEl.innerHTML = this.formatMessage(contentToFormat);
     this.decorateRenderedContent(contentEl);
+    AIChatPageComponent.removeHiddenCitations(contentEl, effectiveSources);
 
     delete contentEl.dataset.rawContent;
 
@@ -1504,7 +1567,7 @@ class AIChatPageComponent {
       this.streamState.sourcesRow = null;
     }
 
-    if (effectiveSources && effectiveSources.length > 0) {
+    if (AIChatPageComponent.hasShownSources(effectiveSources)) {
       const sourcesRow = this.renderSourcesRow(effectiveSources);
       messageEl.appendChild(sourcesRow);
       // Chips use the original source indices
@@ -1636,6 +1699,7 @@ class AIChatPageComponent {
       }
       contentWrapper.innerHTML = this.renderMarkdown(displayContent);
       this.decorateRenderedContent(contentWrapper);
+      AIChatPageComponent.removeHiddenCitations(contentWrapper, effectiveSources);
       sources = effectiveSources;
     } else {
       contentWrapper.textContent = content;
@@ -1676,7 +1740,7 @@ class AIChatPageComponent {
 
     if (role === 'assistant') {
       let sourcesRow = null;
-      if (sources && sources.length > 0) {
+      if (AIChatPageComponent.hasShownSources(sources)) {
         sourcesRow = this.renderSourcesRow(sources);
         messageDiv.appendChild(sourcesRow);
 
@@ -3103,9 +3167,10 @@ class AIChatPageComponent {
   /**
    * Enable the send button only for a message that can be sent
    *
-   * Disabled for an empty message, a message over the character limit and while
-   * no AI service is available or the session has expired. While an answer is
-   * loading, the button is the stop button and controlled by setLoading().
+   * Disabled for an empty message, a message over the character limit, while files of
+   * the upload area are uploaded or processed for the document search and while no
+   * AI service is available or the session has expired. While an answer is loading,
+   * the button is the stop button and controlled by setLoading().
    */
   updateSendButtonState() {
     if (!this.sendButton || this.isLoading) return;
@@ -3114,13 +3179,30 @@ class AIChatPageComponent {
     const isOverLimit = length > this.charLimit;
     const isEmpty = this.inputArea.value.trim() === '';
     const isBlocked = this.serviceUnavailable || this.inputArea.disabled;
+    const isWaiting = this.isWaitingForAttachments();
 
-    this.sendButton.disabled = isOverLimit || isEmpty || isBlocked;
+    this.sendButton.disabled = isOverLimit || isEmpty || isBlocked || isWaiting;
     this.sendButton.classList.toggle('disabled-over-limit', isOverLimit && !isBlocked);
-    this.sendButton.title = isOverLimit
-      ? (this.container.dataset.sendDisabledOverLimit
-        || `Message too long (${length}/${this.charLimit} characters). Please shorten your message.`)
-      : (this.container.dataset.sendAriaLabel || 'Send message');
+    if (isOverLimit) {
+      this.sendButton.title = this.container.dataset.sendDisabledOverLimit
+        || `Message too long (${length}/${this.charLimit} characters). Please shorten your message.`;
+    } else if (isWaiting) {
+      this.sendButton.title = this.container.dataset.sendDisabledProcessing
+        || 'Please wait until the attached files are processed for the document search';
+    } else {
+      this.sendButton.title = this.container.dataset.sendAriaLabel || 'Send message';
+    }
+  }
+
+  /**
+   * Files of the upload area are still uploaded or processed by the RAG
+   *
+   * Only files in processing count: files whose upload to the RAG failed ("pending",
+   * "failed") are uploaded again by the server when the message is sent.
+   */
+  isWaitingForAttachments() {
+    return this.uploadsInProgress > 0
+      || this.attachments.some((attachment) => attachment.rag_status === 'processing');
   }
 
   /**
@@ -3202,6 +3284,8 @@ class AIChatPageComponent {
     }
 
     const uploadingThumbnail = this.createUploadPreview(file, dataUrl);
+    this.uploadsInProgress += 1;
+    this.updateSendButtonState();
 
     try {
       const formData = new FormData();
@@ -3276,6 +3360,9 @@ class AIChatPageComponent {
       if (uploadingThumbnail) {
         this.clearThumbnailUploading(uploadingThumbnail);
       }
+    } finally {
+      this.uploadsInProgress = Math.max(0, this.uploadsInProgress - 1);
+      this.updateSendButtonState();
     }
   }
 
@@ -3588,11 +3675,13 @@ class AIChatPageComponent {
   removeAttachment(index) {
     this.attachments.splice(index, 1);
     this.updateAttachmentsDisplay();
+    this.updateSendButtonState();
   }
 
   clearAttachments() {
     this.attachments = [];
     this.updateAttachmentsDisplay();
+    this.updateSendButtonState();
   }
 
   async createImagePreview(file) {
@@ -4009,6 +4098,9 @@ class AIChatPageComponent {
       }
       pending = pending || this.isRagStatusPending(badge.dataset.status);
     });
+
+    // Sending waits for the files of the upload area
+    this.updateSendButtonState();
 
     if (pending && !this.ragStatusTimer) {
       this.scheduleRagStatusPoll();
@@ -4787,7 +4879,7 @@ class AIChatPageComponent {
     const sourcesId = `src-${Date.now()}`;
 
     const typeCount = {};
-    sources.forEach((source) => {
+    sources.filter((source) => AIChatPageComponent.isShownSource(source)).forEach((source) => {
       const type = this.detectSourceType(source.filename, source.url);
       typeCount[type] = (typeCount[type] || 0) + 1;
     });
@@ -4826,6 +4918,10 @@ class AIChatPageComponent {
     const origToDedup = {}; // original index => merged index (both 1-based)
 
     sources.forEach((source, origIdx) => {
+      // Not shown: no entry, its citations are removed (see removeHiddenCitations())
+      if (!AIChatPageComponent.isShownSource(source)) {
+        return;
+      }
       const existing = deduped.findIndex((d) => d.filename === source.filename);
       if (existing >= 0) {
         const merged = new Set([...(deduped[existing].pages || []), ...(source.pages || [])]);
@@ -5193,7 +5289,7 @@ class AIChatPageComponent {
 
     contentEl.querySelectorAll('.ai-chat-cite').forEach((marker) => {
       const nums = [...new Set(marker.dataset.cite.split(',').map((n) => parseInt(n, 10)))]
-        .filter((num) => num > 0 && sources[num - 1]);
+        .filter((num) => num > 0 && AIChatPageComponent.isShownSource(sources[num - 1]));
       if (nums.length > 0) {
         nums.forEach((num) => cited.add(num));
         marker.replaceWith(createSourceChip(nums));

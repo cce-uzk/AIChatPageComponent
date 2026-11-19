@@ -242,10 +242,19 @@ class RAGStatusTest extends TestCase
         // Anonymous users: background files only
         $this->assertSame('background_file = 1', \ai\AIChatPageComponentLLM::ragCollectionOwnerCondition(null));
 
-        // Logged-in users: background files and their own uploads, not those of other users
+        // Logged-in users: background files and their uploads sent in the conversation,
+        // not those of other users, unsent uploads or uploads of a cleared conversation
         $this->assertSame(
-            '(background_file = 1 OR user_id = 42)',
-            \ai\AIChatPageComponentLLM::ragCollectionOwnerCondition(42)
+            "(background_file = 1 OR (user_id = 42 AND message_id IN"
+            . " (SELECT message_id FROM pcaic_messages WHERE session_id = 'session_6afebdb7562327.27620709')))",
+            \ai\AIChatPageComponentLLM::ragCollectionOwnerCondition(42, 'session_6afebdb7562327.27620709')
+        );
+
+        // No conversation, or a session ID that is not one of the plugin: background files only
+        $this->assertSame('background_file = 1', \ai\AIChatPageComponentLLM::ragCollectionOwnerCondition(42));
+        $this->assertSame(
+            'background_file = 1',
+            \ai\AIChatPageComponentLLM::ragCollectionOwnerCondition(42, "x' OR '1'='1")
         );
     }
 

@@ -8,6 +8,7 @@ attach_file_title#:#Datei anhängen
 attach_file_label#:#Datei anhängen
 input_aria_label#:#Nachricht eingeben
 send_aria_label#:#Nachricht senden
+send_disabled_processing#:#Bitte warten, bis die angehängten Dateien für die Dokumentensuche verarbeitet sind
 file_input_aria_label#:#Dateien zum Anhängen auswählen
 remove_attachment#:#Anhang entfernen
 copy_message_title#:#Nachricht in Zwischenablage kopieren
@@ -132,7 +133,7 @@ stat_cleanup_done#:#Bereinigung abgeschlossen: %d Sessions mit %d Nachrichten ge
 stat_cleanup_nothing#:#Keine inaktiven Sessions gefunden.
 no_service_available#:#Aktuell steht kein KI-Dienst zur Verfügung. Bitte wende dich an den Administrator.
 rag_unavailable#:#Die Dokumentensuche ist gerade nicht verfügbar. Bitte später erneut versuchen.
-rag_incomplete_notice#:#Einige Hintergrunddateien sind noch nicht verarbeitet. Die Antwort ist möglicherweise unvollständig.
+rag_incomplete_notice#:#Einige Dateien dieses Chats sind noch nicht verarbeitet. Die Antwort ist möglicherweise unvollständig.
 ai_service_busy#:#Der KI-Dienst ist gerade ausgelastet oder nicht erreichbar. Bitte in einem Moment erneut versuchen.
 chat_online_label#:#Online
 chat_online_info#:#Inhalt ist veröffentlicht und kann von allen Personen mit dem Recht „Lesezugriff" genutzt werden.
@@ -306,3 +307,50 @@ show_sources_label#:#Quellen anzeigen
 show_sources_info#:#Wenn aktiviert, werden RAG-Quellenangaben für Nutzer angezeigt. Wenn deaktiviert, werden Quellen serverseitig herausgefiltert und Nutzer sehen nur die KI-Antwort.
 allow_source_downloads_label#:#Quellen-Download erlauben
 allow_source_downloads_info#:#Wenn aktiviert, können Nutzer die als Quellen zitierten Hintergrunddateien herunterladen. Erfordert aktive Option "Quellen anzeigen".
+tab_resources#:#Ressourcen
+resources_info#:#Ressourcen sind Inhalte, die der Chat zusätzlich zum Gespräch verwendet. Jede Ressource ist ein Abbild vom Zeitpunkt des Hinzufügens: Änderungen an der Quelle wirken erst nach „Aktualisieren“. Ausgeschlossene Ressourcen bleiben erhalten, werden aber nicht verwendet.
+resources_none#:#Dieser Chat hat noch keine Ressourcen.
+resources_add_files#:#Dateien hinzufügen
+resources_add_page_context#:#Seiteninhalt hinzufügen
+resources_files_byline#:#Jede Datei wird eine eigene Ressource. Erlaubte Dateitypen: %s
+resources_files_added#:#%s Ressource(n) hinzugefügt.
+resource_title#:#Titel
+resource_type#:#Art
+resource_snapshot#:#Stand
+resource_state#:#Verarbeitung
+resource_used#:#Verwendet
+resource_included#:#Ja
+resource_excluded#:#Nein
+resource_type_file#:#Datei
+resource_type_page_context#:#Seiteninhalt
+resource_state_direct#:#Direkt an die KI
+resource_state_waiting#:#Wartet auf Verarbeitung
+resource_action_include#:#Verwenden
+resource_action_exclude#:#Nicht verwenden
+resource_action_update#:#Aktualisieren
+resource_action_remove#:#Entfernen
+resource_msg_include#:#Die Ressource wird wieder verwendet.
+resource_msg_exclude#:#Die Ressource wird nicht mehr verwendet.
+resource_remove_confirm#:#Soll diese Ressource entfernt werden? Sie wird auch aus der Dokumentensuche gelöscht.
+resource_removed#:#Ressource entfernt.
+resource_page_context_title#:#Inhalt dieser Seite
+resource_page_context_saved#:#Abbild des Seiteninhalts gespeichert.
+resource_page_context_empty#:#Die Seite enthält keinen Text, der übernommen werden kann.
+resource_source#:#Als Quelle
+resource_source_full#:#Mit Textstellen
+resource_source_name#:#Nur Name
+resource_source_hidden#:#Nicht angezeigt
+resource_download#:#Download
+resource_download_allowed#:#Erlaubt
+resource_download_denied#:#Nicht erlaubt
+resource_download_not_possible#:#–
+resource_action_source_full#:#Als Quelle mit Textstellen anzeigen
+resource_action_source_name#:#Als Quelle nur mit Namen anzeigen
+resource_action_source_hidden#:#Nicht als Quelle anzeigen
+resource_action_download_allow#:#Download erlauben
+resource_action_download_deny#:#Download nicht erlauben
+resource_msg_source#:#Die Anzeige als Quelle wurde geändert.
+resource_msg_download#:#Der Download wurde geändert.
+resources_source_info#:#„Als Quelle“ legt fest, wie eine Ressource unter Antworten genannt wird: mit Textstellen, nur mit Namen (ohne Textstellen und Download) oder gar nicht (Verweise darauf werden aus der Antwort entfernt; der Inhalt wird trotzdem für Antworten verwendet). Eine Ressource kann nur mehr einschränken als der Chat.
+resources_sources_inactive#:#Dieser Chat zeigt derzeit keine Quellen an (dafür sind „RAG-Modus verwenden“ und „Quellen anzeigen“ nötig). „Als Quelle“ und „Download“ wirken erst, wenn beides aktiv ist.
+resources_downloads_inactive#:#Der Quellen-Download ist für diesen Chat nicht erlaubt. „Download“ wirkt erst, wenn „Quellen-Download erlauben“ aktiv ist.
