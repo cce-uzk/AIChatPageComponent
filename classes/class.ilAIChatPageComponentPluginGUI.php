@@ -1591,6 +1591,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("ATTACH_FILE_LABEL", $this->plugin->txt('attach_file_label'));
         $tpl->setVariable("INPUT_ARIA_LABEL", $this->plugin->txt('input_aria_label'));
         $tpl->setVariable("SEND_ARIA_LABEL", $this->plugin->txt('send_aria_label'));
+        $tpl->setVariable("SEND_DISABLED_PROCESSING", htmlspecialchars($this->plugin->txt('send_disabled_processing')));
         $tpl->setVariable("FILE_INPUT_ARIA_LABEL", $this->plugin->txt('file_input_aria_label'));
 
         $chat_title = htmlspecialchars($config_properties['chat_title'] ?? $this->plugin->txt('default_chat_title'));

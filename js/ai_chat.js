@@ -231,6 +231,8 @@ class AIChatPageComponent {
     this.isLoading = false;
     this.messageHistory = [];
     this.attachments = [];
+    // Files being uploaded: the message is sent once they are in the upload area
+    this.uploadsInProgress = 0;
     this.currentRequest = null;
 
     if (!this.container) {
@@ -898,6 +900,11 @@ class AIChatPageComponent {
 
     if (this.isLoading) {
       debug('AIChatPageComponent: Request already in progress, skipping');
+      return;
+    }
+
+    // Also for Enter: the files of the message are not yet searchable
+    if (this.isWaitingForAttachments()) {
       return;
     }
 
@@ -3103,9 +3110,10 @@ class AIChatPageComponent {
   /**
    * Enable the send button only for a message that can be sent
    *
-   * Disabled for an empty message, a message over the character limit and while
-   * no AI service is available or the session has expired. While an answer is
-   * loading, the button is the stop button and controlled by setLoading().
+   * Disabled for an empty message, a message over the character limit, while files of
+   * the upload area are uploaded or processed for the document search and while no
+   * AI service is available or the session has expired. While an answer is loading,
+   * the button is the stop button and controlled by setLoading().
    */
   updateSendButtonState() {
     if (!this.sendButton || this.isLoading) return;
@@ -3114,13 +3122,30 @@ class AIChatPageComponent {
     const isOverLimit = length > this.charLimit;
     const isEmpty = this.inputArea.value.trim() === '';
     const isBlocked = this.serviceUnavailable || this.inputArea.disabled;
+    const isWaiting = this.isWaitingForAttachments();
 
-    this.sendButton.disabled = isOverLimit || isEmpty || isBlocked;
+    this.sendButton.disabled = isOverLimit || isEmpty || isBlocked || isWaiting;
     this.sendButton.classList.toggle('disabled-over-limit', isOverLimit && !isBlocked);
-    this.sendButton.title = isOverLimit
-      ? (this.container.dataset.sendDisabledOverLimit
-        || `Message too long (${length}/${this.charLimit} characters). Please shorten your message.`)
-      : (this.container.dataset.sendAriaLabel || 'Send message');
+    if (isOverLimit) {
+      this.sendButton.title = this.container.dataset.sendDisabledOverLimit
+        || `Message too long (${length}/${this.charLimit} characters). Please shorten your message.`;
+    } else if (isWaiting) {
+      this.sendButton.title = this.container.dataset.sendDisabledProcessing
+        || 'Please wait until the attached files are processed for the document search';
+    } else {
+      this.sendButton.title = this.container.dataset.sendAriaLabel || 'Send message';
+    }
+  }
+
+  /**
+   * Files of the upload area are still uploaded or processed by the RAG
+   *
+   * Only files in processing count: files whose upload to the RAG failed ("pending",
+   * "failed") are uploaded again by the server when the message is sent.
+   */
+  isWaitingForAttachments() {
+    return this.uploadsInProgress > 0
+      || this.attachments.some((attachment) => attachment.rag_status === 'processing');
   }
 
   /**
@@ -3202,6 +3227,8 @@ class AIChatPageComponent {
     }
 
     const uploadingThumbnail = this.createUploadPreview(file, dataUrl);
+    this.uploadsInProgress += 1;
+    this.updateSendButtonState();
 
     try {
       const formData = new FormData();
@@ -3276,6 +3303,9 @@ class AIChatPageComponent {
       if (uploadingThumbnail) {
         this.clearThumbnailUploading(uploadingThumbnail);
       }
+    } finally {
+      this.uploadsInProgress = Math.max(0, this.uploadsInProgress - 1);
+      this.updateSendButtonState();
     }
   }
 
@@ -3588,11 +3618,13 @@ class AIChatPageComponent {
   removeAttachment(index) {
     this.attachments.splice(index, 1);
     this.updateAttachmentsDisplay();
+    this.updateSendButtonState();
   }
 
   clearAttachments() {
     this.attachments = [];
     this.updateAttachmentsDisplay();
+    this.updateSendButtonState();
   }
 
   async createImagePreview(file) {
@@ -4009,6 +4041,9 @@ class AIChatPageComponent {
       }
       pending = pending || this.isRagStatusPending(badge.dataset.status);
     });
+
+    // Sending waits for the files of the upload area
+    this.updateSendButtonState();
 
     if (pending && !this.ragStatusTimer) {
       this.scheduleRagStatusPoll();

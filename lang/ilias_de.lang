@@ -8,6 +8,7 @@ attach_file_title#:#Datei anhängen
 attach_file_label#:#Datei anhängen
 input_aria_label#:#Nachricht eingeben
 send_aria_label#:#Nachricht senden
+send_disabled_processing#:#Bitte warten, bis die angehängten Dateien für die Dokumentensuche verarbeitet sind
 file_input_aria_label#:#Dateien zum Anhängen auswählen
 remove_attachment#:#Anhang entfernen
 copy_message_title#:#Nachricht in Zwischenablage kopieren

@@ -8,6 +8,7 @@ attach_file_title#:#Attach file
 attach_file_label#:#Attach file
 input_aria_label#:#Type your message
 send_aria_label#:#Send message
+send_disabled_processing#:#Please wait until the attached files are processed for the document search
 file_input_aria_label#:#Select files to attach
 remove_attachment#:#Remove attachment
 copy_message_title#:#Copy message to clipboard
