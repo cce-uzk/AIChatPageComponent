@@ -133,7 +133,7 @@ stat_cleanup_done#:#Cleanup complete: %d sessions with %d messages deleted.
 stat_cleanup_nothing#:#No inactive sessions found.
 no_service_available#:#No AI service is currently available. Please contact your administrator.
 rag_unavailable#:#Document search is currently unavailable. Please try again later.
-rag_incomplete_notice#:#Some background files have not been processed yet. The answer may be incomplete.
+rag_incomplete_notice#:#Some files of this chat have not been processed yet. The answer may be incomplete.
 ai_service_busy#:#The AI service is currently busy or unavailable. Please try again in a moment.
 chat_online_label#:#Online
 chat_online_info#:#Content is published and can be used by all persons with the "Read access" permission.

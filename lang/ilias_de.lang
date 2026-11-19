@@ -133,7 +133,7 @@ stat_cleanup_done#:#Bereinigung abgeschlossen: %d Sessions mit %d Nachrichten ge
 stat_cleanup_nothing#:#Keine inaktiven Sessions gefunden.
 no_service_available#:#Aktuell steht kein KI-Dienst zur Verfügung. Bitte wende dich an den Administrator.
 rag_unavailable#:#Die Dokumentensuche ist gerade nicht verfügbar. Bitte später erneut versuchen.
-rag_incomplete_notice#:#Einige Hintergrunddateien sind noch nicht verarbeitet. Die Antwort ist möglicherweise unvollständig.
+rag_incomplete_notice#:#Einige Dateien dieses Chats sind noch nicht verarbeitet. Die Antwort ist möglicherweise unvollständig.
 ai_service_busy#:#Der KI-Dienst ist gerade ausgelastet oder nicht erreichbar. Bitte in einem Moment erneut versuchen.
 chat_online_label#:#Online
 chat_online_info#:#Inhalt ist veröffentlicht und kann von allen Personen mit dem Recht „Lesezugriff" genutzt werden.
