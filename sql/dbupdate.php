@@ -1098,3 +1098,31 @@ foreach ($rows as $row) {
     );
 }
 ?>
+<#18>
+<?php
+/**
+ * Step 18: How a resource is shown as source (v1.12.1)
+ *
+ * pcaic_resources: restrictions per resource within the settings of the chat ("show sources",
+ * "allow source downloads"); a resource cannot allow more than its chat.
+ *   source_display  full = name, pages and passages | name = file name only | hidden = not shown
+ *   allow_download  1 = may be downloaded from the source list, 0 = not
+ *
+ * Existing resources keep the behaviour of their chat (full, download allowed).
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_resources')) {
+    if (!$db->tableColumnExists('pcaic_resources', 'source_display')) {
+        $db->addTableColumn('pcaic_resources', 'source_display', [
+            'type' => 'text', 'length' => 10, 'notnull' => true, 'default' => 'full'
+        ]);
+    }
+    if (!$db->tableColumnExists('pcaic_resources', 'allow_download')) {
+        $db->addTableColumn('pcaic_resources', 'allow_download', [
+            'type' => 'integer', 'length' => 1, 'notnull' => true, 'default' => 1
+        ]);
+    }
+}
+?>

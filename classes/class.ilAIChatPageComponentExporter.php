@@ -204,6 +204,8 @@ class ilAIChatPageComponentExporter extends ilPageComponentPluginExporter
                 $file_element->setAttribute('resource_title', $resource->getTitle());
                 $file_element->setAttribute('resource_enabled', $resource->isEnabled() ? '1' : '0');
                 $file_element->setAttribute('resource_snapshot_at', (string) $resource->getSnapshotAt());
+                $file_element->setAttribute('resource_source_display', $resource->getSourceDisplay());
+                $file_element->setAttribute('resource_allow_download', $resource->isAllowDownload() ? '1' : '0');
             }
             $files_element->appendChild($file_element);
         }

@@ -1797,7 +1797,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $this->migrateLivePageContext($chat_config);
 
         $f = $DIC->ui()->factory();
-        $components = [$f->messageBox()->info($this->plugin->txt('resources_info'))];
+        $components = [$f->messageBox()->info(
+            $this->plugin->txt('resources_info') . ' ' . $this->plugin->txt('resources_source_info')
+        )];
 
         $toolbar = [];
         if ($this->isBackgroundFileUploadAvailable($chat_config)) {
@@ -1820,6 +1822,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         if (empty($resources)) {
             $components[] = $f->messageBox()->info($this->plugin->txt('resources_none'));
         } else {
+            // Restrictions of single resources only take effect within the settings of the chat
+            if (!$this->chatShowsSources($chat_config)) {
+                $components[] = $f->messageBox()->info($this->plugin->txt('resources_sources_inactive'));
+            } elseif (!$chat_config->isAllowSourceDownloads()) {
+                $components[] = $f->messageBox()->info($this->plugin->txt('resources_downloads_inactive'));
+            }
             $components[] = $this->buildResourceTable($chat_config, $resources);
         }
 
@@ -1827,7 +1835,16 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Table of the resources with the actions include/exclude, update and remove
+     * Whether answers of the chat show sources: RAG is used and "show sources" is set
+     */
+    private function chatShowsSources(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): bool
+    {
+        $llm = $this->getLLMInstanceForChat($chat_config);
+        return $chat_config->isShowSources() && $llm->isRagEnabledForChat($chat_config);
+    }
+
+    /**
+     * Table of the resources with the actions include/exclude, update, source display, download and remove
      *
      * @param \ILIAS\Plugin\pcaic\Model\ChatResource[] $resources
      */
@@ -1850,12 +1867,28 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 'snapshot' => $resource->getSnapshotAt() ? $this->formatStoredDateTime((string) $resource->getSnapshotAt()) : '',
                 'state' => $this->getResourceStateLabel($resource, $rag_active),
                 'included' => $this->plugin->txt($resource->isEnabled() ? 'resource_included' : 'resource_excluded'),
+                'source' => $this->plugin->txt('resource_source_' . $resource->getSourceDisplay()),
+                'download' => $this->plugin->txt(
+                    !$resource->canBeDownloaded()
+                    || $resource->getSourceDisplay() !== \ILIAS\Plugin\pcaic\Model\ChatResource::SOURCE_FULL
+                        ? 'resource_download_not_possible'
+                        : ($resource->isAllowDownload() ? 'resource_download_allowed' : 'resource_download_denied')
+                ),
             ];
             // Uploaded files have no source to take a new snapshot from
             if ($resource->getType() === \ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_FILE) {
                 $disabled[$id][] = 'update';
             }
             $disabled[$id][] = $resource->isEnabled() ? 'include' : 'exclude';
+            $disabled[$id][] = 'source_' . $resource->getSourceDisplay();
+            // Downloads only of files shown with their passages
+            if (!$resource->canBeDownloaded()
+                || $resource->getSourceDisplay() !== \ILIAS\Plugin\pcaic\Model\ChatResource::SOURCE_FULL) {
+                $disabled[$id][] = 'download_allow';
+                $disabled[$id][] = 'download_deny';
+            } else {
+                $disabled[$id][] = $resource->isAllowDownload() ? 'download_allow' : 'download_deny';
+            }
         }
 
         $columns = [
@@ -1864,13 +1897,20 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             'snapshot' => $f->table()->column()->text($this->plugin->txt('resource_snapshot')),
             'state' => $f->table()->column()->text($this->plugin->txt('resource_state')),
             'included' => $f->table()->column()->text($this->plugin->txt('resource_used')),
+            'source' => $f->table()->column()->text($this->plugin->txt('resource_source')),
+            'download' => $f->table()->column()->text($this->plugin->txt('resource_download')),
         ];
 
         $uri = new \ILIAS\Data\URI(ILIAS_HTTP_PATH . '/' . $this->ctrl->getLinkTarget($this, 'resourceAction'));
         [$url_builder, $action_token, $ids_token] = (new \ILIAS\UI\URLBuilder($uri))
             ->acquireParameters(self::RESOURCE_TABLE_NAMESPACE, 'action', 'ids');
         $actions = [];
-        foreach (['include', 'exclude', 'update', 'remove'] as $action) {
+        $actions_order = [
+            'include', 'exclude', 'update',
+            'source_full', 'source_name', 'source_hidden', 'download_allow', 'download_deny',
+            'remove',
+        ];
+        foreach ($actions_order as $action) {
             $actions[$action] = $f->table()->action()->single(
                 $this->plugin->txt('resource_action_' . $action),
                 $url_builder->withParameter($action_token, $action),
@@ -1934,6 +1974,19 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 $resource->setEnabled($action === 'include');
                 $resource->save();
                 $this->tpl->setOnScreenMessage('success', $this->plugin->txt('resource_msg_' . $action), true);
+                break;
+            case 'source_full':
+            case 'source_name':
+            case 'source_hidden':
+                $resource->setSourceDisplay(substr($action, strlen('source_')));
+                $resource->save();
+                $this->tpl->setOnScreenMessage('success', $this->plugin->txt('resource_msg_source'), true);
+                break;
+            case 'download_allow':
+            case 'download_deny':
+                $resource->setAllowDownload($action === 'download_allow');
+                $resource->save();
+                $this->tpl->setOnScreenMessage('success', $this->plugin->txt('resource_msg_download'), true);
                 break;
             case 'update':
                 if ($resource->getType() === \ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_PAGE_CONTEXT) {

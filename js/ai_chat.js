@@ -471,6 +471,55 @@ class AIChatPageComponent {
     return /^\p{Ll}/u.test(text) ? `…${text}` : text;
   }
 
+  /**
+   * Whether a source is shown: sources of resources that are not shown as source are
+   * placeholders { hidden: true }, so that source N still belongs to citation [N]
+   *
+   * @param {Object|null} source
+   * @returns {boolean}
+   */
+  static isShownSource(source) {
+    return Boolean(source) && !source.hidden;
+  }
+
+  /**
+   * @param {Array|null} sources
+   * @returns {boolean} At least one source is shown
+   */
+  static hasShownSources(sources) {
+    return Array.isArray(sources) && sources.some((source) => AIChatPageComponent.isShownSource(source));
+  }
+
+  /**
+   * Remove the citations of sources that are not shown from a rendered answer
+   *
+   * @param {HTMLElement} contentEl - Element with the rendered answer
+   * @param {Array|null} sources
+   */
+  static removeHiddenCitations(contentEl, sources) {
+    if (!contentEl || !Array.isArray(sources) || !sources.some((source) => source && source.hidden)) {
+      return;
+    }
+    contentEl.querySelectorAll('.ai-chat-cite').forEach((marker) => {
+      const nums = marker.dataset.cite.split(',').map((n) => parseInt(n, 10));
+      const shown = nums.filter((num) => !(sources[num - 1] && sources[num - 1].hidden));
+      if (shown.length === nums.length) {
+        return;
+      }
+      if (shown.length > 0) {
+        marker.dataset.cite = shown.join(',');
+        marker.textContent = shown.map((num) => `[${num}]`).join('');
+        return;
+      }
+      // Without the space before it, so that no gap remains before the punctuation
+      const previous = marker.previousSibling;
+      if (previous && previous.nodeType === Node.TEXT_NODE) {
+        previous.textContent = previous.textContent.replace(/[ \t]+$/, '');
+      }
+      marker.remove();
+    });
+  }
+
   /** Maximum width of the unfolded file name of a source chip, in pixels */
   static get CHIP_NAME_WIDTH() { return 160; }
 
@@ -1421,6 +1470,7 @@ class AIChatPageComponent {
       const rawContent = AIChatPageComponent.convertCitationMarkers(contentEl.dataset.rawContent || '');
       contentEl.innerHTML = this.renderMarkdown(rawContent);
       this.decorateRenderedContent(contentEl);
+      AIChatPageComponent.removeHiddenCitations(contentEl, state.sources);
       if (state.sourcesRow) {
         // Without tooltips: the chips are replaced with every frame
         this.convertFootnotesToChips(contentEl, state.sourcesRow, state.sources, false);
@@ -1443,8 +1493,13 @@ class AIChatPageComponent {
     const state = this.streamState;
     if (state.sourcesRow) {
       state.sourcesRow.remove();
+      state.sourcesRow = null;
     }
+    // Also if no source is shown: their citations are removed while streaming
     state.sources = sources;
+    if (!AIChatPageComponent.hasShownSources(sources)) {
+      return;
+    }
     state.sourcesRow = this.renderSourcesRow(sources);
     messageElement.messageEl.appendChild(state.sourcesRow);
   }
@@ -1502,6 +1557,7 @@ class AIChatPageComponent {
 
     contentEl.innerHTML = this.formatMessage(contentToFormat);
     this.decorateRenderedContent(contentEl);
+    AIChatPageComponent.removeHiddenCitations(contentEl, effectiveSources);
 
     delete contentEl.dataset.rawContent;
 
@@ -1511,7 +1567,7 @@ class AIChatPageComponent {
       this.streamState.sourcesRow = null;
     }
 
-    if (effectiveSources && effectiveSources.length > 0) {
+    if (AIChatPageComponent.hasShownSources(effectiveSources)) {
       const sourcesRow = this.renderSourcesRow(effectiveSources);
       messageEl.appendChild(sourcesRow);
       // Chips use the original source indices
@@ -1643,6 +1699,7 @@ class AIChatPageComponent {
       }
       contentWrapper.innerHTML = this.renderMarkdown(displayContent);
       this.decorateRenderedContent(contentWrapper);
+      AIChatPageComponent.removeHiddenCitations(contentWrapper, effectiveSources);
       sources = effectiveSources;
     } else {
       contentWrapper.textContent = content;
@@ -1683,7 +1740,7 @@ class AIChatPageComponent {
 
     if (role === 'assistant') {
       let sourcesRow = null;
-      if (sources && sources.length > 0) {
+      if (AIChatPageComponent.hasShownSources(sources)) {
         sourcesRow = this.renderSourcesRow(sources);
         messageDiv.appendChild(sourcesRow);
 
@@ -4822,7 +4879,7 @@ class AIChatPageComponent {
     const sourcesId = `src-${Date.now()}`;
 
     const typeCount = {};
-    sources.forEach((source) => {
+    sources.filter((source) => AIChatPageComponent.isShownSource(source)).forEach((source) => {
       const type = this.detectSourceType(source.filename, source.url);
       typeCount[type] = (typeCount[type] || 0) + 1;
     });
@@ -4861,6 +4918,10 @@ class AIChatPageComponent {
     const origToDedup = {}; // original index => merged index (both 1-based)
 
     sources.forEach((source, origIdx) => {
+      // Not shown: no entry, its citations are removed (see removeHiddenCitations())
+      if (!AIChatPageComponent.isShownSource(source)) {
+        return;
+      }
       const existing = deduped.findIndex((d) => d.filename === source.filename);
       if (existing >= 0) {
         const merged = new Set([...(deduped[existing].pages || []), ...(source.pages || [])]);
@@ -5228,7 +5289,7 @@ class AIChatPageComponent {
 
     contentEl.querySelectorAll('.ai-chat-cite').forEach((marker) => {
       const nums = [...new Set(marker.dataset.cite.split(',').map((n) => parseInt(n, 10)))]
-        .filter((num) => num > 0 && sources[num - 1]);
+        .filter((num) => num > 0 && AIChatPageComponent.isShownSource(sources[num - 1]));
       if (nums.length > 0) {
         nums.forEach((num) => cited.add(num));
         marker.replaceWith(createSourceChip(nums));

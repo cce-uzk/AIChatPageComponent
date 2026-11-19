@@ -244,6 +244,10 @@ Settings that the administrator has disabled or enforced are shown as disabled f
 In RAG mode:
 - With "Show sources", references such as `[1]` appear in the answer and the sources (file name, pages, excerpt, or link for web sources) are listed below it.
 - With "Allow source downloads", learners can download the cited background files. Access to the file is checked against the read permission of the page.
+- Per resource, the resources tab restricts these settings further (a resource can never allow more than its chat):
+  - **As source**: *with passages* (default), *name only* (file name and pages, no passages and no download, e.g. for solutions) or *not shown* (no entry in the source list, its citations are removed from the answer; the content is still used for answers).
+  - **Download**: allowed (default) or not; only for files shown with their passages. The page content is never offered for download.
+  - The settings apply to the source list when it is sent to the browser, so they also apply to earlier answers. Downloads are checked on the server. Chat uploads of learners are not resources and follow the settings of the chat.
 - If the RAG finds no relevant passages, the AI answers without them and is instructed not to guess the content of the documents.
 - The RAG service requires a citation for every statement and always returns the most similar passages, even if none of them is relevant to the question. The plugin therefore adds the following rule to the system prompt of RAG answers (constant `RAG_CITATION_INSTRUCTION` in `AIChatPageComponentLLM`):
   > Citation rules for the provided context: Cite a context item only where the statement is actually based on that item, using the citation format specified in the context instructions. Do not add citations to statements that are not derived from the context. If none of the context items is relevant to the question, answer without citations and without referring to the context.

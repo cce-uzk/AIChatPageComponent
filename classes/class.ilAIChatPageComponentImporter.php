@@ -254,6 +254,9 @@ class ilAIChatPageComponentImporter extends ilPageComponentPluginImporter
                 $resource->setTitle((string) ($file_xml['resource_title'] ?? $file_xml['filename'] ?? ''));
                 $resource->setEnabled((string) ($file_xml['resource_enabled'] ?? '1') !== '0');
                 $resource->setSnapshotAt($snapshot_at !== '' ? $snapshot_at : date('Y-m-d H:i:s'));
+                // Exports of earlier versions: shown with passages, download allowed (as before)
+                $resource->setSourceDisplay((string) ($file_xml['resource_source_display'] ?? \ILIAS\Plugin\pcaic\Model\ChatResource::SOURCE_FULL));
+                $resource->setAllowDownload((string) ($file_xml['resource_allow_download'] ?? '1') !== '0');
                 $resource->setCreatedBy($user_id);
                 $resource->save();
                 $attachment = $resource->addFile((string) $new_resource_id, $user_id);

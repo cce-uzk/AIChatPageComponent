@@ -35,6 +35,14 @@ class ChatResource
     /** File name of the snapshot of the page content */
     public const PAGE_CONTEXT_FILENAME = 'page_content.txt';
 
+    /** Shown as source with name, pages and passages */
+    public const SOURCE_FULL = 'full';
+    /** Shown as source with its name only: no passages, no download */
+    public const SOURCE_NAME = 'name';
+    /** Not shown as source, its citations are removed from the answer */
+    public const SOURCE_HIDDEN = 'hidden';
+    public const SOURCE_DISPLAYS = [self::SOURCE_FULL, self::SOURCE_NAME, self::SOURCE_HIDDEN];
+
     private ?int $id = null;
     private string $chat_id = '';
     private string $type = self::TYPE_FILE;
@@ -44,6 +52,8 @@ class ChatResource
     private ?string $snapshot_at = null;
     private ?int $created_by = null;
     private ?string $created_at = null;
+    private string $source_display = self::SOURCE_FULL;
+    private bool $allow_download = true;
 
     public static function fromRow(array $row): self
     {
@@ -57,6 +67,8 @@ class ChatResource
         $resource->snapshot_at = $row['snapshot_at'] ?? null;
         $resource->created_by = isset($row['created_by']) ? (int) $row['created_by'] : null;
         $resource->created_at = $row['created_at'] ?? null;
+        $resource->setSourceDisplay((string) ($row['source_display'] ?? self::SOURCE_FULL));
+        $resource->allow_download = (int) ($row['allow_download'] ?? 1) === 1;
         return $resource;
     }
 
@@ -117,6 +129,8 @@ class ChatResource
             'enabled' => ['integer', $this->enabled ? 1 : 0],
             'snapshot_at' => ['timestamp', $this->snapshot_at],
             'created_by' => ['integer', $this->created_by],
+            'source_display' => ['text', $this->source_display],
+            'allow_download' => ['integer', $this->allow_download ? 1 : 0],
         ];
 
         if ($this->id === null) {
@@ -339,5 +353,155 @@ class ChatResource
     public function getCreatedAt(): ?string
     {
         return $this->created_at;
+    }
+
+    /**
+     * How the resource is shown as source, as set for the resource (see getEffectiveSourceDisplay())
+     */
+    public function getSourceDisplay(): string
+    {
+        return $this->source_display;
+    }
+
+    public function setSourceDisplay(string $source_display): void
+    {
+        $this->source_display = in_array($source_display, self::SOURCE_DISPLAYS, true) ? $source_display : self::SOURCE_FULL;
+    }
+
+    /**
+     * Download allowed as set for the resource (see isDownloadable())
+     */
+    public function isAllowDownload(): bool
+    {
+        return $this->allow_download;
+    }
+
+    public function setAllowDownload(bool $allow_download): void
+    {
+        $this->allow_download = $allow_download;
+    }
+
+    /**
+     * Whether a resource of this type can be offered for download at all: the content of the
+     * page is no file of its own
+     */
+    public function canBeDownloaded(): bool
+    {
+        return $this->type === self::TYPE_FILE;
+    }
+
+    /**
+     * How the resource is shown as source within the settings of its chat
+     *
+     * @return string|null One of the SOURCE_ constants; null if the chat shows no sources
+     */
+    public function getEffectiveSourceDisplay(bool $chat_shows_sources): ?string
+    {
+        return $chat_shows_sources ? $this->source_display : null;
+    }
+
+    /**
+     * Whether the file of the resource may be downloaded from the source list: the chat allows
+     * downloads, the resource is shown with its passages, is a file, included and allows it
+     */
+    public function isDownloadable(bool $chat_allows_downloads): bool
+    {
+        return $chat_allows_downloads
+            && $this->allow_download
+            && $this->source_display === self::SOURCE_FULL
+            && $this->canBeDownloaded()
+            && $this->enabled;
+    }
+
+    /**
+     * Resources of a chat by the RAG file and collection IDs of their files
+     *
+     * A collection belongs to one resource and stays when the resource is updated, so passages of
+     * earlier snapshots in stored answers are still assigned via the collection.
+     *
+     * @return array{files: array<string, self>, collections: array<string, self>}
+     */
+    public static function getRagIndex(string $chat_id): array
+    {
+        $resources = [];
+        foreach (self::getByChatId($chat_id) as $resource) {
+            $resources[$resource->getId()] = $resource;
+        }
+        $index = ['files' => [], 'collections' => []];
+        if ($resources === []) {
+            return $index;
+        }
+
+        $db = self::db();
+        $result = $db->query(
+            "SELECT resource_ref, rag_remote_file_id, rag_collection_id FROM pcaic_attachments"
+            . " WHERE chat_id = " . $db->quote($chat_id, 'text') . " AND resource_ref IS NOT NULL"
+        );
+        while ($row = $db->fetchAssoc($result)) {
+            $resource = $resources[(int) $row['resource_ref']] ?? null;
+            if ($resource === null) {
+                continue;
+            }
+            if (!empty($row['rag_remote_file_id'])) {
+                $index['files'][(string) $row['rag_remote_file_id']] = $resource;
+            }
+            if (!empty($row['rag_collection_id'])) {
+                $index['collections'][(string) $row['rag_collection_id']] = $resource;
+            }
+        }
+        return $index;
+    }
+
+    /**
+     * Apply the source settings of the resources to the sources of an answer
+     *
+     * The list keeps its order and length, because source N belongs to citation [N]: a hidden
+     * source becomes a placeholder ['hidden' => true], whose citations the browser removes. A
+     * source shown with its name only loses its passage text. Each source gets the ID of its
+     * resource ('resource_id', null for chat uploads and removed resources).
+     *
+     * @param array $metadata Sources as stored with the answer, see AIChatPageComponentRAG::chunksToSources()
+     * @param array{files: array<string, self>, collections: array<string, self>} $index See getRagIndex()
+     */
+    public static function restrictSources(array $metadata, array $index): array
+    {
+        $restricted = [];
+        foreach (array_values($metadata) as $source) {
+            $source = is_array($source) ? $source : [];
+            $resource = self::findForPassage(
+                $index,
+                isset($source['file_id']) ? (string) $source['file_id'] : null,
+                isset($source['collection_id']) ? (string) $source['collection_id'] : null
+            );
+            $display = $resource !== null ? $resource->getSourceDisplay() : self::SOURCE_FULL;
+
+            if ($display === self::SOURCE_HIDDEN) {
+                $restricted[] = ['hidden' => true];
+                continue;
+            }
+            if ($display === self::SOURCE_NAME) {
+                $source['text'] = '';
+            }
+            $source['resource_id'] = $resource?->getId();
+            $restricted[] = $source;
+        }
+        return $restricted;
+    }
+
+    /**
+     * Resource a passage of the RAG belongs to, see getRagIndex()
+     *
+     * @param array{files: array<string, self>, collections: array<string, self>} $index
+     * @return self|null Null for chat uploads and removed resources
+     */
+    public static function findForPassage(array $index, ?string $file_id, ?string $collection_id): ?self
+    {
+        if ($file_id !== null && $file_id !== '' && isset($index['files'][$file_id])) {
+            return $index['files'][$file_id];
+        }
+        if ($collection_id !== null && $collection_id !== '' && isset($index['collections'][$collection_id])) {
+            return $index['collections'][$collection_id];
+        }
+        return null;
     }
 }

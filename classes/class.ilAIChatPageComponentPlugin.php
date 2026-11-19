@@ -731,6 +731,8 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements ilCro
             $copy->setSourceRefId($resource->getSourceRefId());
             $copy->setEnabled($resource->isEnabled());
             $copy->setSnapshotAt($resource->getSnapshotAt());
+            $copy->setSourceDisplay($resource->getSourceDisplay());
+            $copy->setAllowDownload($resource->isAllowDownload());
             $copy->setCreatedBy($resource->getCreatedBy());
             $copy->save();
             foreach ($resource->getAttachments() as $attachment) {
