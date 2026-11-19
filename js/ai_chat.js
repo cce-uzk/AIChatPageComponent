@@ -443,7 +443,10 @@ class AIChatPageComponent {
    * for the final answer (AIChatPageComponentRAG::convertCitationMarkers)
    *
    * Models vary the format: [cit-0], (cit-0), <cit-0>, other dashes, spaces and several
-   * markers in one bracket ([cit-0, cit-2]). All become [1], [1][3].
+   * markers in one bracket ([cit-0, cit-2]). All become [1], [1][3]. Some models drop the
+   * prefix and write [0]: as [0] is never a valid reference, an answer containing it counts
+   * its bare references from 0, and all of them are shifted. Code is left unchanged.
+   * Converting twice changes nothing, so stored answers can be converted again.
    *
    * @param {string} text
    * @returns {string}
@@ -451,10 +454,25 @@ class AIChatPageComponent {
   static convertCitationMarkers(text) {
     const dash = '[-\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]';
     const marker = `cit\\s*${dash}\\s*\\d+`;
-    const pattern = new RegExp(`[\\[(<]\\s*(${marker}(?:\\s*,\\s*${marker})*)\\s*[\\])>]`, 'gi');
-    return text.replace(pattern, (match, list) => list.match(/\d+/g)
+    const prefixed = new RegExp(`[\\[(<]\\s*(${marker}(?:\\s*,\\s*${marker})*)\\s*[\\])>]`, 'gi');
+    // Up to two digits: [2023] is a year, not a reference
+    const bare = /\[\s*(\d{1,2}(?:\s*,\s*\d{1,2})*)\s*\]/g;
+    const shift = (match, list) => list.match(/\d+/g)
       .map((n) => `[${parseInt(n, 10) + 1}]`)
-      .join(''));
+      .join('');
+
+    // Odd parts are code blocks and inline code
+    const parts = String(text || '').split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/);
+    const prose = parts.filter((part, i) => i % 2 === 0).join('\n');
+    const zeroBased = /\[\s*0\s*(?:,\s*\d{1,2}\s*)*\]/.test(prose);
+
+    return parts.map((part, i) => {
+      if (i % 2 === 1) {
+        return part;
+      }
+      const shifted = zeroBased ? part.replace(bare, shift) : part;
+      return shifted.replace(prefixed, shift);
+    }).join('');
   }
 
   /**
@@ -1548,7 +1566,10 @@ class AIChatPageComponent {
 
     let effectiveSources = sources;
     if (sources && sources.length > 0) {
-      const { text: stripped, webLinks } = this.stripInlineSourcesWithLinks(contentToFormat, sources);
+      const { text: stripped, webLinks } = this.stripInlineSourcesWithLinks(
+        AIChatPageComponent.convertCitationMarkers(contentToFormat),
+        sources,
+      );
       contentToFormat = stripped;
       if (webLinks.length > 0) {
         effectiveSources = [...sources, ...webLinks];
@@ -1693,7 +1714,11 @@ class AIChatPageComponent {
       let displayContent = content;
       let effectiveSources = sources;
       if (sources && sources.length > 0) {
-        const { text: stripped, webLinks } = this.stripInlineSourcesWithLinks(content, sources);
+        // Answers stored by earlier versions may still contain [cit-N] or [0]
+        const { text: stripped, webLinks } = this.stripInlineSourcesWithLinks(
+          AIChatPageComponent.convertCitationMarkers(content),
+          sources,
+        );
         displayContent = stripped;
         if (webLinks.length > 0) effectiveSources = [...sources, ...webLinks];
       }

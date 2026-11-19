@@ -663,21 +663,43 @@ class AIChatPageComponentRAG
      * Convert the citation markers of the RAG (0-based) into 1-based references
      *
      * Models vary the format: [cit-0], (cit-0), <cit-0>, other dashes, spaces and several
-     * markers in one bracket ([cit-0, cit-2]). All become [1], [1][3]. The browser converts
-     * the streamed text the same way (convertCitationMarkers in ai_chat.js).
+     * markers in one bracket ([cit-0, cit-2]). All become [1], [1][3]. Some models drop the
+     * prefix and write [0]: as [0] is never a valid reference, an answer containing it counts
+     * its bare references from 0, and all of them are shifted ([0] [2] become [1] [3]). Code
+     * is left unchanged, so that e.g. arr[0] stays. The browser converts the streamed text the
+     * same way (convertCitationMarkers in ai_chat.js); converting twice changes nothing.
      */
     public static function convertCitationMarkers(string $text): string
     {
         $dash = '[\-\x{2010}-\x{2015}\x{2212}\x{FE58}\x{FE63}\x{FF0D}]';
         $marker = 'cit\s*' . $dash . '\s*\d+';
-        return preg_replace_callback(
-            '/[\[(<]\s*(' . $marker . '(?:\s*,\s*' . $marker . ')*)\s*[\])>]/iu',
-            static function (array $match): string {
-                preg_match_all('/\d+/', $match[1], $numbers);
-                return implode('', array_map(fn($n) => '[' . ((int) $n + 1) . ']', $numbers[0]));
-            },
-            $text
-        ) ?? $text;
+        $prefixed = '/[\[(<]\s*(' . $marker . '(?:\s*,\s*' . $marker . ')*)\s*[\])>]/iu';
+        // Up to two digits: [2023] is a year, not a reference
+        $bare = '/\[\s*(\d{1,2}(?:\s*,\s*\d{1,2})*)\s*\]/u';
+
+        // Odd parts are code blocks and inline code
+        $parts = preg_split('/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+        if ($parts === false) {
+            return $text;
+        }
+        $prose = implode("\n", array_filter($parts, fn(int $i): bool => $i % 2 === 0, ARRAY_FILTER_USE_KEY));
+        $zero_based = preg_match('/\[\s*0\s*(?:,\s*\d{1,2}\s*)*\]/u', $prose) === 1;
+
+        $shift = static function (array $match): string {
+            preg_match_all('/\d+/', $match[1], $numbers);
+            return implode('', array_map(fn($n) => '[' . ((int) $n + 1) . ']', $numbers[0]));
+        };
+
+        foreach ($parts as $i => $part) {
+            if ($i % 2 === 1) {
+                continue;
+            }
+            if ($zero_based) {
+                $part = preg_replace_callback($bare, $shift, $part) ?? $part;
+            }
+            $parts[$i] = preg_replace_callback($prefixed, $shift, $part) ?? $part;
+        }
+        return implode('', $parts);
     }
 
     private function assertConfigured(): void
