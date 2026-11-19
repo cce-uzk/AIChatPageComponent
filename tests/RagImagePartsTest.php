@@ -166,8 +166,22 @@ class RagImagePartsTest extends TestCase
             ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'RAG prompt'], self::image('gif')]],
         ]]);
         $this->assertSame('Earlier question', $messages[0]['content']);
-        $this->assertStringStartsWith("RAG prompt\n\n[Note: The user attached this file", $messages[1]['content'][0]['text']);
+        // Note and image before the long text of the RAG, which follows them
+        $this->assertStringStartsWith('[Note: The user attached this file', $messages[1]['content'][0]['text']);
         $this->assertSame('image_url', $messages[1]['content'][1]['type']);
+        $this->assertSame('RAG prompt', $messages[1]['content'][2]['text']);
+        $this->assertCount(3, $messages[1]['content']);
+
+        // Also in the system prompt, once per request
+        $prompt = new ReflectionProperty(AIChatPageComponentLLM::class, 'prompt');
+        $prompt->setAccessible(true);
+        $prompt->setValue($this->llm, 'Be helpful.');
+        $this->call('addAttachmentReferenceNote', [[['role' => 'user', 'content' => 'Q']]]);
+        $again = $this->call('addAttachmentReferenceNote', [[['role' => 'user', 'content' => 'Q']]]);
+        $this->assertStringStartsWith('Be helpful.', $prompt->getValue($this->llm));
+        $this->assertSame(1, substr_count($prompt->getValue($this->llm), '[Note: The user attached'));
+        $this->assertStringStartsWith('[Note: The user attached', $again[0]['content']);
+        $this->assertStringEndsWith("\n\nQ", $again[0]['content']);
 
         // No files: unchanged
         $property->setValue($this->llm, []);
