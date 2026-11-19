@@ -233,8 +233,6 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements ilCro
             $old_chat_id = $a_properties['chat_id'];
 
             try {
-                require_once(__DIR__ . '/../src/bootstrap.php');
-
                 $is_cut_paste = $this->isCutPasteOperation($old_chat_id);
                 $old_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($old_chat_id);
 
@@ -259,10 +257,9 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements ilCro
                     ]);
                 }
             } catch (\Throwable $e) {
-                $logger->error("PageComponent cloning failed", [
-                    'chat_id' => $old_chat_id,
-                    'error' => $e->getMessage()
-                ]);
+                // Reason in the message text: the log format does not print the context array
+                $logger->error("PageComponent cloning failed for chat $old_chat_id, the copy keeps the chat: "
+                    . get_class($e) . ': ' . $e->getMessage());
                 // Keep the chat ID: the copy uses the original chat instead of pointing to none
             }
         }
@@ -291,8 +288,6 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements ilCro
         $old_chat_id = $a_properties['chat_id'];
 
         try {
-            require_once(__DIR__ . '/../src/bootstrap.php');
-
             $old_config = new \ILIAS\Plugin\pcaic\Model\ChatConfig($old_chat_id);
 
             if (!$old_config->exists()) {
@@ -314,10 +309,9 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements ilCro
             ]);
 
         } catch (\Throwable $e) {
-            $logger->error("afterRepositoryCopy: cloning failed – keeping original chat_id", [
-                'chat_id' => $old_chat_id,
-                'error' => $e->getMessage()
-            ]);
+            // Reason in the message text: the log format does not print the context array
+            $logger->error("afterRepositoryCopy: cloning failed for chat $old_chat_id, the copy keeps the chat: "
+                . get_class($e) . ': ' . $e->getMessage());
             // Keep the chat ID: the copy uses the original chat instead of pointing to none
         }
     }
