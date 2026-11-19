@@ -48,6 +48,14 @@ class RAGServiceTest extends TestCase
             'other dashes and spaces' => ["A[cit\u{2013}0] B[ cit \u{2212} 2 ]", 'A[1] B[3]'],
             'mixed list' => ['A (cit-0,cit–1)', 'A [1][2]'],
             'similar text untouched' => ['(cite-1) (2023) <citation>', '(cite-1) (2023) <citation>'],
+            'without prefix, counted from 0' => ['schlafen[0]. Küche[0] und Brot[2]', 'schlafen[1]. Küche[1] und Brot[3]'],
+            'without prefix, list' => ['A [0, 2]', 'A [1][3]'],
+            'without prefix and with' => ['A[cit-1] B[0]', 'A[2] B[1]'],
+            'counted from 1: untouched' => ['A[1] B[2]', 'A[1] B[2]'],
+            'years untouched' => ['In [2023] gilt das[0].', 'In [2023] gilt das[1].'],
+            'code untouched' => ["Mit `arr[0]` geht es[0].\n```\nx = y[0]\n```", "Mit `arr[0]` geht es[1].\n```\nx = y[0]\n```"],
+            'code alone does not count' => ['Use `arr[0]` and see [1]', 'Use `arr[0]` and see [1]'],
+            'converted twice' => ['A[1] B[1] C[3]', 'A[1] B[1] C[3]'],
         ];
     }
 
