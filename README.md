@@ -132,9 +132,10 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 - When a chat is created, only title, visibility and system prompt are asked for; all other settings are made afterwards in the edit form.
 - 1.12.1: per resource, the display as source and the download can be restricted.
 
-### Notes on version 1.11.1
+### Notes on version 1.12.2
 
-- Copying a page or a repository object with a chat failed before and left the copy with the chat of the original. Copies now get a chat of their own with all settings and copies of the files. Copies made before this version still share the chat with their original.
+- Copying a page element or a repository object with a chat failed since version 1.1.0 (an included file had been removed; 1.11.1 fixed only a second error) and left the copy with the chat of the original. Copies now get a chat of their own with all settings and copies of the resources.
+- Copies made before still share the chat with their original: on the same page, the second chat element then does not react (sending, light/dark mode). Delete the copied chat element and copy it again, or add a new chat.
 
 ### Notes on version 1.10.0
 
