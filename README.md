@@ -254,6 +254,46 @@ In RAG mode:
 - The statistics tab of the chat lists the background files with their processing state (processed, being processed, waiting, failed with the time of the next attempt, or passed directly to the AI).
 - Files the RAG service cannot delete yet, because they are still being processed, are deleted later.
 - If the RAG service is not available, learners see the message "Document search is currently unavailable. Please try again later."
+- Chat uploads are only searched in the conversation they were sent in: files that were uploaded but never sent, and files of a cleared conversation, are not searched. Clearing the chat also deletes uploads that were never sent, including their copy in the RAG.
+- A message cannot be sent while a file in the upload area is still being uploaded or processed by the RAG service. Files whose upload to the RAG failed do not block sending; they are uploaded again when the message is sent.
+- If the current question has attachments, the AI is told which files they are, so that "this image" or "the document" refers to them and not to files of earlier messages.
+
+### Switching RAG on and off
+
+**Switching RAG off** for a chat deletes nothing: the copies of the files in the RAG service and their processing states are kept. The chat no longer searches the RAG; its resources are sent to the AI directly (text as text, images and PDF pages as images). The cron job skips the chat.
+
+While RAG is switched off:
+
+| Action | Effect on the RAG service |
+|---|---|
+| Add a resource | Stored in ILIAS, not uploaded to the RAG |
+| Update a resource (new snapshot) | The previous copy is deleted from the RAG at once; the new snapshot is not uploaded |
+| Remove a resource | The copy is deleted from the RAG at once |
+| Include or exclude a resource | No effect, only the setting of the chat changes |
+
+Deleting from the RAG is always done, uploading only while RAG is active, so the RAG never holds an outdated copy.
+
+**Switching RAG on again** uploads only the files without a copy in the RAG (added or updated in the meantime); the number is shown after saving. Existing copies are used again without processing them again. The cron job then continues to query the processing states.
+
+Chat uploads of learners behave the same way: they stay in the RAG and are searched again once RAG is switched on.
+
+To remove the data of a chat from the RAG service, remove its resources or delete the chat.
+
+### Loss of data in the RAG service
+
+The RAG service stores collections, files and passages in one database. If this data is lost (e.g. after a crash or a reinstallation without restoring the data), the RAG service answers the next retrieval of a chat with "Unauthorized access to collection IDs". The plugin then:
+
+1. resets the references and processing states of the affected files of the chat,
+2. uploads the resources of the chat and the chat uploads of the asking user again,
+3. repeats the retrieval.
+
+The answer to this first question comes without document passages, because the new copies are still being processed; from the next question on, the passages are available again.
+
+Limitations:
+- The loss is only detected when a chat is used. Until then, the resources tab and the upload area still show the files as searchable. Chats nobody uses are not uploaded again.
+- Chat uploads of other users are uploaded again when these users ask their next question.
+- A partial loss (the collection still exists, but files or passages are missing, e.g. after an incomplete restore) is not detected: the search simply finds less. Remove and re-add the affected resources, or update them.
+- If the access data of the RAG WebGateway (client keys) are lost, the plugin reports the RAG service as unavailable; this has to be fixed on the RAG side.
 
 ## Usage for learners
 
@@ -403,7 +443,7 @@ node_modules/.bin/eslint -c .eslintrc.json --no-eslintrc <plugin directory>/js/a
 | "Document search is currently unavailable" | The RAG service returned a server error or was not reachable; the log contains the HTTP status and response |
 | Files are not uploaded to the RAG, log shows HTTP 413 | Upload limit of a proxy in front of the RAG (e.g. `client_max_body_size` / `nginx.ingress.kubernetes.io/proxy-body-size`) |
 | Learners see "Some background files have not been processed yet" | Processing in the RAG service is still running or has failed. The log (component `pcaic`) contains the error reported by the RAG service; failed files are uploaded again automatically |
-| Text files are rejected by the RAG | The OSKI RAG WebGateway currently only accepts TXT/CSV files with ASCII characters |
+| Text files are rejected by the RAG (HTTP 400) | OSKI RAG WebGateway before version 1.1.0 only accepts TXT/CSV files with ASCII characters (e.g. no umlauts); from 1.1.0 UTF-8 is accepted. Update the RAG service, then update the resource |
 | Model list is empty | Check URL and token, then use "Refresh models" |
 | API token field is empty after opening a service tab | Enter the token again before saving |
 | PDFs are not processed | Check that Ghostscript and the PHP extension `imagick` are installed |
