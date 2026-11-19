@@ -684,9 +684,14 @@ try {
                 $session_id = $row['session_id'];
 
                 // Attachments are deleted individually, so that files are also removed from the RAG
+                // Also uploads of the user that were never sent
                 $attachments_query = "SELECT a.id FROM pcaic_attachments a " .
                                     "INNER JOIN pcaic_messages m ON a.message_id = m.message_id " .
-                                    "WHERE m.session_id = " . $db->quote($session_id, 'text');
+                                    "WHERE m.session_id = " . $db->quote($session_id, 'text') . " " .
+                                    "UNION SELECT id FROM pcaic_attachments " .
+                                    "WHERE chat_id = " . $db->quote($chat_id, 'text') . " " .
+                                    "AND user_id = " . $db->quote($user_id, 'integer') . " " .
+                                    "AND background_file = 0 AND message_id IS NULL";
                 $attachments_result = $db->query($attachments_query);
 
                 while ($attachment_row = $db->fetchAssoc($attachments_result)) {
