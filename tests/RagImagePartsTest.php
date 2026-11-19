@@ -140,4 +140,38 @@ class RagImagePartsTest extends TestCase
         $this->assertSame('image/jpeg', $resources[0]['mime_type']);
         $this->assertSame('data:image/jpeg;base64,new', $resources[1]['url']);
     }
+
+    public function testAnswerIsPointedToTheFilesOfTheCurrentQuestion(): void
+    {
+        $this->assertNull(AIChatPageComponentLLM::attachmentReferenceNote([]));
+
+        $note = AIChatPageComponentLLM::attachmentReferenceNote([
+            ['title' => 'running.gif', 'kind' => 'image'],
+            ['title' => 'Bericht.pdf', 'kind' => 'searched'],
+            ['title' => 'big.png', 'kind' => 'image'],
+            ['title' => 'photo.jpg', 'kind' => 'searched_image'],
+        ], ['big.png']);
+        $this->assertStringContainsString('"running.gif" (image, attached to this message)', $note);
+        $this->assertStringContainsString('"Bericht.pdf" (document; its passages are among the context items', $note);
+        $this->assertStringContainsString('"big.png" (image, not sent because of the size limit)', $note);
+        $this->assertStringContainsString('"photo.jpg" (image; a description of it is among the context items', $note);
+        $this->assertStringContainsString('each of them', $note);
+
+        // Into the text of the last message, before its images
+        $property = new ReflectionProperty(AIChatPageComponentLLM::class, 'current_attachments');
+        $property->setAccessible(true);
+        $property->setValue($this->llm, [['title' => 'running.gif', 'kind' => 'image']]);
+        $messages = $this->call('addAttachmentReferenceNote', [[
+            ['role' => 'user', 'content' => 'Earlier question'],
+            ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'RAG prompt'], self::image('gif')]],
+        ]]);
+        $this->assertSame('Earlier question', $messages[0]['content']);
+        $this->assertStringStartsWith("RAG prompt\n\n[Note: The user attached this file", $messages[1]['content'][0]['text']);
+        $this->assertSame('image_url', $messages[1]['content'][1]['type']);
+
+        // No files: unchanged
+        $property->setValue($this->llm, []);
+        $unchanged = [['role' => 'user', 'content' => 'Question']];
+        $this->assertSame($unchanged, $this->call('addAttachmentReferenceNote', [$unchanged]));
+    }
 }

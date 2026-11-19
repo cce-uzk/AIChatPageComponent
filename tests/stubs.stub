@@ -70,3 +70,46 @@ namespace {
         }
     }
 }
+
+// Data table of the ILIAS UI, used by the resource table
+namespace ILIAS\Data {
+    if (!class_exists(Range::class)) {
+        class Range
+        {
+            public function __construct(private int $start, private int $length)
+            {
+            }
+
+            public function getStart(): int
+            {
+                return $this->start;
+            }
+
+            public function getLength(): int
+            {
+                return $this->length;
+            }
+        }
+    }
+
+    if (!class_exists(Order::class)) {
+        class Order
+        {
+        }
+    }
+}
+
+namespace ILIAS\UI\Component\Table {
+    if (!interface_exists(DataRetrieval::class)) {
+        interface DataRetrieval
+        {
+        }
+    }
+
+    if (!interface_exists(DataRowBuilder::class)) {
+        interface DataRowBuilder
+        {
+            public function buildDataRow(string $id, array $record);
+        }
+    }
+}

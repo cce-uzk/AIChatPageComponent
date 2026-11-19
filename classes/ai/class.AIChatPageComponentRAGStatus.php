@@ -436,7 +436,8 @@ class AIChatPageComponentRAGStatus
         $db = self::db();
         $result = $db->query(
             "SELECT COUNT(*) cnt FROM pcaic_attachments WHERE chat_id = " . $db->quote($chat_id, 'text')
-            . " AND background_file = 1 AND (rag_status IS NULL OR rag_status IN ("
+            . " AND background_file = 1 AND " . \ILIAS\Plugin\pcaic\Model\ChatResource::usableAttachmentCondition()
+            . " AND (rag_status IS NULL OR rag_status IN ("
             . $db->quote(self::PROCESSING, 'text') . ", " . $db->quote(self::FAILED, 'text') . ", "
             . $db->quote(self::PENDING, 'text') . "))"
         );
@@ -477,7 +478,7 @@ class AIChatPageComponentRAGStatus
 
         $rag = new AIChatPageComponentRAG();
         $result = $db->query(
-            "SELECT a.id, a.rag_remote_file_id, a.rag_collection_id, a.background_file, a.chat_id, a.user_id, m.session_id"
+            "SELECT a.id, a.rag_remote_file_id, a.rag_collection_id, a.background_file, a.resource_ref, a.chat_id, a.user_id, m.session_id"
             . " FROM pcaic_attachments a LEFT JOIN pcaic_messages m ON m.message_id = a.message_id"
             . " WHERE a.chat_id = " . $db->quote($chat_id, 'text')
             . " AND a.rag_status = " . $db->quote(self::PROCESSING, 'text')
@@ -503,7 +504,9 @@ class AIChatPageComponentRAGStatus
                 . " AND rag_remote_file_id = " . $db->quote((string) $row['rag_remote_file_id'], 'text');
 
             // Entity as used for the upload: chat for background files, session for chat uploads
-            $entity_id = (int) $row['background_file'] === 1 ? (string) $row['chat_id'] : (string) $row['session_id'];
+            $entity_id = (int) $row['background_file'] === 1
+                ? \ILIAS\Plugin\pcaic\Model\Attachment::backgroundEntityId((string) $row['chat_id'], self::resourceRefOf($row))
+                : (string) $row['session_id'];
             if ($entity_id === '') {
                 // Chat upload that is not sent with a message yet: uploaded for the session of the user
                 $session = \ILIAS\Plugin\pcaic\Model\ChatSession::findForUserAndChat((int) $row['user_id'], $chat_id);
@@ -635,7 +638,7 @@ class AIChatPageComponentRAGStatus
 
         $db = self::db();
         $result = $db->query(
-            "SELECT a.id, a.resource_id, a.chat_id, a.user_id, a.background_file, a.message_id,"
+            "SELECT a.id, a.resource_id, a.chat_id, a.user_id, a.background_file, a.resource_ref, a.message_id,"
             . " a.rag_remote_file_id, a.rag_status, m.session_id"
             . " FROM pcaic_attachments a LEFT JOIN pcaic_messages m ON m.message_id = a.message_id"
             . " WHERE (a.rag_remote_file_id IS NOT NULL AND a.rag_remote_file_id <> '')"
@@ -700,12 +703,12 @@ class AIChatPageComponentRAGStatus
     /**
      * Entity a file was uploaded to the RAG with: the chat for background files, the session for chat uploads
      *
-     * @param array $row Attachment row with background_file, chat_id, user_id and session_id
+     * @param array $row Attachment row with background_file, resource_ref, chat_id, user_id and session_id
      */
     private static function entityOfAttachment(array $row): string
     {
         if ((int) $row['background_file'] === 1) {
-            return (string) $row['chat_id'];
+            return \ILIAS\Plugin\pcaic\Model\Attachment::backgroundEntityId((string) $row['chat_id'], self::resourceRefOf($row));
         }
         if (!empty($row['session_id'])) {
             return (string) $row['session_id'];
@@ -713,6 +716,14 @@ class AIChatPageComponentRAGStatus
         // Chat upload not sent yet: uploaded for the session of the user
         $session = \ILIAS\Plugin\pcaic\Model\ChatSession::findForUserAndChat((int) $row['user_id'], (string) $row['chat_id']);
         return $session !== null ? (string) $session->getSessionId() : '';
+    }
+
+    /**
+     * Resource of an attachment row, null for uploads in the chat and rows without the column
+     */
+    private static function resourceRefOf(array $row): ?int
+    {
+        return isset($row['resource_ref']) && $row['resource_ref'] !== '' ? (int) $row['resource_ref'] : null;
     }
 
     public static function queueDeletion(string $remote_file_id, string $entity_id): void
