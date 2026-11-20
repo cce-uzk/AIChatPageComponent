@@ -25,6 +25,8 @@ use ILIAS\Plugin\pcaic\Resource\ResourceContext;
 use ILIAS\Plugin\pcaic\Resource\ResourceProvider;
 use ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry;
 use ILIAS\Plugin\pcaic\Resource\SnapshotDocument;
+use ILIAS\Plugin\pcaic\Resource\SourceStateService;
+use ILIAS\Plugin\pcaic\Resource\Provider\ContainerFileProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -93,8 +95,9 @@ class ResourceProviderTest extends TestCase
         $this->assertSame(['file', 'page_context', 'obj_test'], $types($registry->available(true)));
         $this->assertSame(['file', 'page_context'], $types($registry->available(false)));
 
-        // The default registry holds the two kinds of today
-        $this->assertSame(['file', 'page_context'], $types(ResourceProviderRegistry::default()->all()));
+        // The default registry: the two kinds without RAG, the files of the environment with it
+        $this->assertSame(['file', 'page_context', 'obj_file'], $types(ResourceProviderRegistry::default()->all()));
+        $this->assertSame(['file', 'page_context'], $types(ResourceProviderRegistry::default()->available(false)));
     }
 
     public function testResourcesThePersonMayNotReadAreLeftOut(): void
@@ -203,5 +206,62 @@ class ResourceProviderTest extends TestCase
         $this->assertSame([], $old->getOptions());
         $this->assertNull($old->getSourceState());
         $this->assertNull($old->getEnvRefId());
+    }
+
+    private static function objectResource(array $row): ChatResource
+    {
+        return ChatResource::fromRow($row + ['id' => 5, 'chat_id' => 'chat_1', 'type' => 'obj_file', 'source_ref_id' => 120]);
+    }
+
+    public function testStateOfTheSourceIsShownNeverActedUponAlone(): void
+    {
+        // Object of the environment
+        $file = self::objectResource(['source_version' => 'v2', 'env_ref_id' => 86]);
+        $this->assertSame(ChatResource::STATE_OK, SourceStateService::determine($file, 'v2', 86));
+        $this->assertSame(ChatResource::STATE_CHANGED, SourceStateService::determine($file, 'v3', 86));
+        $this->assertSame(ChatResource::STATE_MISSING, SourceStateService::determine($file, null, 86));
+        $this->assertSame(ChatResource::STATE_OUTSIDE, SourceStateService::determine($file, 'v3', 99));
+        // Environment unknown (e.g. no ref_id in the call): not judged as moved
+        $this->assertSame(ChatResource::STATE_OK, SourceStateService::determine($file, 'v2', null));
+
+        // Page content: no object, only the fingerprint of the page
+        $page = ChatResource::fromRow(['id' => 2, 'chat_id' => 'chat_1', 'type' => 'page_context', 'source_version' => '2026-11-20 10:00:00']);
+        $this->assertSame(ChatResource::STATE_CHANGED, SourceStateService::determine($page, '2026-11-21 08:00:00', 99));
+        $this->assertSame(ChatResource::STATE_OK, SourceStateService::determine($page, '2026-11-20 10:00:00', 99));
+        // Snapshots from before fingerprints existed are not judged
+        $old_page = ChatResource::fromRow(['id' => 3, 'chat_id' => 'chat_1', 'type' => 'page_context']);
+        $this->assertNull(SourceStateService::determine($old_page, '2026-11-21 08:00:00', 86));
+
+        // Uploads have no source
+        $this->assertNull(SourceStateService::determine(self::resource(1, ChatResource::TYPE_FILE), null, 86));
+    }
+
+    public function testGoneOrMovedSourcesAreNotUsedEvenIfReadable(): void
+    {
+        $readable = new class () extends UploadedFileProvider {
+            public function getType(): string
+            {
+                return 'obj_file';
+            }
+        };
+        $filter = new ResourceAccessFilter(new ResourceProviderRegistry([$readable]));
+        $resources = [
+            self::objectResource(['id' => 1, 'source_state' => 'ok']),
+            self::objectResource(['id' => 2, 'source_state' => 'changed']),
+            self::objectResource(['id' => 3, 'source_state' => 'missing']),
+            self::objectResource(['id' => 4, 'source_state' => 'outside']),
+        ];
+        $this->assertSame([3, 4], $filter->excludedIds($resources, 6));
+    }
+
+    public function testFilesOfTheEnvironment(): void
+    {
+        $this->assertSame('Woche 1 › Unterlagen › Folien.pdf', ContainerFileProvider::label(['Woche 1', 'Unterlagen'], 'Folien.pdf'));
+        $this->assertSame('Folien.pdf', ContainerFileProvider::label([], 'Folien.pdf'));
+        $this->assertTrue((new ContainerFileProvider())->requiresRag());
+
+        // Offered for download (as link to the object), the page content is not
+        $this->assertTrue(self::objectResource([])->canBeDownloaded());
+        $this->assertFalse(self::resource(1, ChatResource::TYPE_PAGE_CONTEXT)->canBeDownloaded());
     }
 }
