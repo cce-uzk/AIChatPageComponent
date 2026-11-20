@@ -259,6 +259,10 @@ class ResourceProviderTest extends TestCase
         $this->assertSame('Woche 1 › Unterlagen › Folien.pdf', ContainerFileProvider::label(['Woche 1', 'Unterlagen'], 'Folien.pdf'));
         $this->assertSame('Folien.pdf', ContainerFileProvider::label([], 'Folien.pdf'));
         $this->assertTrue((new ContainerFileProvider())->requiresRag());
+        // File objects without content are not offered (ILIAS returns "" or "-", depending on the version)
+        $this->assertFalse(ContainerFileProvider::hasContent(''));
+        $this->assertFalse(ContainerFileProvider::hasContent('-'));
+        $this->assertTrue(ContainerFileProvider::hasContent('c7e5783d-471f-4f2e-9466-92daa7fc69a3'));
 
         // Offered for download (as link to the object), the page content is not
         $this->assertTrue(self::objectResource([])->canBeDownloaded());
