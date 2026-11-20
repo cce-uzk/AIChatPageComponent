@@ -27,6 +27,7 @@ use ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry;
 use ILIAS\Plugin\pcaic\Resource\SnapshotDocument;
 use ILIAS\Plugin\pcaic\Resource\SourceStateService;
 use ILIAS\Plugin\pcaic\Resource\Provider\ContainerFileProvider;
+use ILIAS\Plugin\pcaic\Resource\Provider\WikiProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -96,7 +97,7 @@ class ResourceProviderTest extends TestCase
         $this->assertSame(['file', 'page_context'], $types($registry->available(false)));
 
         // The default registry: the two kinds without RAG, the files of the environment with it
-        $this->assertSame(['file', 'page_context', 'obj_file'], $types(ResourceProviderRegistry::default()->all()));
+        $this->assertSame(['file', 'page_context', 'obj_file', 'obj_wiki'], $types(ResourceProviderRegistry::default()->all()));
         $this->assertSame(['file', 'page_context'], $types(ResourceProviderRegistry::default()->available(false)));
     }
 
@@ -267,5 +268,38 @@ class ResourceProviderTest extends TestCase
         // Offered for download (as link to the object), the page content is not
         $this->assertTrue(self::objectResource([])->canBeDownloaded());
         $this->assertFalse(self::resource(1, ChatResource::TYPE_PAGE_CONTEXT)->canBeDownloaded());
+    }
+
+    public function testWholeWikisOneTextFilePerPage(): void
+    {
+        $extractor = new class () extends PageTextExtractor {
+            public function textOfPage(string $copage_type, int $page_id): string
+            {
+                return $page_id === 3 ? '' : "Text of page $page_id";
+            }
+        };
+        $provider = new class ($extractor) extends WikiProvider {
+            public array $pages = [];
+
+            protected function pages(int $wiki_obj_id): array
+            {
+                return $this->pages;
+            }
+        };
+        $provider->pages = [
+            ['id' => 1, 'title' => 'Begriffe A/B', 'last_change' => '2026-11-18 10:00:00'],
+            ['id' => 2, 'title' => 'Start', 'last_change' => '2026-11-20 09:00:00'],
+            ['id' => 3, 'title' => 'Leer', 'last_change' => '2026-11-19 09:00:00'],
+        ];
+
+        // Fingerprint: number of pages and newest change, so adding or removing a page counts too
+        $this->assertSame('3|2026-11-20 09:00:00', WikiProvider::fingerprint($provider->pages));
+        $this->assertSame('0|', WikiProvider::fingerprint([]));
+
+        // File names name the page; a slash is no directory
+        $this->assertSame('Glossar › Begriffe A-B.txt', WikiProvider::filename('Glossar', 'Begriffe A/B'));
+
+        $this->assertTrue($provider->requiresRag());
+        $this->assertSame(500, WikiProvider::MAX_PAGES);
     }
 }
