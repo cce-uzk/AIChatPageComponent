@@ -337,6 +337,7 @@ resource_page_context_title#:#Content of this page
 resource_page_context_saved#:#Snapshot of the page content saved.
 resource_page_context_empty#:#The page contains no text that could be taken.
 resource_type_obj_file#:#File object
+resource_type_obj_wiki#:#Wiki
 resources_add_environment#:#Add from the environment
 resources_env_select#:#Objects
 resources_env_byline#:#Offered are objects of this environment and its folders that you may read and the document search can process. Each object becomes a resource of its own, as it is now. Learners only get content from it as long as they may read the object themselves.

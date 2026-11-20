@@ -18,6 +18,7 @@ namespace ILIAS\Plugin\pcaic\Resource;
 use ILIAS\Plugin\pcaic\Resource\Provider\ContainerFileProvider;
 use ILIAS\Plugin\pcaic\Resource\Provider\PageContextProvider;
 use ILIAS\Plugin\pcaic\Resource\Provider\UploadedFileProvider;
+use ILIAS\Plugin\pcaic\Resource\Provider\WikiProvider;
 
 /**
  * The kinds of resources the plugin offers
@@ -47,6 +48,7 @@ final class ResourceProviderRegistry
             new UploadedFileProvider(),
             new PageContextProvider(),
             new ContainerFileProvider(),
+            new WikiProvider(),
         ]);
     }
 

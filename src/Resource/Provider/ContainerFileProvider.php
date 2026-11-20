@@ -17,6 +17,7 @@ namespace ILIAS\Plugin\pcaic\Resource\Provider;
 
 use ILIAS\Plugin\pcaic\Model\ChatResource;
 use ILIAS\Plugin\pcaic\Resource\Candidate;
+use ILIAS\Plugin\pcaic\Resource\EnvironmentObjects;
 use ILIAS\Plugin\pcaic\Resource\ResourceContext;
 use ILIAS\Plugin\pcaic\Resource\ResourceProvider;
 use ILIAS\Plugin\pcaic\Resource\SnapshotDocument;
@@ -35,9 +36,6 @@ class ContainerFileProvider implements ResourceProvider
 {
     public const TYPE = 'obj_file';
 
-    /** Folders below the container that are searched for files */
-    private const MAX_DEPTH = 5;
-
     public function getType(): string
     {
         return self::TYPE;
@@ -55,52 +53,14 @@ class ContainerFileProvider implements ResourceProvider
             return [];
         }
 
-        $added = [];
-        foreach (ChatResource::getByChatId($context->getChat()->getChatId()) as $resource) {
-            if ($resource->getType() === self::TYPE && $resource->getSourceRefId() !== null) {
-                $added[$resource->getSourceRefId()] = true;
-            }
-        }
-
+        $added = self::addedRefIds($context, self::TYPE);
         $policy = FileTypePolicy::forService(
             \ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($context->getChat()->getAiService())
         );
         $candidates = [];
-        $this->collect($env_ref_id, [], 0, $context->getUserId(), $policy, $added, $candidates);
-        usort($candidates, fn(Candidate $a, Candidate $b): int => strnatcasecmp($a->getTitle(), $b->getTitle()));
-        return $candidates;
-    }
-
-    /**
-     * Files of a container and its folders that the person may read and the RAG takes
-     *
-     * @param string[] $path Titles of the folders down to this container
-     * @param array<int, bool> $added Reference IDs already added to the chat
-     * @param Candidate[] $candidates
-     */
-    private function collect(
-        int $ref_id,
-        array $path,
-        int $depth,
-        int $user_id,
-        FileTypePolicy $policy,
-        array $added,
-        array &$candidates
-    ): void {
-        global $DIC;
-        foreach ($DIC->repositoryTree()->getChildsByTypeFilter($ref_id, ['file', 'fold']) as $child) {
-            $child_ref = (int) $child['child'];
-            if (!$DIC->access()->checkAccessOfUser($user_id, 'read', '', $child_ref)) {
-                continue;
-            }
-            if ($child['type'] === 'fold') {
-                if ($depth < self::MAX_DEPTH) {
-                    $this->collect($child_ref, [...$path, (string) $child['title']], $depth + 1, $user_id, $policy, $added, $candidates);
-                }
-                continue;
-            }
+        foreach ((new EnvironmentObjects())->find($env_ref_id, 'file', $context->getUserId()) as $object) {
             try {
-                $file = new \ilObjFile($child_ref, true);
+                $file = new \ilObjFile($object['ref_id'], true);
                 $suffix = (string) $file->getFileExtension();
                 $has_content = self::hasContent((string) $file->getResourceId());
             } catch (\Throwable $e) {
@@ -110,14 +70,25 @@ class ContainerFileProvider implements ResourceProvider
             if (!$has_content || !$policy->isRagType($suffix)) {
                 continue;
             }
-            $candidates[] = new Candidate(
-                self::TYPE,
-                $child_ref,
-                (int) $child['obj_id'],
-                self::label($path, (string) $child['title']),
-                isset($added[$child_ref])
-            );
+            $candidates[] = new Candidate(self::TYPE, $object['ref_id'], $object['obj_id'], $object['label'], isset($added[$object['ref_id']]));
         }
+        return $candidates;
+    }
+
+    /**
+     * References already added to the chat as resources of a kind
+     *
+     * @return array<int, bool>
+     */
+    public static function addedRefIds(ResourceContext $context, string $type): array
+    {
+        $added = [];
+        foreach (ChatResource::getByChatId($context->getChat()->getChatId()) as $resource) {
+            if ($resource->getType() === $type && $resource->getSourceRefId() !== null) {
+                $added[$resource->getSourceRefId()] = true;
+            }
+        }
+        return $added;
     }
 
     /**
@@ -127,13 +98,13 @@ class ContainerFileProvider implements ResourceProvider
      */
     public static function label(array $path, string $title): string
     {
-        return implode(' › ', [...$path, $title]);
+        return EnvironmentObjects::label($path, $title);
     }
 
     public function createSnapshot(ResourceContext $context, ChatResource $resource): array
     {
         $ref_id = $resource->getSourceRefId();
-        if ($ref_id === null || !$this->exists($ref_id)) {
+        if ($ref_id === null || !EnvironmentObjects::exists($ref_id)) {
             return [];
         }
 
@@ -168,7 +139,7 @@ class ContainerFileProvider implements ResourceProvider
     public function getSourceVersion(ResourceContext $context, ChatResource $resource): ?string
     {
         $ref_id = $resource->getSourceRefId();
-        if ($ref_id === null || !$this->exists($ref_id)) {
+        if ($ref_id === null || !EnvironmentObjects::exists($ref_id)) {
             return null;
         }
         try {
@@ -180,26 +151,12 @@ class ContainerFileProvider implements ResourceProvider
 
     public function isAccessible(ChatResource $resource, int $user_id): bool
     {
-        $ref_id = $resource->getSourceRefId();
-        if ($ref_id === null || !$this->exists($ref_id)) {
-            return false;
-        }
-        global $DIC;
-        return $DIC->access()->checkAccessOfUser($user_id, 'read', '', $ref_id);
+        return EnvironmentObjects::isReadable($resource->getSourceRefId(), $user_id);
     }
 
     public function getSourceLink(ChatResource $resource): ?string
     {
         $ref_id = $resource->getSourceRefId();
         return $ref_id === null ? null : \ilLink::_getStaticLink($ref_id, 'file');
-    }
-
-    /**
-     * The reference is in the repository tree and not in the trash
-     */
-    private function exists(int $ref_id): bool
-    {
-        global $DIC;
-        return $DIC->repositoryTree()->isInTree($ref_id) && !\ilObject::_isInTrash($ref_id);
     }
 }
