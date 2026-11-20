@@ -100,11 +100,14 @@ class ContainerFileProvider implements ResourceProvider
                 continue;
             }
             try {
-                $suffix = (string) (new \ilObjFile($child_ref, true))->getFileExtension();
+                $file = new \ilObjFile($child_ref, true);
+                $suffix = (string) $file->getFileExtension();
+                $has_content = self::hasContent((string) $file->getResourceId());
             } catch (\Throwable $e) {
                 continue;
             }
-            if (!$policy->isRagType($suffix)) {
+            // Files without content in the Resource Storage (e.g. failed uploads) give no snapshot
+            if (!$has_content || !$policy->isRagType($suffix)) {
                 continue;
             }
             $candidates[] = new Candidate(
@@ -135,15 +138,31 @@ class ContainerFileProvider implements ResourceProvider
         }
 
         global $DIC;
-        $file = new \ilObjFile($ref_id, true);
-        $irss = $DIC->resourceStorage();
-        $identification = $irss->manage()->find($file->getResourceId());
-        if ($identification === null) {
+        try {
+            $file = new \ilObjFile($ref_id, true);
+            if (!self::hasContent((string) $file->getResourceId())) {
+                return [];
+            }
+            $irss = $DIC->resourceStorage();
+            $identification = $irss->manage()->find($file->getResourceId());
+            if ($identification === null) {
+                return [];
+            }
+            // A copy owned by the plugin: the snapshot stays when the file object changes
+            $copy = $irss->manage()->clone($identification, new ResourceStakeholder());
+            return [SnapshotDocument::ofStoredFile((string) $file->getFileName(), $copy->serialize())];
+        } catch (\Throwable $e) {
+            $DIC->logger()->pcaic()->warning("Snapshot of file object $ref_id failed: " . $e->getMessage());
             return [];
         }
-        // A copy owned by the plugin: the snapshot stays when the file object changes
-        $copy = $irss->manage()->clone($identification, new ResourceStakeholder());
-        return [SnapshotDocument::ofStoredFile((string) $file->getFileName(), $copy->serialize())];
+    }
+
+    /**
+     * Whether a file object has content in the Resource Storage: ILIAS returns "" or "-" otherwise
+     */
+    public static function hasContent(string $resource_id): bool
+    {
+        return $resource_id !== '' && $resource_id !== '-';
     }
 
     public function getSourceVersion(ResourceContext $context, ChatResource $resource): ?string
