@@ -336,6 +336,20 @@ resource_removed#:#Resource removed.
 resource_page_context_title#:#Content of this page
 resource_page_context_saved#:#Snapshot of the page content saved.
 resource_page_context_empty#:#The page contains no text that could be taken.
+resource_type_obj_file#:#File object
+resources_add_environment#:#Add from the environment
+resources_env_select#:#Objects
+resources_env_byline#:#Offered are objects of this environment and its folders that you may read and the document search can process. Each object becomes a resource of its own, as it is now. Learners only get content from it as long as they may read the object themselves.
+resources_env_already#:#%s objects already added are not listed.
+resources_env_none#:#There are no objects in the environment of this chat that can be added.
+resources_env_added#:#%s resource(s) added from the environment.
+resources_env_failed#:#No snapshot possible for: %s
+resource_source_state_changed#:#New state available
+resource_source_state_missing#:#Source not available
+resource_source_state_outside#:#No longer in the environment
+resource_update_no_access#:#You may not read the source of this resource; it was not updated.
+resource_update_failed#:#The source returned no content; the resource is unchanged.
+resource_updated#:#Resource updated.
 resource_source#:#As source
 resource_source_full#:#With passages
 resource_source_name#:#Name only

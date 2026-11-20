@@ -135,7 +135,8 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 
 ### Notes on version 1.13.0
 
-- Internal rework for further kinds of resources (files, wikis, content pages and learning modules of the environment): every kind is a provider behind one interface. The behaviour of uploaded files and the page content is unchanged.
+- New: file objects of the environment of the chat as resources (RAG only), with a permission check for every answer.
+- Internal rework for further kinds of resources (wikis, content pages and learning modules follow): every kind is a provider behind one interface. The behaviour of uploaded files and the page content is unchanged.
 - New columns in `pcaic_resources` for resources taken from ILIAS objects; existing resources are not changed.
 
 ### Notes on version 1.12.2
@@ -264,10 +265,15 @@ Resources are what a chat uses besides the conversation. Editors add them active
 |---|---|
 | File | An uploaded file (allowed types depend on the AI service and the RAG service). Each file is a resource of its own |
 | Page content | The visible text of the page containing the chat (paragraphs, without embedded files or sub-objects) |
+| File object (RAG only) | A file object of the environment of the chat (the course, group or folder containing the page, and its folders), as copy of its current version |
 
 - A resource is a **snapshot** from the time it was added or updated. Changes of the page only reach the chat with **Update** (shown with the date of the snapshot). An updated snapshot replaces the previous one, also in the RAG service.
 - **Use / Do not use** excludes a resource without removing it; it stays in the RAG service and can be included again at once.
 - **Remove** deletes the resource including its copy in the RAG service.
+- **Add from the environment** (RAG only) offers the file objects of the environment that the editor may read and whose type the RAG service takes. Each becomes a resource of its own.
+- For resources taken from an object, the table shows when the source changed ("New state available"), is gone ("Source not available") or the chat was moved to another environment ("No longer in the environment"). Nothing is updated on its own; gone and moved sources are no longer used.
+- Learners only get content of such a resource, in answers and in the source list, while they may read the object themselves (permission, online status, availability). Downloads of these sources link to the object in ILIAS.
+- When a course is copied, the resources of its chats point to the copied objects; sources that were not copied along are no longer used.
 - **As source** and **Download** restrict how the resource is shown below answers (see [In RAG mode](#with-and-without-rag)).
 - The column *Processing* shows the state in the RAG service, or "Sent to the AI directly" without RAG.
 - Resources are copied with the chat and included in the ILIAS export.
