@@ -1797,6 +1797,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
         $this->migrateLivePageContext($chat_config);
 
+        // Processing state in the RAG, as in the statistics tab; limited per chat by refreshChat()
+        if ($this->isRagActiveForChat($chat_config)) {
+            try {
+                \ai\AIChatPageComponentRAGStatus::refreshChat($chat_config->getChatId());
+            } catch (\Exception $e) {
+                $this->logger->warning("Processing state of resources not available: " . $e->getMessage());
+            }
+        }
+
         // Changed, missing or moved sources are shown, never updated on their own
         (new \ILIAS\Plugin\pcaic\Resource\SourceStateService(\ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()))->refresh(
             $this->resourceContext($chat_config),
