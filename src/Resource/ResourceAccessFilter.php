@@ -42,7 +42,9 @@ class ResourceAccessFilter
         $excluded = [];
         foreach ($resources as $resource) {
             $provider = $this->registry->get($resource->getType());
-            if ($provider === null || !$provider->isAccessible($resource, $user_id)) {
+            // A source that is gone or outside the environment of the chat is not used
+            $unusable = in_array($resource->getSourceState(), [ChatResource::STATE_MISSING, ChatResource::STATE_OUTSIDE], true);
+            if ($provider === null || $unusable || !$provider->isAccessible($resource, $user_id)) {
                 $excluded[] = (int) $resource->getId();
             }
         }
