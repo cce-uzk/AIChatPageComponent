@@ -20,6 +20,7 @@ Developed by the CompetenceCenter E-Learning, University of Cologne.
 - [Data protection and data storage](#data-protection-and-data-storage)
 - [How it works](#how-it-works)
 - [Adding an AI service (developers)](#adding-an-ai-service-developers)
+- [Adding a kind of resource (developers)](#adding-a-kind-of-resource-developers)
 - [Troubleshooting](#troubleshooting)
 - [License and contact](#license-and-contact)
 
@@ -131,6 +132,11 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 - "Include page context" was replaced by the page content resource: chats that used it get a snapshot of the page content when an editor opens the resources tab. Until then they keep using the current page content.
 - When a chat is created, only title, visibility and system prompt are asked for; all other settings are made afterwards in the edit form.
 - 1.12.1: per resource, the display as source and the download can be restricted.
+
+### Notes on version 1.13.0
+
+- Internal rework for further kinds of resources (files, wikis, content pages and learning modules of the environment): every kind is a provider behind one interface. The behaviour of uploaded files and the page content is unchanged.
+- New columns in `pcaic_resources` for resources taken from ILIAS objects; existing resources are not changed.
 
 ### Notes on version 1.12.2
 
@@ -421,6 +427,22 @@ AIChatPageComponent/
 ├── lang/                        # German and English
 └── sql/dbupdate.php             # Database schema and migrations
 ```
+
+## Adding a kind of resource (developers)
+
+Every kind of resource is a provider in `src/Resource/Provider/` that implements `ILIAS\Plugin\pcaic\Resource\ResourceProvider` and is listed in `ResourceProviderRegistry::default()`. The core (resources tab, snapshots, RAG, sources, permission check per answer) knows no kind; it only uses what the providers return.
+
+| Method | Purpose |
+|---|---|
+| `getType()` | Stored in `pcaic_resources.type`, e.g. `page_context` |
+| `requiresRag()` | `true` hides the kind while the chat does not use the RAG |
+| `getCandidates(context)` | Objects of the environment the person may add |
+| `createSnapshot(context, resource)` | Documents of a new snapshot (`SnapshotDocument`: text or a stored file); stored by `SnapshotService` |
+| `getSourceVersion(context, resource)` | Cheap fingerprint of the source, to notice a change |
+| `isAccessible(resource, user_id)` | Whether this person may use the resource now; checked for every answer (`ResourceAccessFilter`) |
+| `getSourceLink(resource)` | Link to the source in ILIAS |
+
+Text of ILIAS pages is taken with `PageTextExtractor`. After adding a class, regenerate the autoloaders of the plugin and of ILIAS (`composer dump-autoload` in both directories).
 
 ## Adding an AI service (developers)
 

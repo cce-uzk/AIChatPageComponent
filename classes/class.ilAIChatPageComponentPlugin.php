@@ -727,6 +727,11 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements \ILIA
             $copy->setSnapshotAt($resource->getSnapshotAt());
             $copy->setSourceDisplay($resource->getSourceDisplay());
             $copy->setAllowDownload($resource->isAllowDownload());
+            $copy->setSourceObjId($resource->getSourceObjId());
+            $copy->setSourceVersion($resource->getSourceVersion());
+            $copy->setOptions($resource->getOptions());
+            $copy->setSourceState($resource->getSourceState());
+            $copy->setEnvRefId($resource->getEnvRefId());
             $copy->setCreatedBy($resource->getCreatedBy());
             $copy->save();
             foreach ($resource->getAttachments() as $attachment) {

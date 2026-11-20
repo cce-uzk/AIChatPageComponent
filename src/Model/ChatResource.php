@@ -43,6 +43,13 @@ class ChatResource
     public const SOURCE_HIDDEN = 'hidden';
     public const SOURCE_DISPLAYS = [self::SOURCE_FULL, self::SOURCE_NAME, self::SOURCE_HIDDEN];
 
+    /** State of the source of a resource taken from an ILIAS object, see getSourceState() */
+    public const STATE_OK = 'ok';
+    public const STATE_CHANGED = 'changed';
+    public const STATE_MISSING = 'missing';
+    public const STATE_OUTSIDE = 'outside';
+    public const SOURCE_STATES = [self::STATE_OK, self::STATE_CHANGED, self::STATE_MISSING, self::STATE_OUTSIDE];
+
     private ?int $id = null;
     private string $chat_id = '';
     private string $type = self::TYPE_FILE;
@@ -54,6 +61,12 @@ class ChatResource
     private ?string $created_at = null;
     private string $source_display = self::SOURCE_FULL;
     private bool $allow_download = true;
+    private ?int $source_obj_id = null;
+    private ?string $source_version = null;
+    /** @var array<string, mixed> */
+    private array $options = [];
+    private ?string $source_state = null;
+    private ?int $env_ref_id = null;
 
     public static function fromRow(array $row): self
     {
@@ -69,6 +82,12 @@ class ChatResource
         $resource->created_at = $row['created_at'] ?? null;
         $resource->setSourceDisplay((string) ($row['source_display'] ?? self::SOURCE_FULL));
         $resource->allow_download = (int) ($row['allow_download'] ?? 1) === 1;
+        $resource->source_obj_id = isset($row['source_obj_id']) ? (int) $row['source_obj_id'] : null;
+        $resource->source_version = isset($row['source_version']) ? (string) $row['source_version'] : null;
+        $options = json_decode((string) ($row['options'] ?? ''), true);
+        $resource->options = is_array($options) ? $options : [];
+        $resource->setSourceState(isset($row['source_state']) ? (string) $row['source_state'] : null);
+        $resource->env_ref_id = isset($row['env_ref_id']) ? (int) $row['env_ref_id'] : null;
         return $resource;
     }
 
@@ -111,11 +130,15 @@ class ChatResource
      * resources existed and files of included resources
      *
      * @param string $alias Table alias of pcaic_attachments with dot, e.g. "a."
+     * @param int[] $excluded IDs of resources the asking person may not use, see ResourceAccessFilter
      */
-    public static function usableAttachmentCondition(string $alias = ''): string
+    public static function usableAttachmentCondition(string $alias = '', array $excluded = []): string
     {
+        $excluded = array_values(array_unique(array_map('intval', $excluded)));
         return "(" . $alias . "resource_ref IS NULL OR " . $alias . "resource_ref IN"
-            . " (SELECT id FROM pcaic_resources WHERE enabled = 1))";
+            . " (SELECT id FROM pcaic_resources WHERE enabled = 1"
+            . ($excluded === [] ? "" : " AND id NOT IN (" . implode(',', $excluded) . ")")
+            . "))";
     }
 
     public function save(): void
@@ -131,6 +154,11 @@ class ChatResource
             'created_by' => ['integer', $this->created_by],
             'source_display' => ['text', $this->source_display],
             'allow_download' => ['integer', $this->allow_download ? 1 : 0],
+            'source_obj_id' => ['integer', $this->source_obj_id],
+            'source_version' => ['text', $this->source_version !== null ? mb_substr($this->source_version, 0, 64) : null],
+            'options' => ['clob', $this->options === [] ? null : json_encode($this->options)],
+            'source_state' => ['text', $this->source_state],
+            'env_ref_id' => ['integer', $this->env_ref_id],
         ];
 
         if ($this->id === null) {
@@ -353,6 +381,68 @@ class ChatResource
     public function getCreatedAt(): ?string
     {
         return $this->created_at;
+    }
+
+    public function getSourceObjId(): ?int
+    {
+        return $this->source_obj_id;
+    }
+
+    public function setSourceObjId(?int $source_obj_id): void
+    {
+        $this->source_obj_id = $source_obj_id;
+    }
+
+    /**
+     * Fingerprint of the source at the time of the snapshot, see ResourceProvider::getSourceVersion()
+     */
+    public function getSourceVersion(): ?string
+    {
+        return $this->source_version;
+    }
+
+    public function setSourceVersion(?string $source_version): void
+    {
+        $this->source_version = $source_version;
+    }
+
+    /**
+     * @return array<string, mixed> Choice of the provider, e.g. the pages of a wiki
+     */
+    public function getOptions(): array
+    {
+        return $this->options;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    public function setOptions(array $options): void
+    {
+        $this->options = $options;
+    }
+
+    /**
+     * @return string|null One of the STATE_ constants; null for resources without a source in ILIAS
+     */
+    public function getSourceState(): ?string
+    {
+        return $this->source_state;
+    }
+
+    public function setSourceState(?string $source_state): void
+    {
+        $this->source_state = in_array($source_state, self::SOURCE_STATES, true) ? $source_state : null;
+    }
+
+    public function getEnvRefId(): ?int
+    {
+        return $this->env_ref_id;
+    }
+
+    public function setEnvRefId(?int $env_ref_id): void
+    {
+        $this->env_ref_id = $env_ref_id;
     }
 
     /**
