@@ -298,7 +298,7 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements \ILIA
             }
 
             // The page context is updated on first rendering (updateChatConfigPageContext())
-            $new_chat_id = $this->copyChat($old_config);
+            $new_chat_id = $this->copyChat($old_config, $mapping);
 
             $a_properties['chat_id'] = $new_chat_id;
 
@@ -685,9 +685,15 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements \ILIA
      * The snapshots of the resources are copied in the Resource Storage; the copies are uploaded
      * to the RAG by the next request or the cron job, into the collections of the new resources.
      *
+     * Resources taken from objects of the environment: on a copy of a repository object, their
+     * sources are mapped to the copied objects; a source that was not copied along is marked as
+     * no longer in the environment. A plain copy of the page element keeps them as they are; the
+     * resources tab notices if the chat ended up in another environment.
+     *
+     * @param array<int, int> $ref_mapping Old to new reference IDs of a repository copy
      * @return string ID of the new chat
      */
-    private function copyChat(\ILIAS\Plugin\pcaic\Model\ChatConfig $old_config): string
+    private function copyChat(\ILIAS\Plugin\pcaic\Model\ChatConfig $old_config, array $ref_mapping = []): string
     {
         global $DIC;
         $logger = $DIC->logger()->pcaic();
@@ -732,6 +738,9 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements \ILIA
             $copy->setOptions($resource->getOptions());
             $copy->setSourceState($resource->getSourceState());
             $copy->setEnvRefId($resource->getEnvRefId());
+            if ($ref_mapping !== [] && $resource->getSourceRefId() !== null) {
+                $this->mapSourceToCopy($copy, $ref_mapping);
+            }
             $copy->setCreatedBy($resource->getCreatedBy());
             $copy->save();
             foreach ($resource->getAttachments() as $attachment) {
@@ -751,6 +760,28 @@ class ilAIChatPageComponentPlugin extends ilPageComponentPlugin implements \ILIA
         }
 
         return $new_chat_id;
+    }
+
+    /**
+     * Point the source of a copied resource to the copied object
+     *
+     * @param array<int, int> $ref_mapping Old to new reference IDs
+     */
+    private function mapSourceToCopy(\ILIAS\Plugin\pcaic\Model\ChatResource $copy, array $ref_mapping): void
+    {
+        $env = $copy->getEnvRefId();
+        if ($env !== null && isset($ref_mapping[$env])) {
+            $copy->setEnvRefId((int) $ref_mapping[$env]);
+        }
+        $source = (int) $copy->getSourceRefId();
+        if (isset($ref_mapping[$source])) {
+            $new_ref = (int) $ref_mapping[$source];
+            $copy->setSourceRefId($new_ref);
+            $copy->setSourceObjId(\ilObject::_lookupObjId($new_ref));
+            return;
+        }
+        // Not copied along: the copy must not use an object of the original course
+        $copy->setSourceState(\ILIAS\Plugin\pcaic\Model\ChatResource::STATE_OUTSIDE);
     }
 
     /**

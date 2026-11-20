@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 namespace ILIAS\Plugin\pcaic\Resource;
 
+use ILIAS\Plugin\pcaic\Resource\Provider\ContainerFileProvider;
 use ILIAS\Plugin\pcaic\Resource\Provider\PageContextProvider;
 use ILIAS\Plugin\pcaic\Resource\Provider\UploadedFileProvider;
 
@@ -45,6 +46,7 @@ final class ResourceProviderRegistry
         return new self([
             new UploadedFileProvider(),
             new PageContextProvider(),
+            new ContainerFileProvider(),
         ]);
     }
 
