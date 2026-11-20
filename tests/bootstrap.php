@@ -33,6 +33,17 @@ require_once $plugin_dir . '/classes/ai/class.AIChatPageComponentLLMRegistry.php
 require_once $plugin_dir . '/src/Model/Attachment.php';
 require_once $plugin_dir . '/src/Model/ChatMessage.php';
 require_once $plugin_dir . '/src/Model/ChatResource.php';
+require_once $plugin_dir . '/src/Model/ChatConfig.php';
+require_once $plugin_dir . '/src/Resource/ResourceProvider.php';
+require_once $plugin_dir . '/src/Resource/ResourceContext.php';
+require_once $plugin_dir . '/src/Resource/SnapshotDocument.php';
+require_once $plugin_dir . '/src/Resource/Candidate.php';
+require_once $plugin_dir . '/src/Resource/PageTextExtractor.php';
+require_once $plugin_dir . '/src/Resource/SnapshotService.php';
+require_once $plugin_dir . '/src/Resource/ResourceAccessFilter.php';
+require_once $plugin_dir . '/src/Resource/Provider/UploadedFileProvider.php';
+require_once $plugin_dir . '/src/Resource/Provider/PageContextProvider.php';
+require_once $plugin_dir . '/src/Resource/ResourceProviderRegistry.php';
 require_once $plugin_dir . '/src/Table/ResourceTableRetrieval.php';
 require_once $plugin_dir . '/src/Validation/FileUploadValidator.php';
 require_once $plugin_dir . '/src/Validation/FileTypePolicy.php';
