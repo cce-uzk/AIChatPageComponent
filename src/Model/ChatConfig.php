@@ -449,9 +449,10 @@ class ChatConfig
     }
 
     /**
+     * @param int[] $excluded_resources Resources the asking person may not use, see ResourceAccessFilter
      * @return string[] Resource IDs of the background files of included resources
      */
-    public function getBackgroundFiles(): array
+    public function getBackgroundFiles(array $excluded_resources = []): array
     {
         global $DIC;
         $db = $DIC->database();
@@ -460,7 +461,7 @@ class ChatConfig
         $query = "SELECT resource_id FROM pcaic_attachments " .
                  "WHERE chat_id = " . $db->quote($this->chat_id, 'text') . " " .
                  "AND background_file = 1 " .
-                 "AND " . ChatResource::usableAttachmentCondition() . " " .
+                 "AND " . ChatResource::usableAttachmentCondition('', $excluded_resources) . " " .
                  "ORDER BY timestamp ASC";
 
         $result = $db->query($query);
