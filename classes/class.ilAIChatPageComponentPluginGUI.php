@@ -78,7 +78,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                             "showAdvancedTab", "saveAdvanced",
                             "showStatisticsTab", "clearHistory",
                             "showResourcesTab", "resourceAction", "confirmRemoveResource", "removeResource",
-                            "showAddResourceFiles", "saveResourceFiles", "addPageContextResource"];
+                            "showAddResourceFiles", "saveResourceFiles", "addPageContextResource",
+                            "showAddEnvironmentResources", "saveEnvironmentResources"];
                 if (in_array($cmd, $allowed)) {
                     $this->$cmd();
                 } else {
@@ -1796,6 +1797,12 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
         $this->migrateLivePageContext($chat_config);
 
+        // Changed, missing or moved sources are shown, never updated on their own
+        (new \ILIAS\Plugin\pcaic\Resource\SourceStateService(\ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()))->refresh(
+            $this->resourceContext($chat_config),
+            \ILIAS\Plugin\pcaic\Model\ChatResource::getByChatId($chat_config->getChatId())
+        );
+
         $f = $DIC->ui()->factory();
         $components = [$f->messageBox()->info(
             $this->plugin->txt('resources_info') . ' ' . $this->plugin->txt('resources_source_info')
@@ -1812,6 +1819,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $toolbar[] = $f->button()->standard(
                 $this->plugin->txt('resources_add_page_context'),
                 $this->ctrl->getLinkTarget($this, 'addPageContextResource')
+            );
+        }
+        // Objects of the environment only with RAG
+        if ($this->isRagActiveForChat($chat_config) && $this->getEnvRefId() !== null) {
+            $toolbar[] = $f->button()->standard(
+                $this->plugin->txt('resources_add_environment'),
+                $this->ctrl->getLinkTarget($this, 'showAddEnvironmentResources')
             );
         }
         foreach ($toolbar as $button) {
@@ -1853,9 +1867,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         global $DIC;
         $f = $DIC->ui()->factory();
 
-        $llm = $this->getLLMInstanceForChat($chat_config);
-        $rag_active = $llm->isRagEnabledForChat($chat_config)
-            && $llm->isFileHandlingEnabledForService(\ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService()));
+        $rag_active = $this->isRagActiveForChat($chat_config);
 
         $records = [];
         $disabled = [];
@@ -1864,7 +1876,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $records[$id] = [
                 'title' => $resource->getTitle(),
                 'type' => $this->plugin->txt('resource_type_' . $resource->getType()),
-                'snapshot' => $resource->getSnapshotAt() ? $this->formatStoredDateTime((string) $resource->getSnapshotAt()) : '',
+                'snapshot' => $this->getSnapshotLabel($resource),
                 'state' => $this->getResourceStateLabel($resource, $rag_active),
                 'included' => $this->plugin->txt($resource->isEnabled() ? 'resource_included' : 'resource_excluded'),
                 'source' => $this->plugin->txt('resource_source_' . $resource->getSourceDisplay()),
@@ -1875,8 +1887,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                         : ($resource->isAllowDownload() ? 'resource_download_allowed' : 'resource_download_denied')
                 ),
             ];
-            // Uploaded files have no source to take a new snapshot from
-            if ($resource->getType() === \ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_FILE) {
+            // Uploaded files have no source to take a new snapshot from, a gone or moved source neither
+            if ($resource->getType() === \ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_FILE
+                || in_array($resource->getSourceState(), [\ILIAS\Plugin\pcaic\Model\ChatResource::STATE_MISSING, \ILIAS\Plugin\pcaic\Model\ChatResource::STATE_OUTSIDE], true)) {
                 $disabled[$id][] = 'update';
             }
             $disabled[$id][] = $resource->isEnabled() ? 'include' : 'exclude';
@@ -1930,6 +1943,35 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     private const RESOURCE_TABLE_NAMESPACE = ['pcaic', 'resource'];
+
+    /**
+     * Date of the snapshot, with the state of its source if that needs attention
+     */
+    private function getSnapshotLabel(\ILIAS\Plugin\pcaic\Model\ChatResource $resource): string
+    {
+        $label = $resource->getSnapshotAt() ? $this->formatStoredDateTime((string) $resource->getSnapshotAt()) : '';
+        $state = $resource->getSourceState();
+        if (in_array($state, [\ILIAS\Plugin\pcaic\Model\ChatResource::STATE_CHANGED, \ILIAS\Plugin\pcaic\Model\ChatResource::STATE_MISSING, \ILIAS\Plugin\pcaic\Model\ChatResource::STATE_OUTSIDE], true)) {
+            $label .= ($label === '' ? '' : ' · ') . $this->plugin->txt('resource_source_state_' . $state);
+        }
+        return $label;
+    }
+
+    /**
+     * The chat uses the RAG and file handling is allowed for its service
+     */
+    private function isRagActiveForChat(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): bool
+    {
+        $llm = $this->getLLMInstanceForChat($chat_config);
+        return $llm->isRagEnabledForChat($chat_config)
+            && $llm->isFileHandlingEnabledForService(\ai\AIChatPageComponentLLMRegistry::getEffectiveServiceId($chat_config->getAiService()));
+    }
+
+    private function resourceContext(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config): \ILIAS\Plugin\pcaic\Resource\ResourceContext
+    {
+        global $DIC;
+        return new \ILIAS\Plugin\pcaic\Resource\ResourceContext($chat_config, $this->getEnvRefId(), $DIC->user()->getId());
+    }
 
     /**
      * State of a resource for editors
@@ -1991,6 +2033,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             case 'update':
                 if ($resource->getType() === \ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_PAGE_CONTEXT) {
                     $this->snapshotPageContext($this->getChatConfigForEdit(), $resource);
+                } else {
+                    $this->updateResourceSnapshot($resource);
                 }
                 break;
             case 'remove':
@@ -2031,6 +2075,170 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
         $this->ctrl->setParameter($this, 'resource_id', null);
         $this->ctrl->redirect($this, 'showResourcesTab');
+    }
+
+    /**
+     * New snapshot of a resource taken from an object of the environment
+     *
+     * Only while the editor may still read the source; the new snapshot replaces the old one,
+     * also in the RAG.
+     */
+    private function updateResourceSnapshot(\ILIAS\Plugin\pcaic\Model\ChatResource $resource): void
+    {
+        global $DIC;
+        $chat_config = $this->getChatConfigForEdit();
+        $provider = \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()->get($resource->getType());
+        if ($chat_config === null || $provider === null) {
+            return;
+        }
+        if (!$provider->isAccessible($resource, $DIC->user()->getId())) {
+            $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('resource_update_no_access'), true);
+            return;
+        }
+        $context = $this->resourceContext($chat_config);
+        $stored = (new \ILIAS\Plugin\pcaic\Resource\SnapshotService())->store(
+            $resource,
+            $provider->createSnapshot($context, $resource),
+            $DIC->user()->getId(),
+            $provider->getSourceVersion($context, $resource)
+        );
+        if (!$stored) {
+            $this->tpl->setOnScreenMessage('failure', $this->plugin->txt('resource_update_failed'), true);
+            return;
+        }
+        $this->syncResourcesToRag($chat_config);
+        $this->tpl->setOnScreenMessage('success', $this->plugin->txt('resource_updated'), true);
+    }
+
+    public function showAddEnvironmentResources(): void
+    {
+        global $DIC;
+        $chat_config = $this->getChatConfigForEdit();
+        $form = $chat_config !== null ? $this->buildEnvironmentForm($chat_config) : null;
+        if ($form === null) {
+            $this->tpl->setOnScreenMessage('info', $this->plugin->txt('resources_env_none'), true);
+            $this->ctrl->redirect($this, 'showResourcesTab');
+            return;
+        }
+        $this->addEditTabs('resources');
+        $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+    }
+
+    public function saveEnvironmentResources(): void
+    {
+        global $DIC;
+        $chat_config = $this->getChatConfigForEdit();
+        $form = $chat_config !== null ? $this->buildEnvironmentForm($chat_config) : null;
+        if ($form === null) {
+            $this->ctrl->redirect($this, 'showResourcesTab');
+            return;
+        }
+        $form = $form->withRequest($DIC->http()->request());
+        $data = $form->getData();
+        if ($data === null || $form->getError() !== null) {
+            $this->addEditTabs('resources');
+            $this->tpl->setContent($DIC->ui()->renderer()->render($form));
+            return;
+        }
+
+        // Only what is offered now: the candidates are checked again with the current permissions
+        $context = $this->resourceContext($chat_config);
+        $offered = [];
+        foreach ($this->getEnvironmentCandidates($context) as $candidate) {
+            $offered[$candidate->getProviderType() . ':' . $candidate->getRefId()] = $candidate;
+        }
+
+        $registry = \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default();
+        $snapshots = new \ILIAS\Plugin\pcaic\Resource\SnapshotService();
+        $added = 0;
+        $failed = [];
+        foreach ((array) ($data['env']['items'] ?? []) as $key) {
+            $candidate = $offered[(string) $key] ?? null;
+            $provider = $candidate !== null ? $registry->get($candidate->getProviderType()) : null;
+            if ($candidate === null || $provider === null || $candidate->isAdded()) {
+                continue;
+            }
+            $resource = new \ILIAS\Plugin\pcaic\Model\ChatResource();
+            $resource->setChatId($chat_config->getChatId());
+            $resource->setType($candidate->getProviderType());
+            $resource->setTitle((string) \ilObject::_lookupTitle($candidate->getObjId()));
+            $resource->setSourceRefId($candidate->getRefId());
+            $resource->setSourceObjId($candidate->getObjId());
+            $resource->setEnvRefId($context->getEnvRefId());
+            $resource->setCreatedBy($DIC->user()->getId());
+            $stored = $snapshots->store(
+                $resource,
+                $provider->createSnapshot($context, $resource),
+                $DIC->user()->getId(),
+                $provider->getSourceVersion($context, $resource)
+            );
+            if ($stored) {
+                $added++;
+            } else {
+                $failed[] = $candidate->getTitle();
+            }
+        }
+
+        if ($failed !== []) {
+            $this->tpl->setOnScreenMessage('failure', sprintf($this->plugin->txt('resources_env_failed'), implode(', ', $failed)), true);
+        }
+        if ($added > 0) {
+            $this->syncResourcesToRag($chat_config);
+            $this->tpl->setOnScreenMessage('success', sprintf($this->plugin->txt('resources_env_added'), $added), true);
+        }
+        $this->ctrl->redirect($this, 'showResourcesTab');
+    }
+
+    /**
+     * Candidates of all kinds of the environment that need the RAG
+     *
+     * @return \ILIAS\Plugin\pcaic\Resource\Candidate[]
+     */
+    private function getEnvironmentCandidates(\ILIAS\Plugin\pcaic\Resource\ResourceContext $context): array
+    {
+        if ($context->getEnvRefId() === null || !$this->isRagActiveForChat($context->getChat())) {
+            return [];
+        }
+        $candidates = [];
+        foreach (\ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()->available(true) as $provider) {
+            if ($provider->requiresRag()) {
+                array_push($candidates, ...$provider->getCandidates($context));
+            }
+        }
+        return $candidates;
+    }
+
+    /**
+     * Choice of objects of the environment; null if there is nothing to add
+     */
+    private function buildEnvironmentForm(\ILIAS\Plugin\pcaic\Model\ChatConfig $chat_config)
+    {
+        global $DIC;
+        $f = $DIC->ui()->factory();
+
+        $options = [];
+        $already = 0;
+        foreach ($this->getEnvironmentCandidates($this->resourceContext($chat_config)) as $candidate) {
+            if ($candidate->isAdded()) {
+                $already++;
+                continue;
+            }
+            $options[$candidate->getProviderType() . ':' . $candidate->getRefId()] =
+                $this->plugin->txt('resource_type_' . $candidate->getProviderType()) . ': ' . $candidate->getTitle();
+        }
+        if ($options === []) {
+            return null;
+        }
+
+        $byline = $this->plugin->txt('resources_env_byline')
+            . ($already > 0 ? ' ' . sprintf($this->plugin->txt('resources_env_already'), $already) : '');
+        $input = $f->input()->field()->multiSelect($this->plugin->txt('resources_env_select'), $options, $byline)
+            ->withRequired(true);
+
+        return $f->input()->container()->form()->standard(
+            $this->ctrl->getFormAction($this, 'saveEnvironmentResources'),
+            ['env' => $f->input()->field()->section(['items' => $input], $this->plugin->txt('resources_add_environment'))]
+        );
     }
 
     public function showAddResourceFiles(): void

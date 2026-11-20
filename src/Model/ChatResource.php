@@ -473,11 +473,11 @@ class ChatResource
 
     /**
      * Whether a resource of this type can be offered for download at all: the content of the
-     * page is no file of its own
+     * page is no file of its own. Files of the environment are offered as link to their object.
      */
     public function canBeDownloaded(): bool
     {
-        return $this->type === self::TYPE_FILE;
+        return $this->type !== self::TYPE_PAGE_CONTEXT;
     }
 
     /**

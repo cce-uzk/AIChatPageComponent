@@ -849,8 +849,12 @@ try {
                 $dl_resource = $attachment->getResourceRef() !== null
                     ? \ILIAS\Plugin\pcaic\Model\ChatResource::find((int) $attachment->getResourceRef())
                     : null;
+                // Objects of the environment are downloaded from ILIAS, not from the snapshot
+                $dl_link = $dl_resource !== null
+                    ? \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()->get($dl_resource->getType())?->getSourceLink($dl_resource)
+                    : null;
                 if ($dl_resource === null || $dl_resource->getChatId() !== $chat_id
-                    || !$dl_resource->isDownloadable(true)) {
+                    || !$dl_resource->isDownloadable(true) || $dl_link !== null) {
                     http_response_code(403);
                     exit;
                 }
@@ -1243,8 +1247,9 @@ function stripSourcesFromResponse(string $text): string
  * @param array $metadata Sources from the AI service (see AIChatPageComponentLLM::getLastResponseMetadata())
  * Source N belongs to citation [N]. The source settings of the resources are applied (see
  * ChatResource::restrictSources()): hidden sources become placeholders, sources shown with their
- * name only lose their passages. Download and view links only for files of resources that may be
- * downloaded, see ChatResource::isDownloadable().
+ * name only lose their passages. Sources of resources the viewing person may not read become
+ * placeholders too. Download and view links only for files of resources that may be downloaded,
+ * see ChatResource::isDownloadable(); objects of the environment link to their page in ILIAS.
  *
  * @return array<int, array{filename: string, pages: array, url: ?string, excerpt: ?string, text: ?string,
  *     download_url: ?string, view_url: ?string}|array{hidden: true}>
@@ -1264,27 +1269,38 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
         $resources[$resource->getId()] = $resource;
     }
 
+    // Sources the viewing person may not read (any more) are not shown, also in earlier answers
+    global $DIC;
+    $registry = \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default();
+    $excluded = (new \ILIAS\Plugin\pcaic\Resource\ResourceAccessFilter($registry))
+        ->excludedIds(array_values($resources), (int) $DIC->user()->getId());
+
     $sources = [];
     foreach ($formatted as $i => $source) {
-        if (!empty($source['hidden'])) {
-            $sources[] = $source;
+        $resource = $resources[$restricted[$i]['resource_id'] ?? 0] ?? null;
+        if (!empty($source['hidden']) || ($resource !== null && in_array((int) $resource->getId(), $excluded, true))) {
+            $sources[] = ['hidden' => true];
             continue;
         }
-        $resource = $resources[$restricted[$i]['resource_id'] ?? 0] ?? null;
         $download_url = null;
+        $view_url = null;
         if ($resource !== null && $resource->isDownloadable($chat_config->isAllowSourceDownloads())) {
-            foreach ($resource->getAttachments() as $attachment) {
-                $download_url = buildSecureDownloadUrl($chat_id, (int) $attachment->getId());
-                break;
+            // Objects of the environment: their page in ILIAS, which checks the permission itself
+            $link = $registry->get($resource->getType())?->getSourceLink($resource);
+            if ($link !== null) {
+                $download_url = $link;
+            } else {
+                foreach ($resource->getAttachments() as $attachment) {
+                    $download_url = buildSecureDownloadUrl($chat_id, (int) $attachment->getId());
+                    break;
+                }
+                // PDFs open in the viewer of the browser, which can jump to the page of the passage
+                if ($download_url !== null && isInlineViewable((string) $source['filename'])) {
+                    $view_url = $download_url . '&inline=1';
+                }
             }
         }
-        $sources[] = array_merge($source, [
-            'download_url' => $download_url,
-            // PDFs open in the viewer of the browser, which can jump to the page of the passage
-            'view_url' => $download_url !== null && isInlineViewable((string) $source['filename'])
-                ? $download_url . '&inline=1'
-                : null,
-        ]);
+        $sources[] = array_merge($source, ['download_url' => $download_url, 'view_url' => $view_url]);
     }
     return $sources;
 }
