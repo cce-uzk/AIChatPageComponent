@@ -78,6 +78,22 @@ class PageTextExtractor
     }
 
     /**
+     * Text of a page, e.g. of a wiki page ("wpg") by its page ID
+     */
+    public function textOfPage(string $copage_type, int $page_id): string
+    {
+        try {
+            global $DIC;
+            $page = $DIC->copage()->internal()->domain()->page()->get($copage_type, $page_id);
+            return $page === null ? '' : self::textOfXml((string) $page->getXMLContent());
+        } catch (\Throwable $e) {
+            global $DIC;
+            $DIC->logger()->pcaic()->warning("Page $copage_type/$page_id not readable: " . $e->getMessage());
+            return '';
+        }
+    }
+
+    /**
      * Last change of the page containing the chat, as fingerprint of the page content
      */
     public function lastChangeOfChatPage(ChatConfig $chat): ?string
