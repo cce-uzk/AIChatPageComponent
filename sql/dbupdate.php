@@ -1126,3 +1126,35 @@ if ($db->tableExists('pcaic_resources')) {
     }
 }
 ?>
+<#19>
+<?php
+/**
+ * Step 19: Sources of resources in the environment of the chat (v1.13.0)
+ *
+ * pcaic_resources, for resources taken from an ILIAS object (file, wiki, content page, ...):
+ *   source_obj_id   object of the source; stays valid when its reference is moved or linked
+ *   source_version  fingerprint of the source at the snapshot, e.g. version number or newest last_change
+ *   options         JSON: choice of the provider, e.g. the pages of a wiki
+ *   source_state    ok | changed | missing | outside, for the display, refreshed when the tab is opened
+ *   env_ref_id      environment of the chat when the resource was added; a different one = chat moved
+ *
+ * source_ref_id exists since step 17. Existing resources keep NULL in all new columns.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_resources')) {
+    $columns = [
+        'source_obj_id' => ['type' => 'integer', 'length' => 4, 'notnull' => false],
+        'source_version' => ['type' => 'text', 'length' => 64, 'notnull' => false],
+        'options' => ['type' => 'clob', 'notnull' => false],
+        'source_state' => ['type' => 'text', 'length' => 10, 'notnull' => false],
+        'env_ref_id' => ['type' => 'integer', 'length' => 4, 'notnull' => false],
+    ];
+    foreach ($columns as $name => $definition) {
+        if (!$db->tableColumnExists('pcaic_resources', $name)) {
+            $db->addTableColumn('pcaic_resources', $name, $definition);
+        }
+    }
+}
+?>
