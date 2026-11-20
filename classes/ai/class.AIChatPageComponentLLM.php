@@ -87,6 +87,10 @@ abstract class AIChatPageComponentLLM
     protected array $omitted_images = [];
     /** @var array<int, array{title: string, kind: string}> Files of the current question, see attachmentReferenceNote() */
     protected array $current_attachments = [];
+    /** Person the resources of the current request are used for, see excludedResourceIds() */
+    protected ?int $resource_user_id = null;
+    /** @var int[]|null Resources this person may not use in the current request (cached) */
+    protected ?array $excluded_resources = null;
     // Background files of the chat are not (yet) usable in the RAG
     protected bool $rag_incomplete = false;
     // Receives the sources of a streamed RAG answer before the answer is generated
@@ -584,6 +588,8 @@ abstract class AIChatPageComponentLLM
      */
     public function handleSendMessage(string $chat_id, int $user_id, string $message, array $attachment_ids = []): string
     {
+        $this->resource_user_id = $user_id;
+        $this->excluded_resources = null;
         try {
             $chat_config = new ChatConfig($chat_id);
             if (!$chat_config->exists()) {
@@ -719,6 +725,8 @@ abstract class AIChatPageComponentLLM
      */
     public function handleStatelessMessage(string $chat_id, array $conversation_history, string $message): string
     {
+        $this->resource_user_id = defined('ANONYMOUS_USER_ID') ? (int) ANONYMOUS_USER_ID : 13;
+        $this->excluded_resources = null;
         try {
             $chat_config = new ChatConfig($chat_id);
             if (!$chat_config->exists()) {
@@ -868,7 +876,7 @@ abstract class AIChatPageComponentLLM
         $policy = $this->getFileTypePolicy();
 
         try {
-            $background_files = $chat_config->getBackgroundFiles();
+            $background_files = $chat_config->getBackgroundFiles($this->excludedResourceIds($chat_config));
 
             if (empty($background_files)) {
                 $this->logger->debug("No background files found");
@@ -1178,7 +1186,7 @@ abstract class AIChatPageComponentLLM
                      "WHERE chat_id = " . $db->quote($chat_config->getChatId(), 'text') . " " .
                      "AND rag_collection_id IS NOT NULL " .
                      "AND " . self::ragCollectionOwnerCondition($session?->getUserId(), $session?->getSessionId()) . " " .
-                     "AND " . ChatResource::usableAttachmentCondition();
+                     "AND " . ChatResource::usableAttachmentCondition('', $this->excludedResourceIds($chat_config));
 
             // A collection is searched only while it holds a file of the RAG file types: files of
             // other types are removed from the RAG by the cron job, until then they are not searched
@@ -1221,7 +1229,8 @@ abstract class AIChatPageComponentLLM
             $live = $chat_config->isIncludePageContext() ? $this->getPageContext($chat_config) : '';
             return $live !== '' ? $live : null;
         }
-        if (!$resource->isEnabled() || $searched_in_rag) {
+        if (!$resource->isEnabled() || $searched_in_rag
+            || in_array((int) $resource->getId(), $this->excludedResourceIds($chat_config), true)) {
             return null;
         }
         foreach ($resource->getAttachments() as $attachment) {
@@ -1234,89 +1243,32 @@ abstract class AIChatPageComponentLLM
     }
 
     /**
-     * Current text of the page containing the chat, for the snapshot of the page content resource
-     */
-    public function getPageContextText(ChatConfig $chat_config): string
-    {
-        return $this->getPageContext($chat_config);
-    }
-
-    /**
      * Visible text (paragraphs) of the page containing the chat
      */
     protected function getPageContext(ChatConfig $chat_config): string
     {
-        global $DIC;
+        return (new \ILIAS\Plugin\pcaic\Resource\PageTextExtractor())->textOfChatPage($chat_config);
+    }
 
-        $page_id = (int) $chat_config->getPageId();
-        $parent_id = (int) $chat_config->getParentId();
-        $parent_type = (string) $chat_config->getParentType();
-
-        if (!$page_id && !$parent_id) {
-            return '';
+    /**
+     * Resources of the chat the person of the current request may not use, see ResourceAccessFilter
+     *
+     * Without a known person (e.g. RAG sync, cron job) nothing is left out.
+     *
+     * @return int[]
+     */
+    protected function excludedResourceIds(ChatConfig $chat_config): array
+    {
+        if ($this->resource_user_id === null) {
+            return [];
         }
-
-        // Page object type used by the page manager for the parent type
-        $copage_type_map = [
-            'crs' => 'cont',
-            'grp' => 'cont',
-            'cont' => 'cont',
-            'cat' => 'cont',
-            'lm' => 'lm',
-            'wpg' => 'wpg',
-            'wiki' => 'wpg',
-            'copa' => 'copa',
-            'glo' => 'glo',
-            'blp' => 'blp',
-            'frm' => 'frm',
-            'tst' => 'tst',
-            'qpl' => 'qpl'
-        ];
-
-        $copage_type = $copage_type_map[$parent_type] ?? null;
-        if (!$copage_type) {
-            return '';
+        if ($this->excluded_resources === null) {
+            $filter = new \ILIAS\Plugin\pcaic\Resource\ResourceAccessFilter(
+                \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()
+            );
+            $this->excluded_resources = $filter->excludedIdsOfChat($chat_config->getChatId(), $this->resource_user_id);
         }
-
-        try {
-            $page_manager = $DIC->copage()->internal()->domain()->page();
-            $page = null;
-
-            if ($copage_type === 'wpg' && $page_id > 0) {
-                $page = $page_manager->get('wpg', $page_id);
-            } else {
-                $page = $page_manager->get($copage_type, $parent_id);
-            }
-
-            if (!$page) {
-                return '';
-            }
-
-            $page_xml = $page->getXMLContent();
-            if (empty($page_xml)) {
-                return '';
-            }
-
-            $dom = new \DOMDocument();
-            @$dom->loadXML($page_xml);
-
-            $xpath = new \DOMXPath($dom);
-            $paragraphs = $xpath->query('//Paragraph');
-
-            $content_parts = [];
-            foreach ($paragraphs as $para) {
-                $text = trim($para->textContent);
-                if (!empty($text)) {
-                    $content_parts[] = $text;
-                }
-            }
-
-            return implode("\n\n", $content_parts);
-
-        } catch (\Exception $e) {
-            $this->logger->warning("Failed to get page context", ['error' => $e->getMessage()]);
-            return '';
-        }
+        return $this->excluded_resources;
     }
 
     /**

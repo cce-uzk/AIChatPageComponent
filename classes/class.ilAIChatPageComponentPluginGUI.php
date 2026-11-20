@@ -2126,10 +2126,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $resource->setChatId($chat_config->getChatId());
             $resource->setType(\ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_FILE);
             $resource->setTitle($revision->getTitle());
-            $resource->setSnapshotAt(date('Y-m-d H:i:s'));
             $resource->setCreatedBy($DIC->user()->getId());
-            $resource->save();
-            $resource->addFile($file_id, $DIC->user()->getId());
+            $resource->setEnvRefId($this->getEnvRefId());
+            (new \ILIAS\Plugin\pcaic\Resource\SnapshotService())->store(
+                $resource,
+                [\ILIAS\Plugin\pcaic\Resource\SnapshotDocument::ofStoredFile($revision->getTitle(), $file_id)],
+                $DIC->user()->getId()
+            );
             $added++;
         }
 
@@ -2181,11 +2184,6 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         if ($chat_config === null) {
             return false;
         }
-        $text = $this->getLLMInstanceForChat($chat_config)->getPageContextText($chat_config);
-        if (trim($text) === '') {
-            $this->tpl->setOnScreenMessage('info', $this->plugin->txt('resource_page_context_empty'), true);
-            return false;
-        }
 
         if ($resource === null) {
             $resource = new \ILIAS\Plugin\pcaic\Model\ChatResource();
@@ -2193,22 +2191,37 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $resource->setType(\ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_PAGE_CONTEXT);
             $resource->setTitle($this->plugin->txt('resource_page_context_title'));
             $resource->setCreatedBy($DIC->user()->getId());
-        } else {
-            // The new snapshot replaces the old one, also in the RAG
-            foreach ($resource->getAttachments() as $attachment) {
-                $attachment->delete();
-            }
+            $resource->setEnvRefId($this->getEnvRefId());
         }
-        $resource->setSnapshotAt(date('Y-m-d H:i:s'));
-        $resource->save();
-        $resource->addFile(
-            \ILIAS\Plugin\pcaic\Model\ChatResource::storeText($text, \ILIAS\Plugin\pcaic\Model\ChatResource::PAGE_CONTEXT_FILENAME),
-            $DIC->user()->getId()
+
+        $context = new \ILIAS\Plugin\pcaic\Resource\ResourceContext($chat_config, $this->getEnvRefId(), $DIC->user()->getId());
+        $provider = \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()->get($resource->getType());
+        $documents = $provider !== null ? $provider->createSnapshot($context, $resource) : [];
+
+        // The new snapshot replaces the old one, also in the RAG
+        $stored = (new \ILIAS\Plugin\pcaic\Resource\SnapshotService())->store(
+            $resource,
+            $documents,
+            $DIC->user()->getId(),
+            $provider?->getSourceVersion($context, $resource)
         );
+        if (!$stored) {
+            $this->tpl->setOnScreenMessage('info', $this->plugin->txt('resource_page_context_empty'), true);
+            return false;
+        }
 
         $this->syncResourcesToRag($chat_config);
         $this->tpl->setOnScreenMessage('success', $this->plugin->txt('resource_page_context_saved'), true);
         return true;
+    }
+
+    /**
+     * Reference of the object containing the page being edited, the environment of the chat
+     */
+    private function getEnvRefId(): ?int
+    {
+        $ref_id = (int) ($this->request->getQueryParams()['ref_id'] ?? 0);
+        return $ref_id > 0 ? $ref_id : null;
     }
 
     /**
