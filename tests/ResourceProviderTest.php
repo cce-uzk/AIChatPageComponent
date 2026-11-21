@@ -91,6 +91,11 @@ class ResourceProviderTest extends TestCase
             {
                 return null;
             }
+
+            public function getSourceIcon(ChatResource $resource): ?string
+            {
+                return null;
+            }
         };
     }
 
