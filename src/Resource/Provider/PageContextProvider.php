@@ -75,4 +75,17 @@ class PageContextProvider implements ResourceProvider
     {
         return $this->extractor ??= new PageTextExtractor();
     }
+
+    /**
+     * The title of the resource ("Content of this page") instead of the technical file name
+     */
+    public function getSourceName(ChatResource $resource, string $filename): string
+    {
+        return $resource->getTitle() !== '' ? $resource->getTitle() : $filename;
+    }
+
+    public function getSourceKind(): ?string
+    {
+        return 'page';
+    }
 }
