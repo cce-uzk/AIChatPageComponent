@@ -16,6 +16,8 @@ declare(strict_types=1);
 namespace ILIAS\Plugin\pcaic\Resource;
 
 use ILIAS\Plugin\pcaic\Resource\Provider\ContainerFileProvider;
+use ILIAS\Plugin\pcaic\Resource\Provider\ContentPageProvider;
+use ILIAS\Plugin\pcaic\Resource\Provider\LearningModuleProvider;
 use ILIAS\Plugin\pcaic\Resource\Provider\PageContextProvider;
 use ILIAS\Plugin\pcaic\Resource\Provider\UploadedFileProvider;
 use ILIAS\Plugin\pcaic\Resource\Provider\WikiProvider;
@@ -49,6 +51,8 @@ final class ResourceProviderRegistry
             new PageContextProvider(),
             new ContainerFileProvider(),
             new WikiProvider(),
+            new ContentPageProvider(),
+            new LearningModuleProvider(),
         ]);
     }
 
