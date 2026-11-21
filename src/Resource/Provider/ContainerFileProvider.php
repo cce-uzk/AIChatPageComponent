@@ -169,4 +169,10 @@ class ContainerFileProvider implements ResourceProvider
     {
         return null;
     }
+
+    public function getSourceIcon(ChatResource $resource): ?string
+    {
+        // Files: the icon of their extension says more than the general file icon
+        return null;
+    }
 }

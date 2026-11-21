@@ -88,4 +88,17 @@ class PageContextProvider implements ResourceProvider
     {
         return 'page';
     }
+
+    /**
+     * Icon of the object containing the page, e.g. of the course
+     */
+    public function getSourceIcon(ChatResource $resource): ?string
+    {
+        try {
+            $chat = new \ILIAS\Plugin\pcaic\Model\ChatConfig($resource->getChatId());
+            return \ILIAS\Plugin\pcaic\Resource\EnvironmentObjects::iconOf((int) $chat->getParentId());
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
 }
