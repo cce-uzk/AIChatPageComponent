@@ -175,4 +175,12 @@ class ContainerFileProvider implements ResourceProvider
         // Files: the icon of their extension says more than the general file icon
         return null;
     }
+
+    /**
+     * The file object in ILIAS, which checks the permission itself; never the copy of the snapshot
+     */
+    public function getSourceOffer(): string
+    {
+        return self::OFFER_LINK;
+    }
 }

@@ -207,4 +207,9 @@ abstract class PageObjectProvider implements ResourceProvider
     {
         return $this->extractor ??= new PageTextExtractor();
     }
+
+    public function getSourceOffer(): string
+    {
+        return self::OFFER_LINK;
+    }
 }
