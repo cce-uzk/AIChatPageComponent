@@ -1644,6 +1644,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("SOURCES_UNUSED", htmlspecialchars($this->plugin->txt('sources_unused')));
         $tpl->setVariable("SOURCE_PASSAGE", htmlspecialchars($this->plugin->txt('source_passage')));
         $tpl->setVariable("SOURCE_PASSAGE_CITED", htmlspecialchars($this->plugin->txt('source_passage_cited')));
+        $tpl->setVariable("SOURCE_DOWNLOAD", htmlspecialchars($this->plugin->txt('source_download')));
+        $tpl->setVariable("SOURCE_OPEN_IN_ILIAS", htmlspecialchars($this->plugin->txt('source_open_in_ilias')));
         $tpl->setVariable("SOURCE_OPEN_PAGE", htmlspecialchars($this->plugin->txt('source_open_page')));
         $tpl->setVariable("SOURCE_PASSAGES_TOGGLE", htmlspecialchars($this->plugin->txt('source_passages_toggle')));
         $tpl->setVariable("SOURCE_PASSAGES_ONE", htmlspecialchars($this->plugin->txt('source_passages_one')));
