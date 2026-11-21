@@ -28,6 +28,9 @@ use ILIAS\Plugin\pcaic\Resource\SnapshotDocument;
 use ILIAS\Plugin\pcaic\Resource\SourceStateService;
 use ILIAS\Plugin\pcaic\Resource\Provider\ContainerFileProvider;
 use ILIAS\Plugin\pcaic\Resource\Provider\WikiProvider;
+use ILIAS\Plugin\pcaic\Resource\Provider\PageObjectProvider;
+use ILIAS\Plugin\pcaic\Resource\Provider\LearningModuleProvider;
+use ILIAS\Plugin\pcaic\Resource\Provider\ContentPageProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -112,7 +115,7 @@ class ResourceProviderTest extends TestCase
         $this->assertSame(['file', 'page_context'], $types($registry->available(false)));
 
         // The default registry: the two kinds without RAG, the files of the environment with it
-        $this->assertSame(['file', 'page_context', 'obj_file', 'obj_wiki'], $types(ResourceProviderRegistry::default()->all()));
+        $this->assertSame(['file', 'page_context', 'obj_file', 'obj_wiki', 'obj_copa', 'obj_lm'], $types(ResourceProviderRegistry::default()->all()));
         $this->assertSame(['file', 'page_context'], $types(ResourceProviderRegistry::default()->available(false)));
     }
 
@@ -312,7 +315,7 @@ class ResourceProviderTest extends TestCase
         $this->assertSame('0|', WikiProvider::fingerprint([]));
 
         // File names name the page; a slash is no directory
-        $this->assertSame('Glossar › Begriffe A-B.txt', WikiProvider::filename('Glossar', 'Begriffe A/B'));
+        $this->assertSame('Glossar › Begriffe A-B.txt', PageObjectProvider::filename(['Glossar', 'Begriffe A/B']));
 
         $this->assertTrue($provider->requiresRag());
         $this->assertSame(500, WikiProvider::MAX_PAGES);
@@ -332,5 +335,45 @@ class ResourceProviderTest extends TestCase
         $file = self::resource(3, ChatResource::TYPE_FILE);
         $this->assertSame('Skript.pdf', (new UploadedFileProvider())->getSourceName($file, 'Skript.pdf'));
         $this->assertNull((new ContainerFileProvider())->getSourceKind());
+    }
+
+    public function testLearningModulePagesInReadingOrderWithTheirChapters(): void
+    {
+        // Preorder of lm_tree: root, chapter 1 with a sub-chapter, chapter 2
+        $rows = [
+            ['id' => 1, 'depth' => 1, 'type' => 'du', 'title' => 'dummy'],
+            ['id' => 10, 'depth' => 2, 'type' => 'st', 'title' => 'Grundlagen'],
+            ['id' => 11, 'depth' => 3, 'type' => 'pg', 'title' => 'Was ist RAG?'],
+            ['id' => 12, 'depth' => 3, 'type' => 'st', 'title' => 'Vertiefung'],
+            ['id' => 13, 'depth' => 4, 'type' => 'pg', 'title' => 'Embeddings'],
+            ['id' => 14, 'depth' => 3, 'type' => 'pg', 'title' => 'Entwurf'],
+            ['id' => 20, 'depth' => 2, 'type' => 'st', 'title' => 'Praxis'],
+            ['id' => 21, 'depth' => 3, 'type' => 'pg', 'title' => 'Übung'],
+        ];
+        // Page 14 is deactivated
+        $active = [11 => '2026-11-20 10:00:00', 13 => '2026-11-21 09:00:00', 21 => '2026-11-19 08:00:00'];
+
+        $pages = LearningModuleProvider::pagesInOrder($rows, $active);
+        $this->assertSame([11, 13, 21], array_column($pages, 'id'));
+        $this->assertSame(['Grundlagen'], $pages[0]['path']);
+        $this->assertSame(['Grundlagen', 'Vertiefung'], $pages[1]['path']);
+        // A later chapter replaces the earlier ones of its level
+        $this->assertSame(['Praxis'], $pages[2]['path']);
+
+        $this->assertSame('KI-Modul › Grundlagen › Vertiefung › Embeddings.txt',
+            PageObjectProvider::filename(['KI-Modul', ...$pages[1]['path'], $pages[1]['title']]));
+        $this->assertSame('3|2026-11-21 09:00:00', PageObjectProvider::fingerprint($pages));
+    }
+
+    public function testContentPagesAndLearningModulesNeedTheRagAndArePages(): void
+    {
+        foreach ([new ContentPageProvider(), new LearningModuleProvider()] as $provider) {
+            $this->assertTrue($provider->requiresRag());
+            $this->assertSame('page', $provider->getSourceKind());
+        }
+        $copa = ChatResource::fromRow(['id' => 1, 'chat_id' => 'c', 'type' => 'obj_copa']);
+        $this->assertSame('Hinweise zur Prüfung', (new ContentPageProvider())->getSourceName($copa, 'Hinweise zur Prüfung.txt'));
+        // A content page has one page without title: the file is named after the object
+        $this->assertSame('Hinweise zur Prüfung.txt', PageObjectProvider::filename(['Hinweise zur Prüfung']));
     }
 }
