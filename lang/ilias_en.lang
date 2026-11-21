@@ -359,17 +359,19 @@ resource_source#:#As source
 resource_source_full#:#With passages
 resource_source_name#:#Name only
 resource_source_hidden#:#Not shown
-resource_download#:#Download
+resource_download#:#Download / link
 resource_download_allowed#:#Allowed
 resource_download_denied#:#Not allowed
+resource_offer_download_allowed#:#Download allowed
+resource_offer_link_allowed#:#Link allowed
 resource_download_not_possible#:#–
 resource_action_source_full#:#Show as source with passages
 resource_action_source_name#:#Show as source with name only
 resource_action_source_hidden#:#Do not show as source
-resource_action_download_allow#:#Allow download
-resource_action_download_deny#:#Do not allow download
+resource_action_download_allow#:#Allow download or link
+resource_action_download_deny#:#Do not allow download or link
 resource_msg_source#:#The display as source was changed.
 resource_msg_download#:#The download setting was changed.
-resources_source_info#:#"As source" sets how a resource is named below answers: with passages, with its name only (no passages, no download) or not at all (citations of it are removed from the answer; its content is still used for answers). A resource can only restrict more than the chat.
+resources_source_info#:#"As source" sets how a resource is named below answers: with passages, with its name only (no passages, download or link) or not at all (citations of it are removed from the answer; its content is still used for answers). A resource can only restrict more than the chat.
 resources_sources_inactive#:#This chat currently shows no sources ("Use RAG mode" and "Show sources" are needed). "As source" and "Download" take effect once both are active.
-resources_downloads_inactive#:#Source downloads are not allowed for this chat. "Download" takes effect once "Allow source downloads" is active.
+resources_downloads_inactive#:#Source downloads are not allowed for this chat. "Download / link" takes effect once "Allow source downloads" is active.

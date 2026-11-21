@@ -81,4 +81,9 @@ class UploadedFileProvider implements ResourceProvider
         // Files: the icon of their extension says more than the general file icon
         return null;
     }
+
+    public function getSourceOffer(): string
+    {
+        return self::OFFER_DOWNLOAD;
+    }
 }

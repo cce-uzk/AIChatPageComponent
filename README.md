@@ -451,8 +451,10 @@ Every kind of resource is a provider in `src/Resource/Provider/` that implements
 | `getSourceVersion(context, resource)` | Cheap fingerprint of the source, to notice a change |
 | `isAccessible(resource, user_id)` | Whether this person may use the resource now; checked for every answer (`ResourceAccessFilter`) |
 | `getSourceLink(resource)` | Link to the source in ILIAS |
+| `getSourceOffer()` | What the source list offers: `OFFER_DOWNLOAD` (the snapshot), `OFFER_LINK` (the source in ILIAS) or `OFFER_NONE`; the resources tab, the source list and the download check follow it |
+| `getSourceName(resource, filename)`, `getSourceKind()`, `getSourceIcon(resource)` | Name, kind (`wiki`, `page`, or null for the file extension) and icon URL of a source in the source list |
 
-Text of ILIAS pages is taken with `PageTextExtractor`. After adding a class, regenerate the autoloaders of the plugin and of ILIAS (`composer dump-autoload` in both directories).
+Objects made of pages extend `PageObjectProvider` and only name their object type, page type and pages. Objects of the environment are found with `EnvironmentObjects`, text of ILIAS pages is taken with `PageTextExtractor`. After adding a class, regenerate the autoloaders of the plugin and of ILIAS (`composer dump-autoload` in both directories).
 
 ## Adding an AI service (developers)
 
