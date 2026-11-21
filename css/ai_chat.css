@@ -378,6 +378,8 @@
     max-height: 400px;
     overflow-y: auto;
     overflow-x: hidden;
+    /* At the top or end of the messages, scrolling stops instead of moving the page (scroll chaining) */
+    overscroll-behavior: contain;
     background: var(--chat-bg-primary);
     padding: 20px;
     box-sizing: border-box;
@@ -1090,6 +1092,8 @@
     width: 100%;
 }
 
+/* Long input text scrolls without moving the page */
+.ai-chat-input { overscroll-behavior: contain; }
 .ai-chat-input::-webkit-scrollbar       { width: 6px; }
 .ai-chat-input::-webkit-scrollbar-track { background: transparent; }
 
@@ -2364,6 +2368,7 @@ a.ai-chat-footnote-link:hover,
 
 /* Source tooltip */
 .ai-chat-source-tooltip {
+    overscroll-behavior: contain;
     position: fixed;
     z-index: 10000;
     background: var(--chat-bg-secondary);
@@ -2573,6 +2578,7 @@ a.ai-chat-footnote-link:hover,
 .ai-chat-raw-panel[open] summary::before { transform: rotate(90deg); }
 
 .ai-chat-raw-pre {
+    overscroll-behavior: contain;
     margin: 0;
     padding: 10px 12px;
     font-size: 11px;
