@@ -68,4 +68,18 @@ interface ResourceProvider
      * Link to the source in ILIAS, for the table and the source list
      */
     public function getSourceLink(ChatResource $resource): ?string;
+
+    /**
+     * Name of a passage's source in the source list and the citation chips
+     *
+     * @param string $filename Name of the file of the snapshot the passage comes from
+     */
+    public function getSourceName(ChatResource $resource, string $filename): string;
+
+    /**
+     * Kind of source for its icon in the source list, e.g. "wiki" or "page"
+     *
+     * @return string|null Null: the icon follows the file name (PDF, image, ...)
+     */
+    public function getSourceKind(): ?string;
 }

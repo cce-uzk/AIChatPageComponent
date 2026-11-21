@@ -159,4 +159,14 @@ class ContainerFileProvider implements ResourceProvider
         $ref_id = $resource->getSourceRefId();
         return $ref_id === null ? null : \ilLink::_getStaticLink($ref_id, 'file');
     }
+
+    public function getSourceName(ChatResource $resource, string $filename): string
+    {
+        return $filename;
+    }
+
+    public function getSourceKind(): ?string
+    {
+        return null;
+    }
 }

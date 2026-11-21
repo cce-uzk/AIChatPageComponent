@@ -1299,6 +1299,12 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
                 }
             }
         }
+        // Named by the kind of resource, e.g. "Wiki › Page" instead of the file name of the snapshot
+        $provider = $resource !== null ? $registry->get($resource->getType()) : null;
+        if ($provider !== null) {
+            $source['filename'] = $provider->getSourceName($resource, (string) $source['filename']);
+            $source['kind'] = $provider->getSourceKind();
+        }
         $sources[] = array_merge($source, ['download_url' => $download_url, 'view_url' => $view_url]);
     }
     return $sources;

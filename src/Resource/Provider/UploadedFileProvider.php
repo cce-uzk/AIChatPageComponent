@@ -65,4 +65,14 @@ class UploadedFileProvider implements ResourceProvider
     {
         return null;
     }
+
+    public function getSourceName(ChatResource $resource, string $filename): string
+    {
+        return $filename;
+    }
+
+    public function getSourceKind(): ?string
+    {
+        return null;
+    }
 }
