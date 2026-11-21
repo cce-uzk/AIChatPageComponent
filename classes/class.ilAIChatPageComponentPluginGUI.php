@@ -2172,9 +2172,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             if ($candidate === null || $provider === null || $candidate->isAdded()) {
                 continue;
             }
-            $resource = new \ILIAS\Plugin\pcaic\Model\ChatResource();
-            $resource->setChatId($chat_config->getChatId());
-            $resource->setType($candidate->getProviderType());
+            $resource = $registry->newResource($candidate->getProviderType(), $chat_config->getChatId());
             $resource->setTitle((string) \ilObject::_lookupTitle($candidate->getObjId()));
             $resource->setSourceRefId($candidate->getRefId());
             $resource->setSourceObjId($candidate->getObjId());
@@ -2344,9 +2342,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 continue;
             }
 
-            $resource = new \ILIAS\Plugin\pcaic\Model\ChatResource();
-            $resource->setChatId($chat_config->getChatId());
-            $resource->setType(\ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_FILE);
+            $resource = \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()
+                ->newResource(\ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_FILE, $chat_config->getChatId());
             $resource->setTitle($revision->getTitle());
             $resource->setCreatedBy($DIC->user()->getId());
             $resource->setEnvRefId($this->getEnvRefId());
@@ -2408,9 +2405,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         }
 
         if ($resource === null) {
-            $resource = new \ILIAS\Plugin\pcaic\Model\ChatResource();
-            $resource->setChatId($chat_config->getChatId());
-            $resource->setType(\ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_PAGE_CONTEXT);
+            $resource = \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()
+                ->newResource(\ILIAS\Plugin\pcaic\Model\ChatResource::TYPE_PAGE_CONTEXT, $chat_config->getChatId());
             $resource->setTitle($this->plugin->txt('resource_page_context_title'));
             $resource->setCreatedBy($DIC->user()->getId());
             $resource->setEnvRefId($this->getEnvRefId());
