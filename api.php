@@ -1248,7 +1248,8 @@ function stripSourcesFromResponse(string $text): string
  * ChatResource::restrictSources()): hidden sources become placeholders, sources shown with their
  * name only lose their passages. Sources of resources the viewing person may not read become
  * placeholders too. Download and view links only for files of resources that may be downloaded,
- * see ChatResource::isDownloadable(); objects of the environment link to their page in ILIAS.
+ * see ChatResource::isDownloadable(); objects of the environment get a link to their page in ILIAS
+ * (link_url) instead.
  *
  * @return array<int, array{filename: string, pages: array, url: ?string, excerpt: ?string, text: ?string,
  *     download_url: ?string, view_url: ?string}|array{hidden: true}>
@@ -1283,11 +1284,12 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
         }
         $download_url = null;
         $view_url = null;
+        $link_url = null;
         if ($resource !== null && $resource->isDownloadable($chat_config->isAllowSourceDownloads())) {
             // Objects of the environment: their page in ILIAS, which checks the permission itself
             $link = $registry->get($resource->getType())?->getSourceLink($resource);
             if ($link !== null) {
-                $download_url = $link;
+                $link_url = $link;
             } else {
                 foreach ($resource->getAttachments() as $attachment) {
                     $download_url = buildSecureDownloadUrl($chat_id, (int) $attachment->getId());
@@ -1306,7 +1308,7 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
             $source['kind'] = $provider->getSourceKind();
             $source['icon'] = absoluteIliasUrl($provider->getSourceIcon($resource));
         }
-        $sources[] = array_merge($source, ['download_url' => $download_url, 'view_url' => $view_url]);
+        $sources[] = array_merge($source, ['download_url' => $download_url, 'view_url' => $view_url, 'link_url' => $link_url]);
     }
     return $sources;
 }
