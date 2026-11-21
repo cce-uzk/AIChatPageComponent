@@ -73,18 +73,23 @@ class ChatResourceTest extends TestCase
 
     public function testSourceDisplayAndDownloadOnlyRestrictTheChat(): void
     {
+        $download = \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_DOWNLOAD;
+        $link = \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_LINK;
+        $none = \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_NONE;
+
         $full = self::resource(1, ChatResource::TYPE_FILE, ChatResource::SOURCE_FULL);
-        $this->assertTrue($full->isDownloadable(true));
-        $this->assertFalse($full->isDownloadable(false), 'the chat does not allow downloads');
+        $this->assertTrue($full->isOffered(true, $download));
+        $this->assertTrue($full->isOffered(true, $link));
+        $this->assertFalse($full->isOffered(false, $download), 'the chat does not allow downloads');
+        $this->assertFalse($full->isOffered(true, $none), 'the kind offers nothing');
         $this->assertSame(ChatResource::SOURCE_FULL, $full->getEffectiveSourceDisplay(true));
         $this->assertNull($full->getEffectiveSourceDisplay(false), 'the chat shows no sources');
 
-        // No download: denied, name only, hidden, page content, excluded
-        $this->assertFalse(self::resource(2, ChatResource::TYPE_FILE, ChatResource::SOURCE_FULL, false)->isDownloadable(true));
-        $this->assertFalse(self::resource(3, ChatResource::TYPE_FILE, ChatResource::SOURCE_NAME)->isDownloadable(true));
-        $this->assertFalse(self::resource(4, ChatResource::TYPE_FILE, ChatResource::SOURCE_HIDDEN)->isDownloadable(true));
-        $this->assertFalse(self::resource(5, ChatResource::TYPE_PAGE_CONTEXT, ChatResource::SOURCE_FULL)->isDownloadable(true));
-        $this->assertFalse(self::resource(6, ChatResource::TYPE_FILE, ChatResource::SOURCE_FULL, true, false)->isDownloadable(true));
+        // Nothing offered: denied, name only, hidden, excluded
+        $this->assertFalse(self::resource(2, ChatResource::TYPE_FILE, ChatResource::SOURCE_FULL, false)->isOffered(true, $download));
+        $this->assertFalse(self::resource(3, ChatResource::TYPE_FILE, ChatResource::SOURCE_NAME)->isOffered(true, $download));
+        $this->assertFalse(self::resource(4, ChatResource::TYPE_FILE, ChatResource::SOURCE_HIDDEN)->isOffered(true, $link));
+        $this->assertFalse(self::resource(6, ChatResource::TYPE_FILE, ChatResource::SOURCE_FULL, true, false)->isOffered(true, $download));
 
         // Unknown values (e.g. a manipulated import) fall back to the behaviour of the chat
         $this->assertSame(ChatResource::SOURCE_FULL, self::resource(7, ChatResource::TYPE_FILE, 'everything')->getSourceDisplay());

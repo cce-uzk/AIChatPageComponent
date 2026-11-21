@@ -99,6 +99,11 @@ class ResourceProviderTest extends TestCase
             {
                 return null;
             }
+
+            public function getSourceOffer(): string
+            {
+                return self::OFFER_NONE;
+            }
         };
     }
 
@@ -283,9 +288,23 @@ class ResourceProviderTest extends TestCase
         $this->assertFalse(ContainerFileProvider::hasContent('-'));
         $this->assertTrue(ContainerFileProvider::hasContent('c7e5783d-471f-4f2e-9466-92daa7fc69a3'));
 
-        // Offered for download (as link to the object), the page content is not
-        $this->assertTrue(self::objectResource([])->canBeDownloaded());
-        $this->assertFalse(self::resource(1, ChatResource::TYPE_PAGE_CONTEXT)->canBeDownloaded());
+        // What the source list offers is declared by each kind, not by the core
+        $registry = ResourceProviderRegistry::default();
+        $offers = [];
+        foreach ($registry->all() as $provider) {
+            $offers[$provider->getType()] = $provider->getSourceOffer();
+        }
+        $this->assertSame([
+            'file' => ResourceProvider::OFFER_DOWNLOAD,
+            'page_context' => ResourceProvider::OFFER_NONE,
+            'obj_file' => ResourceProvider::OFFER_LINK,
+            'obj_wiki' => ResourceProvider::OFFER_LINK,
+            'obj_copa' => ResourceProvider::OFFER_LINK,
+            'obj_lm' => ResourceProvider::OFFER_LINK,
+        ], $offers);
+        $this->assertSame(ResourceProvider::OFFER_LINK, $registry->offerOf(self::objectResource([])));
+        // Kinds this version does not know offer nothing
+        $this->assertSame(ResourceProvider::OFFER_NONE, $registry->offerOf(self::resource(9, 'obj_unknown')));
     }
 
     public function testWholeWikisOneTextFilePerPage(): void

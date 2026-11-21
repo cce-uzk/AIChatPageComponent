@@ -101,4 +101,12 @@ class PageContextProvider implements ResourceProvider
             return null;
         }
     }
+
+    /**
+     * The content of the page is no file of its own, and the page is where the chat is
+     */
+    public function getSourceOffer(): string
+    {
+        return self::OFFER_NONE;
+    }
 }
