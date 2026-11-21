@@ -85,6 +85,25 @@ class EnvironmentObjects
     }
 
     /**
+     * Icon ILIAS shows for an object, including a custom icon of the object
+     *
+     * @return string|null URL relative to the ILIAS root; null if there is none
+     */
+    public static function iconOf(int $obj_id, string $type = ''): ?string
+    {
+        if ($obj_id <= 0) {
+            return null;
+        }
+        try {
+            $type = $type !== '' ? $type : (string) \ilObject::_lookupType($obj_id);
+            $icon = (string) \ilObject::_getIcon($obj_id, 'small', $type);
+            return $icon !== '' ? $icon : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * The reference is in the repository tree and not in the trash
      */
     public static function exists(int $ref_id): bool

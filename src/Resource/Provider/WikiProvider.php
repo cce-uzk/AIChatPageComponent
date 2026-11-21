@@ -183,4 +183,11 @@ class WikiProvider implements ResourceProvider
     {
         return 'wiki';
     }
+
+    public function getSourceIcon(ChatResource $resource): ?string
+    {
+        $obj_id = $resource->getSourceObjId()
+            ?? ($resource->getSourceRefId() !== null ? \ilObject::_lookupObjId($resource->getSourceRefId()) : 0);
+        return EnvironmentObjects::iconOf((int) $obj_id, 'wiki');
+    }
 }
