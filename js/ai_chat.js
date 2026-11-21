@@ -4879,6 +4879,29 @@ class AIChatPageComponent {
   }
 
   /**
+   * Icon of a source: the icon ILIAS shows for its object (wiki, course, ...), otherwise the
+   * icon of its type
+   *
+   * @param {Object|null} source
+   * @param {string} type - Source type, see detectSourceType()
+   * @returns {string} HTML
+   */
+  sourceIconHtml(source, type) {
+    if (source && source.icon && this.safeUrl(source.icon)) {
+      return `<img src="${this.escapeHtml(source.icon)}" alt="" aria-hidden="true">`;
+    }
+    return this.getSourceTypeIcon(type);
+  }
+
+  /**
+   * @param {Object|null} source
+   * @returns {string} Class for the plain background of an icon of ILIAS, with leading space
+   */
+  iliasIconClass(source) {
+    return source && source.icon && this.safeUrl(source.icon) ? ' ai-chat-icon-ilias' : '';
+  }
+
+  /**
    * Get label for source type
    *
    * @param {string} type - Source type
@@ -4908,9 +4931,13 @@ class AIChatPageComponent {
     const sourcesId = `src-${Date.now()}`;
 
     const typeCount = {};
+    const iconSource = {}; // First source of a type with an icon of ILIAS, for its bubble
     sources.filter((source) => AIChatPageComponent.isShownSource(source)).forEach((source) => {
       const type = this.detectSourceType(source.filename, source.url, source.kind);
       typeCount[type] = (typeCount[type] || 0) + 1;
+      if (!iconSource[type] && source.icon) {
+        iconSource[type] = source;
+      }
     });
     const uniqueTypes = Object.keys(typeCount).slice(0, 3);
 
@@ -4923,7 +4950,7 @@ class AIChatPageComponent {
 
     let bubblesHtml = '<div class="ai-chat-sources-bubbles">';
     uniqueTypes.forEach((type, i) => {
-      bubblesHtml += `<span class="ai-chat-source-bubble" data-type="${type}" style="z-index: ${10 - i};">${this.getSourceTypeIcon(type)}</span>`;
+      bubblesHtml += `<span class="ai-chat-source-bubble${this.iliasIconClass(iconSource[type])}" data-type="${type}" style="z-index: ${10 - i};">${this.sourceIconHtml(iconSource[type], type)}</span>`;
     });
     bubblesHtml += '</div>';
 
@@ -4992,7 +5019,7 @@ class AIChatPageComponent {
 
       item.innerHTML = `
                 <span class="ai-chat-source-number">${dedupIdx + 1}</span>
-                <span class="ai-chat-source-icon" data-type="${type}">${this.getSourceTypeIcon(type)}</span>
+                <span class="ai-chat-source-icon${this.iliasIconClass(source)}" data-type="${type}">${this.sourceIconHtml(source, type)}</span>
                 ${nameHtml}
                 ${pageInfo}
                 ${downloadBtn}
@@ -5269,7 +5296,7 @@ class AIChatPageComponent {
         label += `, ${moreLabel}`;
       }
       chip.setAttribute('aria-label', label);
-      chip.innerHTML = `<span class="ai-chat-chip-icon" data-type="${type}" aria-hidden="true">${self.getSourceTypeIcon(type)}</span>`
+      chip.innerHTML = `<span class="ai-chat-chip-icon${self.iliasIconClass(sourceData)}" data-type="${type}" aria-hidden="true">${self.sourceIconHtml(sourceData, type)}</span>`
         + `<span class="ai-chat-chip-number" aria-hidden="true">${files[0]}</span>`
         + `<span class="ai-chat-chip-name" aria-hidden="true"><span class="ai-chat-chip-text">${self.escapeHtml(sourceData.filename)}</span></span>${more}`;
 

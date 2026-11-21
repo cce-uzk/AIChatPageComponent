@@ -82,4 +82,11 @@ interface ResourceProvider
      * @return string|null Null: the icon follows the file name (PDF, image, ...)
      */
     public function getSourceKind(): ?string;
+
+    /**
+     * Icon of the source in the source list and the citation chips, the one ILIAS shows for it
+     *
+     * @return string|null URL of the icon; null: the icon follows the kind or the file name
+     */
+    public function getSourceIcon(ChatResource $resource): ?string;
 }

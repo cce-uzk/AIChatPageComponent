@@ -1988,6 +1988,14 @@
 
 .ai-chat-source-icon svg { width: 14px; height: 14px; }
 
+/* Icons of ILIAS objects (wiki, course, ...): coloured, so on a plain background */
+.ai-chat-source-icon img,
+.ai-chat-source-bubble img { width: 16px; height: 16px; display: block; }
+.ai-chat-chip-icon img { width: 12px; height: 12px; display: block; }
+.ai-chat-source-icon.ai-chat-icon-ilias { background: transparent !important; }
+.ai-chat-source-bubble.ai-chat-icon-ilias { background: var(--chat-bg-primary) !important; }
+.ai-chat-source-chip .ai-chat-chip-icon.ai-chat-icon-ilias { background: transparent !important; }
+
 /* Type icon colors (semantic) */
 .ai-chat-source-icon[data-type="pdf"]   { background: rgba(231,  76,  60, 0.2); color: #e74c3c; }
 .ai-chat-source-icon[data-type="web"]   { background: rgba( 52, 152, 219, 0.2); color: #3498db; }
