@@ -338,6 +338,8 @@ resource_page_context_saved#:#Abbild des Seiteninhalts gespeichert.
 resource_page_context_empty#:#Die Seite enthält keinen Text, der übernommen werden kann.
 resource_type_obj_file#:#Datei-Objekt
 resource_type_obj_wiki#:#Wiki
+resource_type_obj_copa#:#Inhaltsseite
+resource_type_obj_lm#:#Lernmodul
 resources_add_environment#:#Aus der Umgebung hinzufügen
 resources_env_select#:#Objekte
 resources_env_byline#:#Angeboten werden Objekte dieser Umgebung und ihrer Ordner, die Sie lesen dürfen und die die Dokumentensuche verarbeiten kann. Jedes Objekt wird eine eigene Ressource mit dem Stand von jetzt. Lernende erhalten Inhalte daraus nur, solange sie das Objekt selbst lesen dürfen.
