@@ -109,4 +109,17 @@ class PageContextProvider implements ResourceProvider
     {
         return self::OFFER_NONE;
     }
+
+    /**
+     * Named only: learners are on the page anyway, its passages add nothing to the answer
+     */
+    public function getDefaultSourceDisplay(): string
+    {
+        return ChatResource::SOURCE_NAME;
+    }
+
+    public function getDefaultAllowOffer(): bool
+    {
+        return false;
+    }
 }
