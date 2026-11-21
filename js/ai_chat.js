@@ -4841,7 +4841,9 @@ class AIChatPageComponent {
    * @param {string} filename - Source filename
    * @returns {string} Source type: 'pdf', 'web', 'wiki', 'doc', 'image', 'other'
    */
-  detectSourceType(filename, url = null) {
+  detectSourceType(filename, url = null, kind = null) {
+    // Named by the server for sources that are no files, e.g. a wiki or the page content
+    if (kind && ['wiki', 'page'].includes(kind)) return kind;
     if (url) return 'web';
     if (!filename) return 'other';
     const lower = filename.toLowerCase();
@@ -4870,6 +4872,7 @@ class AIChatPageComponent {
       doc: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0H4zm0 1h5v3.5A1.5 1.5 0 0 0 10.5 6H13v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/><path d="M4.5 8a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5z"/></svg>',
       image: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/><path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/></svg>',
       text: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 11a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1h-7zm0-2a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1h-7zm0-2a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1h-7zm0-2a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1h-7z"/><path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2zm10-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z"/></svg>',
+      page: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h11A1.5 1.5 0 0 1 15 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 13.5v-11zM2.5 2a.5.5 0 0 0-.5.5V4h12V2.5a.5.5 0 0 0-.5-.5h-11zM14 5H2v8.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V5z"/><path d="M3.5 7a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 0 1H4a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 0 1H4a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1H4a.5.5 0 0 1-.5-.5z"/></svg>',
       other: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0H4zm0 1h5v3.5A1.5 1.5 0 0 0 10.5 6H13v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/></svg>',
     };
     return icons[type] || icons.other;
@@ -4889,6 +4892,7 @@ class AIChatPageComponent {
       doc: 'Doc',
       image: 'Bild',
       text: 'Text',
+      page: 'Seite',
       other: 'Datei',
     };
     return labels[type] || labels.other;
@@ -4905,7 +4909,7 @@ class AIChatPageComponent {
 
     const typeCount = {};
     sources.filter((source) => AIChatPageComponent.isShownSource(source)).forEach((source) => {
-      const type = this.detectSourceType(source.filename, source.url);
+      const type = this.detectSourceType(source.filename, source.url, source.kind);
       typeCount[type] = (typeCount[type] || 0) + 1;
     });
     const uniqueTypes = Object.keys(typeCount).slice(0, 3);
@@ -4967,7 +4971,7 @@ class AIChatPageComponent {
     sourcesList.className = 'ai-chat-sources-list';
 
     deduped.forEach((source, dedupIdx) => {
-      const type = this.detectSourceType(source.filename, source.url);
+      const type = this.detectSourceType(source.filename, source.url, source.kind);
       const item = document.createElement('div');
       item.className = 'ai-chat-source-item';
       item.id = `${sourcesId}-source-dedup-${dedupIdx + 1}`;
@@ -5254,7 +5258,7 @@ class AIChatPageComponent {
       chip.setAttribute('role', 'button');
       chip.tabIndex = 0;
 
-      const type = self.detectSourceType(sourceData.filename, sourceData.url);
+      const type = self.detectSourceType(sourceData.filename, sourceData.url, sourceData.kind);
       let more = '';
       let label = `${files[0]}: ${sourceData.filename}`;
       if (files.length > 1) {
