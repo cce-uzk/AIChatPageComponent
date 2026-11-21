@@ -104,6 +104,16 @@ class ResourceProviderTest extends TestCase
             {
                 return self::OFFER_NONE;
             }
+
+            public function getDefaultSourceDisplay(): string
+            {
+                return ChatResource::SOURCE_FULL;
+            }
+
+            public function getDefaultAllowOffer(): bool
+            {
+                return true;
+            }
         };
     }
 
@@ -394,5 +404,28 @@ class ResourceProviderTest extends TestCase
         $this->assertSame('Hinweise zur Prüfung', (new ContentPageProvider())->getSourceName($copa, 'Hinweise zur Prüfung.txt'));
         // A content page has one page without title: the file is named after the object
         $this->assertSame('Hinweise zur Prüfung.txt', PageObjectProvider::filename(['Hinweise zur Prüfung']));
+    }
+
+    public function testNewResourcesStartWithTheDefaultsOfTheirKind(): void
+    {
+        $registry = ResourceProviderRegistry::default();
+
+        // The page content: named only, nothing offered
+        $page = $registry->newResource(ChatResource::TYPE_PAGE_CONTEXT, 'chat_1');
+        $this->assertSame('chat_1', $page->getChatId());
+        $this->assertSame(ChatResource::TYPE_PAGE_CONTEXT, $page->getType());
+        $this->assertSame(ChatResource::SOURCE_NAME, $page->getSourceDisplay());
+        $this->assertFalse($page->isAllowDownload());
+
+        // Files and objects of the environment: with passages, download or link allowed
+        foreach (['file', 'obj_file', 'obj_wiki', 'obj_copa', 'obj_lm'] as $type) {
+            $resource = $registry->newResource($type, 'chat_1');
+            $this->assertSame(ChatResource::SOURCE_FULL, $resource->getSourceDisplay(), $type);
+            $this->assertTrue($resource->isAllowDownload(), $type);
+        }
+
+        // Kinds this version does not know: the defaults of the model
+        $unknown = $registry->newResource('obj_unknown', 'chat_1');
+        $this->assertSame(ChatResource::SOURCE_FULL, $unknown->getSourceDisplay());
     }
 }

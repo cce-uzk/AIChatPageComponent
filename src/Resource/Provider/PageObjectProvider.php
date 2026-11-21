@@ -212,4 +212,14 @@ abstract class PageObjectProvider implements ResourceProvider
     {
         return self::OFFER_LINK;
     }
+
+    public function getDefaultSourceDisplay(): string
+    {
+        return ChatResource::SOURCE_FULL;
+    }
+
+    public function getDefaultAllowOffer(): bool
+    {
+        return true;
+    }
 }

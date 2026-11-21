@@ -79,6 +79,18 @@ interface ResourceProvider
     public function getSourceOffer(): string;
 
     /**
+     * How a new resource of this kind is shown as source, until an editor changes it
+     *
+     * @return string One of the ChatResource::SOURCE_ constants
+     */
+    public function getDefaultSourceDisplay(): string;
+
+    /**
+     * Whether a new resource of this kind allows its download or link (see getSourceOffer())
+     */
+    public function getDefaultAllowOffer(): bool;
+
+    /**
      * Link to the source in ILIAS, for the table and the source list
      */
     public function getSourceLink(ChatResource $resource): ?string;

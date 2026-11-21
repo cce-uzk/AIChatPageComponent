@@ -278,7 +278,7 @@ Resources are what a chat uses besides the conversation. Editors add them active
 - For resources taken from an object, the table shows when the source changed ("New state available"), is gone ("Source not available") or the chat was moved to another environment ("No longer in the environment"). Nothing is updated on its own; gone and moved sources are no longer used.
 - Learners only get content of such a resource, in answers and in the source list, while they may read the object themselves (permission, online status, availability). Downloads of these sources link to the object in ILIAS.
 - When a course is copied, the resources of its chats point to the copied objects; sources that were not copied along are no longer used.
-- **As source** and **Download** restrict how the resource is shown below answers (see [In RAG mode](#with-and-without-rag)).
+- **As source** and **Download / link** restrict how the resource is shown below answers (see [In RAG mode](#with-and-without-rag)). New resources start with the defaults of their kind: the page content is named only and offers nothing, files and objects are shown with their passages and offer their download or link.
 - The column *Processing* shows the state in the RAG service, or "Sent to the AI directly" without RAG.
 - Resources are copied with the chat and included in the ILIAS export.
 - Further types of resources (objects of the container, wikis) are planned; they will only be available with RAG and with a permission check.
@@ -453,6 +453,9 @@ Every kind of resource is a provider in `src/Resource/Provider/` that implements
 | `getSourceLink(resource)` | Link to the source in ILIAS |
 | `getSourceOffer()` | What the source list offers: `OFFER_DOWNLOAD` (the snapshot), `OFFER_LINK` (the source in ILIAS) or `OFFER_NONE`; the resources tab, the source list and the download check follow it |
 | `getSourceName(resource, filename)`, `getSourceKind()`, `getSourceIcon(resource)` | Name, kind (`wiki`, `page`, or null for the file extension) and icon URL of a source in the source list |
+| `getDefaultSourceDisplay()`, `getDefaultAllowOffer()` | How a new resource of the kind is shown as source and whether its download or link is allowed, until an editor changes it |
+
+New resources are made with `ResourceProviderRegistry::newResource()`, which applies these defaults.
 
 Objects made of pages extend `PageObjectProvider` and only name their object type, page type and pages. Objects of the environment are found with `EnvironmentObjects`, text of ILIAS pages is taken with `PageTextExtractor`. After adding a class, regenerate the autoloaders of the plugin and of ILIAS (`composer dump-autoload` in both directories).
 
