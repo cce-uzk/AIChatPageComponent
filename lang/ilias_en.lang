@@ -225,6 +225,8 @@ source_next#:#Next source
 sources_unused#:#Found but not used (%s)
 source_passage#:#Passage %s
 source_passage_cited#:#cited in the answer
+source_download#:#Download
+source_open_in_ilias#:#Open in ILIAS
 source_open_page#:#Open at page %s
 source_passages_toggle#:#Show or hide the passages
 source_passages_one#:#1 passage
