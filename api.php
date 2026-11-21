@@ -839,7 +839,7 @@ try {
                 exit;
             }
 
-            // Only files of resources of this chat that may be downloaded, see ChatResource::isDownloadable()
+            // Only files of resources of this chat whose kind offers the download, see ChatResource::isOffered()
             try {
                 $attachment = new \ILIAS\Plugin\pcaic\Model\Attachment($attachment_id);
                 if (!$attachment->isBackgroundFile() || $attachment->getChatId() !== $chat_id) {
@@ -849,12 +849,13 @@ try {
                 $dl_resource = $attachment->getResourceRef() !== null
                     ? \ILIAS\Plugin\pcaic\Model\ChatResource::find((int) $attachment->getResourceRef())
                     : null;
-                // Objects of the environment are downloaded from ILIAS, not from the snapshot
-                $dl_link = $dl_resource !== null
-                    ? \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()->get($dl_resource->getType())?->getSourceLink($dl_resource)
-                    : null;
+                // Kinds that offer a link (objects of the environment) or nothing are never downloaded from the snapshot
+                $dl_offer = $dl_resource !== null
+                    ? \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default()->offerOf($dl_resource)
+                    : \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_NONE;
                 if ($dl_resource === null || $dl_resource->getChatId() !== $chat_id
-                    || !$dl_resource->isDownloadable(true) || $dl_link !== null) {
+                    || $dl_offer !== \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_DOWNLOAD
+                    || !$dl_resource->isOffered(true, $dl_offer)) {
                     http_response_code(403);
                     exit;
                 }
@@ -1249,8 +1250,8 @@ function stripSourcesFromResponse(string $text): string
  * ChatResource::restrictSources()): hidden sources become placeholders, sources shown with their
  * name only lose their passages. Sources of resources the viewing person may not read become
  * placeholders too. Download and view links only for files of resources that may be downloaded,
- * see ChatResource::isDownloadable(); objects of the environment get a link to their page in ILIAS
- * (link_url) instead.
+ * see ChatResource::isOffered(): a download (download_url) or a link to the source in ILIAS
+ * (link_url), as the kind of resource offers it (ResourceProvider::getSourceOffer()).
  *
  * @return array<int, array{filename: string, pages: array, url: ?string, excerpt: ?string, text: ?string,
  *     download_url: ?string, view_url: ?string}|array{hidden: true}>
@@ -1286,12 +1287,13 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
         $download_url = null;
         $view_url = null;
         $link_url = null;
-        if ($resource !== null && $resource->isDownloadable($chat_config->isAllowSourceDownloads())) {
-            // Objects of the environment: their page in ILIAS, which checks the permission itself
-            $link = $registry->get($resource->getType())?->getSourceLink($resource);
-            if ($link !== null) {
-                $link_url = $link;
-            } else {
+        // What the kind of resource offers: a download of the snapshot, or a link to the source in ILIAS
+        $offer = $resource !== null ? $registry->offerOf($resource) : \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_NONE;
+        if ($resource !== null && $resource->isOffered($chat_config->isAllowSourceDownloads(), $offer)) {
+            if ($offer === \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_LINK) {
+                // ILIAS checks the permission on the page of the object itself
+                $link_url = $registry->get($resource->getType())?->getSourceLink($resource);
+            } elseif ($offer === \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_DOWNLOAD) {
                 foreach ($resource->getAttachments() as $attachment) {
                     $download_url = buildSecureDownloadUrl($chat_id, (int) $attachment->getId());
                     break;
