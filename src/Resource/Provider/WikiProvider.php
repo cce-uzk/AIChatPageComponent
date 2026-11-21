@@ -170,4 +170,17 @@ class WikiProvider implements ResourceProvider
     {
         return $this->extractor ??= new PageTextExtractor();
     }
+
+    /**
+     * "Wiki › Page" without the extension of the text file
+     */
+    public function getSourceName(ChatResource $resource, string $filename): string
+    {
+        return preg_replace('/\\.txt$/i', '', $filename) ?? $filename;
+    }
+
+    public function getSourceKind(): ?string
+    {
+        return 'wiki';
+    }
 }

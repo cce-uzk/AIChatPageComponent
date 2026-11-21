@@ -81,6 +81,16 @@ class ResourceProviderTest extends TestCase
             {
                 return null;
             }
+
+            public function getSourceName(ChatResource $resource, string $filename): string
+            {
+                return $filename;
+            }
+
+            public function getSourceKind(): ?string
+            {
+                return null;
+            }
         };
     }
 
@@ -301,5 +311,21 @@ class ResourceProviderTest extends TestCase
 
         $this->assertTrue($provider->requiresRag());
         $this->assertSame(500, WikiProvider::MAX_PAGES);
+    }
+
+    public function testSourcesAreNamedByTheirKind(): void
+    {
+        $wiki = ChatResource::fromRow(['id' => 1, 'chat_id' => 'c', 'type' => 'obj_wiki', 'title' => 'Mein Wiki']);
+        $this->assertSame('Mein Wiki › Elche', (new WikiProvider())->getSourceName($wiki, 'Mein Wiki › Elche.txt'));
+        $this->assertSame('wiki', (new WikiProvider())->getSourceKind());
+
+        $page = ChatResource::fromRow(['id' => 2, 'chat_id' => 'c', 'type' => 'page_context', 'title' => 'Inhalt dieser Seite']);
+        $this->assertSame('Inhalt dieser Seite', (new PageContextProvider())->getSourceName($page, 'page_content.txt'));
+        $this->assertSame('page', (new PageContextProvider())->getSourceKind());
+
+        // Files keep their names, the icon follows the extension
+        $file = self::resource(3, ChatResource::TYPE_FILE);
+        $this->assertSame('Skript.pdf', (new UploadedFileProvider())->getSourceName($file, 'Skript.pdf'));
+        $this->assertNull((new ContainerFileProvider())->getSourceKind());
     }
 }
