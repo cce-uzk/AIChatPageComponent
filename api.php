@@ -1305,6 +1305,7 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
         if ($provider !== null) {
             $source['filename'] = $provider->getSourceName($resource, (string) $source['filename']);
             $source['kind'] = $provider->getSourceKind();
+            $source['icon'] = absoluteIliasUrl($provider->getSourceIcon($resource));
         }
         $sources[] = array_merge($source, ['download_url' => $download_url, 'view_url' => $view_url]);
     }
@@ -1319,6 +1320,20 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
 function isInlineViewable(string $filename): bool
 {
     return strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'pdf';
+}
+
+/**
+ * Absolute URL of a path relative to the ILIAS root, e.g. "./templates/.../icon_wiki.svg"
+ *
+ * Relative paths would resolve against the address of the page, which may be "goto.php/crs/86".
+ */
+function absoluteIliasUrl(?string $path): ?string
+{
+    if ($path === null || $path === '' || preg_match('~^[a-z][a-z0-9+.-]*:~i', $path)) {
+        return $path === '' ? null : $path;
+    }
+    $base = rtrim(preg_replace('~(/Customizing)(?=/|$).*~i', '', ILIAS_HTTP_PATH), '/');
+    return $base . '/' . ltrim(preg_replace('~^\./~', '', $path), '/');
 }
 
 /**
