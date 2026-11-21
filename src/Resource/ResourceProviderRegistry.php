@@ -62,6 +62,24 @@ final class ResourceProviderRegistry
     }
 
     /**
+     * A new resource of a kind, with the defaults of its provider
+     *
+     * Every new resource is made here, so the defaults of each kind apply wherever it is added.
+     */
+    public function newResource(string $type, string $chat_id): \ILIAS\Plugin\pcaic\Model\ChatResource
+    {
+        $resource = new \ILIAS\Plugin\pcaic\Model\ChatResource();
+        $resource->setChatId($chat_id);
+        $resource->setType($type);
+        $provider = $this->get($type);
+        if ($provider !== null) {
+            $resource->setSourceDisplay($provider->getDefaultSourceDisplay());
+            $resource->setAllowDownload($provider->getDefaultAllowOffer());
+        }
+        return $resource;
+    }
+
+    /**
      * What the source list offers for a resource; nothing for kinds this version does not know
      *
      * @return string One of the ResourceProvider::OFFER_ constants

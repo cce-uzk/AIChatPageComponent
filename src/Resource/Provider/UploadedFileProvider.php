@@ -86,4 +86,14 @@ class UploadedFileProvider implements ResourceProvider
     {
         return self::OFFER_DOWNLOAD;
     }
+
+    public function getDefaultSourceDisplay(): string
+    {
+        return ChatResource::SOURCE_FULL;
+    }
+
+    public function getDefaultAllowOffer(): bool
+    {
+        return true;
+    }
 }
