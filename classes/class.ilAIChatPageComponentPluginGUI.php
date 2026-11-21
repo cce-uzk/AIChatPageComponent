@@ -1880,10 +1880,15 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
 
         $rag_active = $this->isRagActiveForChat($chat_config);
 
+        $registry = \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default();
         $records = [];
         $disabled = [];
         foreach ($resources as $resource) {
             $id = (string) $resource->getId();
+            // What the kind offers from the source list: download, link or nothing
+            $offer = $registry->offerOf($resource);
+            $offerable = $offer !== \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_NONE
+                && $resource->getSourceDisplay() === \ILIAS\Plugin\pcaic\Model\ChatResource::SOURCE_FULL;
             $records[$id] = [
                 'title' => $resource->getTitle(),
                 'type' => $this->plugin->txt('resource_type_' . $resource->getType()),
@@ -1892,10 +1897,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
                 'included' => $this->plugin->txt($resource->isEnabled() ? 'resource_included' : 'resource_excluded'),
                 'source' => $this->plugin->txt('resource_source_' . $resource->getSourceDisplay()),
                 'download' => $this->plugin->txt(
-                    !$resource->canBeDownloaded()
-                    || $resource->getSourceDisplay() !== \ILIAS\Plugin\pcaic\Model\ChatResource::SOURCE_FULL
+                    !$offerable
                         ? 'resource_download_not_possible'
-                        : ($resource->isAllowDownload() ? 'resource_download_allowed' : 'resource_download_denied')
+                        : ($resource->isAllowDownload() ? 'resource_offer_' . $offer . '_allowed' : 'resource_download_denied')
                 ),
             ];
             // Uploaded files have no source to take a new snapshot from, a gone or moved source neither
@@ -1905,9 +1909,8 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             }
             $disabled[$id][] = $resource->isEnabled() ? 'include' : 'exclude';
             $disabled[$id][] = 'source_' . $resource->getSourceDisplay();
-            // Downloads only of files shown with their passages
-            if (!$resource->canBeDownloaded()
-                || $resource->getSourceDisplay() !== \ILIAS\Plugin\pcaic\Model\ChatResource::SOURCE_FULL) {
+            // Download or link only for kinds that offer one, shown with their passages
+            if (!$offerable) {
                 $disabled[$id][] = 'download_allow';
                 $disabled[$id][] = 'download_deny';
             } else {

@@ -62,6 +62,16 @@ final class ResourceProviderRegistry
     }
 
     /**
+     * What the source list offers for a resource; nothing for kinds this version does not know
+     *
+     * @return string One of the ResourceProvider::OFFER_ constants
+     */
+    public function offerOf(\ILIAS\Plugin\pcaic\Model\ChatResource $resource): string
+    {
+        return $this->get($resource->getType())?->getSourceOffer() ?? ResourceProvider::OFFER_NONE;
+    }
+
+    /**
      * @return ResourceProvider[]
      */
     public function all(): array

@@ -459,7 +459,7 @@ class ChatResource
     }
 
     /**
-     * Download allowed as set for the resource (see isDownloadable())
+     * Download or link allowed as set for the resource (see isOffered())
      */
     public function isAllowDownload(): bool
     {
@@ -469,15 +469,6 @@ class ChatResource
     public function setAllowDownload(bool $allow_download): void
     {
         $this->allow_download = $allow_download;
-    }
-
-    /**
-     * Whether a resource of this type can be offered for download at all: the content of the
-     * page is no file of its own. Files of the environment are offered as link to their object.
-     */
-    public function canBeDownloaded(): bool
-    {
-        return $this->type !== self::TYPE_PAGE_CONTEXT;
     }
 
     /**
@@ -491,15 +482,18 @@ class ChatResource
     }
 
     /**
-     * Whether the file of the resource may be downloaded from the source list: the chat allows
-     * downloads, the resource is shown with its passages, is a file, included and allows it
+     * Whether the source list offers the download or the link of the resource: its kind offers
+     * one, the chat allows source downloads, the resource is shown with its passages, included and
+     * allows it
+     *
+     * @param string $offer What the kind offers, see ResourceProviderRegistry::offerOf()
      */
-    public function isDownloadable(bool $chat_allows_downloads): bool
+    public function isOffered(bool $chat_allows_downloads, string $offer): bool
     {
-        return $chat_allows_downloads
+        return $offer !== \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_NONE
+            && $chat_allows_downloads
             && $this->allow_download
             && $this->source_display === self::SOURCE_FULL
-            && $this->canBeDownloaded()
             && $this->enabled;
     }
 

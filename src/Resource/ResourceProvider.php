@@ -28,6 +28,13 @@ use ILIAS\Plugin\pcaic\Model\ChatResource;
  */
 interface ResourceProvider
 {
+    /** The source list offers the file of the snapshot for download */
+    public const OFFER_DOWNLOAD = 'download';
+    /** The source list offers a link to the source in ILIAS, see getSourceLink() */
+    public const OFFER_LINK = 'link';
+    /** The source list offers nothing, e.g. for the content of the page of the chat */
+    public const OFFER_NONE = 'none';
+
     /**
      * Stored in pcaic_resources.type, e.g. "file", "page_context", later "obj_wiki"
      */
@@ -63,6 +70,13 @@ interface ResourceProvider
      * Whether this person may use the resource now, checked for every answer and source list
      */
     public function isAccessible(ChatResource $resource, int $user_id): bool;
+
+    /**
+     * What the source list offers for a source of this kind, if the chat and the resource allow it
+     *
+     * @return string One of the OFFER_ constants
+     */
+    public function getSourceOffer(): string;
 
     /**
      * Link to the source in ILIAS, for the table and the source list
