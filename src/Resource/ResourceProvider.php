@@ -91,6 +91,14 @@ interface ResourceProvider
     public function getDefaultAllowOffer(): bool;
 
     /**
+     * Whether resources of this kind appear in the material list of the chat for learners
+     *
+     * Only if they are shown as source at all (at least by name), see MaterialList. False for
+     * kinds learners have in front of them anyway, e.g. the content of the page of the chat.
+     */
+    public function isListedForLearners(): bool;
+
+    /**
      * Link to the source in ILIAS, for the table and the source list
      */
     public function getSourceLink(ChatResource $resource): ?string;

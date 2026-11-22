@@ -114,6 +114,11 @@ class ResourceProviderTest extends TestCase
             {
                 return true;
             }
+
+            public function isListedForLearners(): bool
+            {
+                return true;
+            }
         };
     }
 

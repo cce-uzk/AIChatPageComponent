@@ -375,3 +375,10 @@ resource_msg_download#:#The download setting was changed.
 resources_source_info#:#"As source" sets how a resource is named below answers: with passages, with its name only (no passages, download or link) or not at all (citations of it are removed from the answer; its content is still used for answers). A resource can only restrict more than the chat.
 resources_sources_inactive#:#This chat currently shows no sources ("Use RAG mode" and "Show sources" are needed). "As source" and "Download" take effect once both are active.
 resources_downloads_inactive#:#Source downloads are not allowed for this chat. "Download / link" takes effect once "Allow source downloads" is active.
+materials_toggle#:#Show the material of the chat
+materials_title#:#Material of the chat
+materials_intro#:#The chat bases its answers on this material.
+materials_course#:#Provided material
+materials_own#:#My files
+materials_own_note#:#Used in your conversation only; "Clear chat history" removes them.
+materials_processing#:#Being processed …
