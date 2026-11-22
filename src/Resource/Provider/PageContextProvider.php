@@ -122,4 +122,12 @@ class PageContextProvider implements ResourceProvider
     {
         return false;
     }
+
+    /**
+     * Learners are on the page anyway
+     */
+    public function isListedForLearners(): bool
+    {
+        return false;
+    }
 }

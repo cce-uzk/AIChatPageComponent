@@ -133,6 +133,11 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 - When a chat is created, only title, visibility and system prompt are asked for; all other settings are made afterwards in the edit form.
 - 1.12.1: per resource, the display as source and the download can be restricted.
 
+### Notes on version 1.14.0
+
+- New: material list for learners in the chat header, with the resources of the chat and the own files of the conversation (see [Usage for learners](#usage-for-learners)). It follows the settings of the resources: hidden resources and resources learners may not read are not listed, downloads and links only where allowed.
+- Providers of resources have a new method `isListedForLearners()`.
+
 ### Notes on version 1.13.0
 
 - New: file objects, whole wikis, content pages and learning modules of the environment of the chat as resources (RAG only), with a permission check for every answer.
@@ -281,7 +286,8 @@ Resources are what a chat uses besides the conversation. Editors add them active
 - **As source** and **Download / link** restrict how the resource is shown below answers (see [In RAG mode](#with-and-without-rag)). New resources start with the defaults of their kind: the page content is named only and offers nothing, files and objects are shown with their passages and offer their download or link.
 - The column *Processing* shows the state in the RAG service, or "Sent to the AI directly" without RAG.
 - Resources are copied with the chat and included in the ILIAS export.
-- Further types of resources (objects of the container, wikis) are planned; they will only be available with RAG and with a permission check.
+- Learners see the resources in the **material list** of the chat (see [Usage for learners](#usage-for-learners)): only resources shown as source at least by name, that they may read and that can contribute to answers. Hidden resources are never listed but still used. The page content is not listed. Whether a resource can be opened there follows **Download / link**, as in the source list.
+- Further kinds of resources (blog, glossary, weblink collection, mediacast) are planned; they will only be available with RAG and with a permission check.
 
 ### With and without RAG
 
@@ -352,6 +358,7 @@ Limitations:
 - Messages are entered in the input field; a counter shows the remaining characters.
 - Depending on the chat settings, files can be attached (images, PDFs, text files).
 - Answers can be copied, the last answer can be regenerated, and the chat can be cleared.
+- The book button in the header opens the **material list**: the material the chat bases its answers on, and the own files sent in the current conversation. Material that is still being processed is marked; files and objects can be downloaded or opened in ILIAS where the editors allow it. The button is only shown if there is material. Nothing is listed if the chat shows no sources.
 - Each chat keeps its own history. If the chat is not persistent, the history starts again on each visit.
 - The daily message limit, if set, applies per chat.
 
@@ -454,6 +461,7 @@ Every kind of resource is a provider in `src/Resource/Provider/` that implements
 | `getSourceOffer()` | What the source list offers: `OFFER_DOWNLOAD` (the snapshot), `OFFER_LINK` (the source in ILIAS) or `OFFER_NONE`; the resources tab, the source list and the download check follow it |
 | `getSourceName(resource, filename)`, `getSourceKind()`, `getSourceIcon(resource)` | Name, kind (`wiki`, `page`, or null for the file extension) and icon URL of a source in the source list |
 | `getDefaultSourceDisplay()`, `getDefaultAllowOffer()` | How a new resource of the kind is shown as source and whether its download or link is allowed, until an editor changes it |
+| `isListedForLearners()` | Whether resources of the kind appear in the material list of learners (`MaterialList`); `false` for the page content |
 
 New resources are made with `ResourceProviderRegistry::newResource()`, which applies these defaults.
 

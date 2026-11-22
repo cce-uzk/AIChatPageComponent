@@ -343,6 +343,7 @@
 }
 
 .ai-chat-clear-btn,
+.ai-chat-materials-btn,
 .ai-chat-theme-toggle {
     display: flex;
     align-items: center;
@@ -361,6 +362,8 @@
 }
 
 .ai-chat-clear-btn:hover,
+.ai-chat-materials-btn:hover,
+.ai-chat-materials-btn.active,
 .ai-chat-theme-toggle:hover {
     background: var(--chat-bg-tertiary);
     color: var(--chat-text-primary);
@@ -368,7 +371,78 @@
 }
 
 .ai-chat-clear-btn svg,
+.ai-chat-materials-btn svg,
 .ai-chat-theme-toggle svg { width: 14px; height: 14px; }
+
+.ai-chat-materials-btn[hidden] { display: none; }
+
+
+/* ── Material list ───────────────────────────────────────────────────────────── */
+
+.ai-chat-materials {
+    margin: 0 20px 12px;
+    padding: 12px 14px;
+    max-height: 40vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--chat-bg-secondary);
+    border: 1px solid var(--chat-border);
+    border-radius: var(--chat-radius-small);
+}
+
+.ai-chat-materials[hidden],
+.ai-chat-materials-group[hidden] { display: none; }
+
+.ai-chat-materials-intro,
+.ai-chat-materials-note {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--chat-text-secondary);
+}
+
+.ai-chat-materials-group + .ai-chat-materials-group { margin-top: 12px; }
+
+.ai-chat-materials-heading {
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+    color: var(--chat-text-secondary);
+}
+
+.ai-chat-materials-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ai-chat-materials-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    min-width: 0;
+}
+
+.ai-chat-materials-item + .ai-chat-materials-item { border-top: 1px solid var(--chat-border); }
+
+.ai-chat-materials-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--chat-text-primary);
+}
+
+.ai-chat-materials-state {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--chat-text-secondary);
+}
+
+.ai-chat-materials-item .ai-chat-source-download { flex: 0 0 auto; }
 
 
 /* ── Messages Area ───────────────────────────────────────────────────────────── */
