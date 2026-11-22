@@ -713,6 +713,29 @@ try {
             echo json_encode(['success' => true]);
             break;
 
+        case 'list_materials':
+            header('Content-Type: application/json');
+
+            if (empty($chat_id)) {
+                echo json_encode(['error' => 'Missing chat_id']);
+                exit;
+            }
+
+            $chat_config = new ChatConfig($chat_id);
+            if (!$chat_config->exists()) {
+                echo json_encode(['error' => 'Chat configuration not found']);
+                exit;
+            }
+
+            if (!checkChatAccess($chat_config)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Access denied']);
+                exit;
+            }
+
+            echo json_encode(['success' => true] + buildMaterialList($chat_config, $chat_id, $user_id, $is_anonymous));
+            break;
+
         case 'get_upload_config':
             header('Content-Type: application/json');
 
@@ -1283,26 +1306,9 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
             $sources[] = ['hidden' => true];
             continue;
         }
-        $download_url = null;
-        $view_url = null;
-        $link_url = null;
-        // What the kind of resource offers: a download of the snapshot, or a link to the source in ILIAS
-        $offer = $resource !== null ? $registry->offerOf($resource) : \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_NONE;
-        if ($resource !== null && $resource->isOffered($chat_config->isAllowSourceDownloads(), $offer)) {
-            if ($offer === \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_LINK) {
-                // ILIAS checks the permission on the page of the object itself
-                $link_url = $registry->get($resource->getType())?->getSourceLink($resource);
-            } elseif ($offer === \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_DOWNLOAD) {
-                foreach ($resource->getAttachments() as $attachment) {
-                    $download_url = buildSecureDownloadUrl($chat_id, (int) $attachment->getId());
-                    break;
-                }
-                // PDFs open in the viewer of the browser, which can jump to the page of the passage
-                if ($download_url !== null && isInlineViewable((string) $source['filename'])) {
-                    $view_url = $download_url . '&inline=1';
-                }
-            }
-        }
+        $offered = $resource !== null
+            ? resourceOfferUrls($chat_config, $chat_id, $resource, $registry, (string) $source['filename'])
+            : ['download_url' => null, 'view_url' => null, 'link_url' => null];
         // Named by the kind of resource, e.g. "Wiki › Page" instead of the file name of the snapshot
         $provider = $resource !== null ? $registry->get($resource->getType()) : null;
         if ($provider !== null) {
@@ -1310,9 +1316,127 @@ function buildClientSources(ChatConfig $chat_config, string $chat_id, array $met
             $source['kind'] = $provider->getSourceKind();
             $source['icon'] = absoluteIliasUrl($provider->getSourceIcon($resource));
         }
-        $sources[] = array_merge($source, ['download_url' => $download_url, 'view_url' => $view_url, 'link_url' => $link_url]);
+        $sources[] = array_merge($source, $offered);
     }
     return $sources;
+}
+
+/**
+ * Download or link a resource offers to learners: what its kind offers, if the chat and the
+ * resource allow it (see ChatResource::isOffered())
+ *
+ * @param string $filename File name of the snapshot; PDFs also get a URL to show them in the browser
+ * @return array{download_url: ?string, view_url: ?string, link_url: ?string}
+ */
+function resourceOfferUrls(
+    ChatConfig $chat_config,
+    string $chat_id,
+    \ILIAS\Plugin\pcaic\Model\ChatResource $resource,
+    \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry $registry,
+    string $filename
+): array {
+    $urls = ['download_url' => null, 'view_url' => null, 'link_url' => null];
+    $offer = $registry->offerOf($resource);
+    if (!$resource->isOffered($chat_config->isAllowSourceDownloads(), $offer)) {
+        return $urls;
+    }
+    if ($offer === \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_LINK) {
+        // ILIAS checks the permission on the page of the object itself
+        $urls['link_url'] = $registry->get($resource->getType())?->getSourceLink($resource);
+    } elseif ($offer === \ILIAS\Plugin\pcaic\Resource\ResourceProvider::OFFER_DOWNLOAD) {
+        foreach ($resource->getAttachments() as $attachment) {
+            $urls['download_url'] = buildSecureDownloadUrl($chat_id, (int) $attachment->getId());
+            break;
+        }
+        // PDFs open in the viewer of the browser, which can jump to the page of the passage
+        if ($urls['download_url'] !== null && isInlineViewable($filename)) {
+            $urls['view_url'] = $urls['download_url'] . '&inline=1';
+        }
+    }
+    return $urls;
+}
+
+/**
+ * Material of a chat for the person asking: the resources the chat knows and the person's own
+ * files of the conversation, see MaterialList
+ *
+ * @return array{course: array<int, array<string, mixed>>, own: array<int, array<string, mixed>>}
+ */
+function buildMaterialList(ChatConfig $chat_config, string $chat_id, int $user_id, bool $is_anonymous): array
+{
+    $registry = \ILIAS\Plugin\pcaic\Resource\ResourceProviderRegistry::default();
+    $resources = \ILIAS\Plugin\pcaic\Model\ChatResource::getByChatId($chat_id);
+    $excluded = (new \ILIAS\Plugin\pcaic\Resource\ResourceAccessFilter($registry))->excludedIds($resources, $user_id);
+
+    $service = getEffectiveAiService($chat_config);
+    $rag_active = isRagEnabledForChat($chat_config, createLLMInstance($service)) && isFileHandlingEnabledForService($service);
+
+    $file_states = static function (\ILIAS\Plugin\pcaic\Model\ChatResource $resource): array {
+        global $DIC;
+        $db = $DIC->database();
+        $result = $db->query(
+            "SELECT rag_status, rag_retry_at FROM pcaic_attachments WHERE resource_ref = " . $db->quote((int) $resource->getId(), 'integer')
+        );
+        $states = [];
+        while ($row = $db->fetchAssoc($result)) {
+            $states[] = \ai\AIChatPageComponentRAGStatus::displayState(
+                $row['rag_status'] !== null ? (string) $row['rag_status'] : null,
+                $row['rag_retry_at'] ?? null
+            );
+        }
+        return $states;
+    };
+
+    $course = [];
+    $entries = (new \ILIAS\Plugin\pcaic\Resource\MaterialList($registry))
+        ->entries($resources, $excluded, $chat_config->isShowSources(), $rag_active, $file_states);
+    foreach ($entries as $entry) {
+        $resource = $entry['resource'];
+        $provider = $entry['provider'];
+        $attachments = $resource->getAttachments();
+        $filename = $attachments !== [] ? (string) $attachments[0]->getTitle() : $resource->getTitle();
+        // Named as editors named it: the whole wiki, not one of its pages
+        $course[] = array_merge([
+            'id' => (int) $resource->getId(),
+            'name' => $resource->getTitle() !== '' ? $resource->getTitle() : $filename,
+            'filename' => $filename,
+            'kind' => $provider->getSourceKind(),
+            'icon' => absoluteIliasUrl($provider->getSourceIcon($resource)),
+            'state' => $entry['state'],
+        ], resourceOfferUrls($chat_config, $chat_id, $resource, $registry, $filename));
+    }
+
+    // Own files: sent in the current conversation, as only these are used for answers
+    $own = [];
+    if (!$is_anonymous) {
+        global $DIC;
+        $db = $DIC->database();
+        $session = ChatSession::getOrCreateForUserAndChat($user_id, $chat_id);
+        $result = $db->query(
+            "SELECT a.id FROM pcaic_attachments a"
+            . " INNER JOIN pcaic_messages m ON a.message_id = m.message_id"
+            . " WHERE m.session_id = " . $db->quote($session->getSessionId(), 'text')
+            . " AND a.user_id = " . $db->quote($user_id, 'integer')
+            . " AND a.background_file = 0"
+            . " ORDER BY a.id"
+        );
+        while ($row = $db->fetchAssoc($result)) {
+            $attachment = Attachment::loadById((int) $row['id']);
+            if ($attachment === null) {
+                continue;
+            }
+            $data = $attachment->toArray();
+            $own[] = [
+                'id' => (int) $data['id'],
+                'name' => (string) $data['title'],
+                'filename' => (string) $data['title'],
+                'state' => $data['rag_status'],
+                'download_url' => $data['download_url'],
+            ];
+        }
+    }
+
+    return ['course' => $course, 'own' => $own];
 }
 
 /**

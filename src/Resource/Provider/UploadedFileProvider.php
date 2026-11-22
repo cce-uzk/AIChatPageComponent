@@ -96,4 +96,9 @@ class UploadedFileProvider implements ResourceProvider
     {
         return true;
     }
+
+    public function isListedForLearners(): bool
+    {
+        return true;
+    }
 }
