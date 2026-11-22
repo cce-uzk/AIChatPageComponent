@@ -294,6 +294,10 @@ class AIChatPageComponent {
     this.charLimitElement = this.container.querySelector('.ai-chat-char-limit');
 
     this.clearChatBtn = this.container.querySelector('.ai-chat-clear-btn');
+    this.materialsBtn = this.container.querySelector('.ai-chat-materials-btn');
+    this.materialsPanel = this.container.querySelector('.ai-chat-materials');
+    // Own files appear in the material list once they were sent with a message
+    this.materialsChangeWithAnswer = false;
 
     this.chatId = this.container.dataset.chatId;
     this.apiUrl = this.container.dataset.apiUrl;
@@ -347,6 +351,7 @@ class AIChatPageComponent {
     }
 
     this.loadChatHistory();
+    this.loadMaterials();
   }
 
   static get THEME_STORAGE_KEY() { return 'ai_chat_theme'; }
@@ -418,6 +423,7 @@ class AIChatPageComponent {
       sourceDownload: container.dataset.sourceDownload || 'Download',
       sourceOpenInIlias: container.dataset.sourceOpenInIlias || 'Open in ILIAS',
       sourceOpenPage: container.dataset.sourceOpenPage || 'Open at page %s',
+      materialsProcessing: container.dataset.materialsProcessing || 'Being processed …',
       sourcePassagesToggle: container.dataset.sourcePassagesToggle || 'Show or hide the passages',
       sourcePassagesOne: container.dataset.sourcePassagesOne || '1 passage',
       sourcePassagesMany: container.dataset.sourcePassagesMany || '%s passages',
@@ -947,6 +953,19 @@ class AIChatPageComponent {
       debug('AIChatPageComponent: Clear chat button not found with selector .ai-chat-clear-btn');
     }
 
+    if (this.materialsBtn && this.materialsPanel) {
+      this.materialsBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.toggleMaterials();
+      });
+      this.materialsPanel.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          this.toggleMaterials(false);
+          this.materialsBtn.focus();
+        }
+      });
+    }
+
     const themeToggle = this.container.querySelector('.ai-chat-theme-toggle');
     if (themeToggle) {
       themeToggle.addEventListener('click', (e) => {
@@ -1006,6 +1025,9 @@ class AIChatPageComponent {
     }
 
     const currentAttachments = [...this.attachments];
+    if (currentAttachments.length > 0) {
+      this.materialsChangeWithAnswer = true;
+    }
 
     const welcomeMsg = this.container.querySelector('.ai-chat-welcome');
     if (welcomeMsg) {
@@ -3031,6 +3053,124 @@ class AIChatPageComponent {
       this.sendButton.className = 'ai-chat-composer-btn ai-chat-send';
       this.updateSendButtonState();
       this.removeThinkingPlaceholder();
+      // Sent files are now own files of the conversation; an open list shows their state
+      if (this.materialsChangeWithAnswer || this.isMaterialsOpen()) {
+        this.materialsChangeWithAnswer = false;
+        this.loadMaterials();
+      }
+    }
+  }
+
+  /**
+   * Load the material of the chat (see MaterialList on the server) and show it in the list;
+   * the button is only shown if there is material
+   *
+   * @returns {Promise<void>}
+   */
+  async loadMaterials() {
+    if (!this.materialsBtn || !this.materialsPanel || !this.apiUrl || !this.chatId) {
+      return;
+    }
+    try {
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list_materials', chat_id: this.chatId }),
+      });
+      if (!response.ok) {
+        return;
+      }
+      const data = await response.json();
+      if (data && data.success) {
+        this.renderMaterials(data.course || [], data.own || []);
+      }
+    } catch (error) {
+      debugError('AIChatPageComponent: Failed to load the material list', error);
+    }
+  }
+
+  /**
+   * @param {Array} course - Resources of the chat
+   * @param {Array} own - Own files of the conversation
+   */
+  renderMaterials(course, own) {
+    const fill = (group, items) => {
+      const groupEl = this.materialsPanel.querySelector(`.ai-chat-materials-group[data-group="${group}"]`);
+      if (!groupEl) {
+        return;
+      }
+      const list = groupEl.querySelector('.ai-chat-materials-list');
+      list.innerHTML = '';
+      items.forEach((item) => list.appendChild(this.createMaterialItem(item)));
+      groupEl.hidden = items.length === 0;
+    };
+    fill('course', course);
+    fill('own', own);
+
+    const hasMaterial = course.length + own.length > 0;
+    this.materialsBtn.hidden = !hasMaterial;
+    if (!hasMaterial) {
+      this.toggleMaterials(false);
+    }
+  }
+
+  /**
+   * One entry of the material list: icon, name, state and the download or link it offers
+   *
+   * @param {Object} item
+   * @returns {HTMLElement}
+   */
+  createMaterialItem(item) {
+    const type = this.detectSourceType(item.filename || item.name, null, item.kind);
+    const li = document.createElement('li');
+    li.className = 'ai-chat-materials-item';
+    li.dataset.type = type;
+
+    let action = '';
+    if (this.safeUrl(item.link_url)) {
+      action = `<a class="ai-chat-source-download ai-chat-source-link-ilias" href="${this.escapeHtml(item.link_url)}" target="_blank" rel="noopener noreferrer" title="${this.escapeHtml(this.lang.sourceOpenInIlias)}" aria-label="${this.escapeHtml(this.lang.sourceOpenInIlias)}: ${this.escapeHtml(item.name)}"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1.002 1.002 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4.018 4.018 0 0 1-.128-1.287z"/><path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.775-.776a2 2 0 0 1-.896-3.346L9.12 3.55a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.243-4.243L6.586 4.672z"/></svg></a>`;
+    } else if (this.safeUrl(item.view_url) || this.safeUrl(item.download_url)) {
+      // PDFs open in the browser, other files are downloaded
+      const url = this.safeUrl(item.view_url) ? item.view_url : item.download_url;
+      action = `<a class="ai-chat-source-download" href="${this.escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${this.escapeHtml(this.lang.sourceDownload)}" aria-label="${this.escapeHtml(this.lang.sourceDownload)}: ${this.escapeHtml(item.name)}">${AIChatPageComponent.ICON_DOWNLOAD}</a>`;
+    }
+
+    const processing = item.state === 'processing' || item.state === 'pending';
+    const state = processing
+      ? `<span class="ai-chat-materials-state">${this.escapeHtml(this.lang.materialsProcessing)}</span>`
+      : '';
+
+    li.innerHTML = `
+            <span class="ai-chat-source-icon${this.iliasIconClass(item)}" data-type="${type}">${this.sourceIconHtml(item, type)}</span>
+            <span class="ai-chat-materials-name" title="${this.escapeHtml(item.name)}">${this.escapeHtml(item.name)}</span>
+            ${state}
+            ${action}
+        `;
+    return li;
+  }
+
+  /**
+   * @returns {boolean} The material list is open
+   */
+  isMaterialsOpen() {
+    return Boolean(this.materialsPanel) && !this.materialsPanel.hidden;
+  }
+
+  /**
+   * Open or close the material list; opening loads it again, so that states are current
+   *
+   * @param {boolean|undefined} open - Toggles if not given
+   */
+  toggleMaterials(open) {
+    if (!this.materialsBtn || !this.materialsPanel) {
+      return;
+    }
+    const show = open === undefined ? !this.isMaterialsOpen() : open;
+    this.materialsPanel.hidden = !show;
+    this.materialsBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
+    this.materialsBtn.classList.toggle('active', show);
+    if (show) {
+      this.loadMaterials();
     }
   }
 
@@ -4227,6 +4367,8 @@ class AIChatPageComponent {
           debug('AIChatPageComponent: Chat cleared successfully, updating UI');
           this.messagesArea.innerHTML = `<div class="ai-chat-welcome">${this.lang.welcomeMessage || 'Start a conversation...'}</div>`;
           this.messageHistory = [];
+          // Own files were removed with the conversation
+          this.loadMaterials();
 
           if (!this.persistent) {
             window.localStorage.removeItem(`ai_chat_${this.chatId}`);

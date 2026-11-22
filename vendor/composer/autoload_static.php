@@ -31,6 +31,7 @@ class ComposerStaticInit52975239271cd8444140239aa621a8e3
         'ILIAS\\Plugin\\pcaic\\Model\\ChatSession' => __DIR__ . '/../..' . '/src/Model/ChatSession.php',
         'ILIAS\\Plugin\\pcaic\\Resource\\Candidate' => __DIR__ . '/../..' . '/src/Resource/Candidate.php',
         'ILIAS\\Plugin\\pcaic\\Resource\\EnvironmentObjects' => __DIR__ . '/../..' . '/src/Resource/EnvironmentObjects.php',
+        'ILIAS\\Plugin\\pcaic\\Resource\\MaterialList' => __DIR__ . '/../..' . '/src/Resource/MaterialList.php',
         'ILIAS\\Plugin\\pcaic\\Resource\\PageTextExtractor' => __DIR__ . '/../..' . '/src/Resource/PageTextExtractor.php',
         'ILIAS\\Plugin\\pcaic\\Resource\\Provider\\ContainerFileProvider' => __DIR__ . '/../..' . '/src/Resource/Provider/ContainerFileProvider.php',
         'ILIAS\\Plugin\\pcaic\\Resource\\Provider\\ContentPageProvider' => __DIR__ . '/../..' . '/src/Resource/Provider/ContentPageProvider.php',
