@@ -1647,6 +1647,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("SOURCE_DOWNLOAD", htmlspecialchars($this->plugin->txt('source_download')));
         $tpl->setVariable("SOURCE_OPEN_IN_ILIAS", htmlspecialchars($this->plugin->txt('source_open_in_ilias')));
         $tpl->setVariable("SOURCE_OPEN_PAGE", htmlspecialchars($this->plugin->txt('source_open_page')));
+        foreach (['toggle', 'title', 'intro', 'course', 'own', 'own_note', 'processing'] as $materials_label) {
+            $tpl->setVariable('MATERIALS_' . strtoupper($materials_label), htmlspecialchars($this->plugin->txt('materials_' . $materials_label)));
+        }
         $tpl->setVariable("SOURCE_PASSAGES_TOGGLE", htmlspecialchars($this->plugin->txt('source_passages_toggle')));
         $tpl->setVariable("SOURCE_PASSAGES_ONE", htmlspecialchars($this->plugin->txt('source_passages_one')));
         $tpl->setVariable("SOURCE_PASSAGES_MANY", htmlspecialchars($this->plugin->txt('source_passages_many')));

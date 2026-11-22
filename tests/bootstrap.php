@@ -51,6 +51,7 @@ require_once $plugin_dir . '/src/Resource/Provider/WikiProvider.php';
 require_once $plugin_dir . '/src/Resource/Provider/ContentPageProvider.php';
 require_once $plugin_dir . '/src/Resource/Provider/LearningModuleProvider.php';
 require_once $plugin_dir . '/src/Resource/ResourceProviderRegistry.php';
+require_once $plugin_dir . '/src/Resource/MaterialList.php';
 require_once $plugin_dir . '/src/Table/ResourceTableRetrieval.php';
 require_once $plugin_dir . '/src/Validation/FileUploadValidator.php';
 require_once $plugin_dir . '/src/Validation/FileTypePolicy.php';

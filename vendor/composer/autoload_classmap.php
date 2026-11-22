@@ -16,6 +16,7 @@ return array(
     'ILIAS\\Plugin\\pcaic\\Model\\ChatSession' => $baseDir . '/src/Model/ChatSession.php',
     'ILIAS\\Plugin\\pcaic\\Resource\\Candidate' => $baseDir . '/src/Resource/Candidate.php',
     'ILIAS\\Plugin\\pcaic\\Resource\\EnvironmentObjects' => $baseDir . '/src/Resource/EnvironmentObjects.php',
+    'ILIAS\\Plugin\\pcaic\\Resource\\MaterialList' => $baseDir . '/src/Resource/MaterialList.php',
     'ILIAS\\Plugin\\pcaic\\Resource\\PageTextExtractor' => $baseDir . '/src/Resource/PageTextExtractor.php',
     'ILIAS\\Plugin\\pcaic\\Resource\\Provider\\ContainerFileProvider' => $baseDir . '/src/Resource/Provider/ContainerFileProvider.php',
     'ILIAS\\Plugin\\pcaic\\Resource\\Provider\\ContentPageProvider' => $baseDir . '/src/Resource/Provider/ContentPageProvider.php',

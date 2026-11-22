@@ -375,3 +375,10 @@ resource_msg_download#:#Der Download wurde geändert.
 resources_source_info#:#„Als Quelle“ legt fest, wie eine Ressource unter Antworten genannt wird: mit Textstellen, nur mit Namen (ohne Textstellen, Download und Link) oder gar nicht (Verweise darauf werden aus der Antwort entfernt; der Inhalt wird trotzdem für Antworten verwendet). Eine Ressource kann nur mehr einschränken als der Chat.
 resources_sources_inactive#:#Dieser Chat zeigt derzeit keine Quellen an (dafür sind „RAG-Modus verwenden“ und „Quellen anzeigen“ nötig). „Als Quelle“ und „Download“ wirken erst, wenn beides aktiv ist.
 resources_downloads_inactive#:#Der Quellen-Download ist für diesen Chat nicht erlaubt. „Download / Link“ wirkt erst, wenn „Quellen-Download erlauben“ aktiv ist.
+materials_toggle#:#Material des Chats anzeigen
+materials_title#:#Material des Chats
+materials_intro#:#Auf dieses Material stützt sich der Chat bei seinen Antworten.
+materials_course#:#Hinterlegtes Material
+materials_own#:#Meine Dateien
+materials_own_note#:#Nur in Ihrem Gespräch genutzt; „Chat-Verlauf löschen“ entfernt sie.
+materials_processing#:#Wird verarbeitet …
