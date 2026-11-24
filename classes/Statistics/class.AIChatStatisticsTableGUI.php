@@ -48,7 +48,15 @@ class AIChatStatisticsTableGUI
      */
     public function getHTML(?array $filter_data = null): string
     {
-        $data_retrieval = new AIChatStatisticsDataRetrieval($this->plugin);
+        [$ub_goto, $at_goto, $it_goto] = $this->actionUrlBuilder('gotoPage');
+        $data_retrieval = new AIChatStatisticsDataRetrieval(
+            $this->plugin,
+            static fn(string $chat_id): string => $ub_goto
+                ->withParameter($at_goto, 'goto')
+                ->withParameter($it_goto, [$chat_id])
+                ->buildURI()
+                ->__toString()
+        );
         $table = $this->buildTable($data_retrieval, $filter_data);
 
         return $this->renderer->render($table);
@@ -61,7 +69,7 @@ class AIChatStatisticsTableGUI
         $f = $this->ui_factory;
 
         $columns = [
-            'title' => $f->table()->column()->text($this->plugin->txt('stat_title'))
+            'title' => $f->table()->column()->link($this->plugin->txt('stat_title'))
                 ->withIsSortable(true),
             'obj_id' => $f->table()->column()->number($this->plugin->txt('stat_obj_id'))
                 ->withIsSortable(true),
@@ -92,31 +100,30 @@ class AIChatStatisticsTableGUI
         return $table->withRequest($this->http->request());
     }
 
+    /**
+     * URL builder for a command of the configuration with the action and the chat as parameters
+     *
+     * @return array{0: \ILIAS\UI\URLBuilder, 1: \ILIAS\UI\URLBuilderToken, 2: \ILIAS\UI\URLBuilderToken}
+     */
+    private function actionUrlBuilder(string $cmd): array
+    {
+        $ub = new \ILIAS\UI\URLBuilder(
+            new \ILIAS\Data\URI(ILIAS_HTTP_PATH . '/' . $this->ctrl->getLinkTarget($this->parent_obj, $cmd))
+        );
+        return $ub->acquireParameters(['pcaic', 'stat'], 'action', 'chat_id');
+    }
+
     private function buildActions(): array
     {
         $f = $this->ui_factory;
-        $base = ILIAS_HTTP_PATH . '/';
+        $make_action = fn(string $cmd): array => $this->actionUrlBuilder($cmd);
 
-        $make_action = function (string $cmd) use ($base): array {
-            $ub = new \ILIAS\UI\URLBuilder(
-                new \ILIAS\Data\URI($base . $this->ctrl->getLinkTarget($this->parent_obj, $cmd))
-            );
-            [$ub, $at, $it] = $ub->acquireParameters(['pcaic', 'stat'], 'action', 'chat_id');
-            return [$ub, $at, $it];
-        };
-
-        [$ub_goto,   $at_goto,   $it_goto] = $make_action('gotoPage');
         [$ub_on,     $at_on,     $it_on] = $make_action('setChatOnline');
         [$ub_off,    $at_off,    $it_off] = $make_action('setChatOffline');
         [$ub_clear,  $at_clear,  $it_clear] = $make_action('clearChatHistory');
         [$ub_delete, $at_delete, $it_delete] = $make_action('deleteChat');
 
         return [
-            'goto' => $f->table()->action()->single(
-                $this->plugin->txt('stat_goto_page'),
-                $ub_goto->withParameter($at_goto, 'goto'),
-                $it_goto
-            ),
             'set_online' => $f->table()->action()->single(
                 $this->plugin->txt('stat_toggle_online'),
                 $ub_on->withParameter($at_on, 'setOnline'),

@@ -133,6 +133,10 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 - When a chat is created, only title, visibility and system prompt are asked for; all other settings are made afterwards in the edit form.
 - 1.12.1: per resource, the display as source and the download can be restricted.
 
+### Notes on version 1.14.4
+
+- The statistics of the plugin configuration open the page of a chat in a new tab: the title of the chat is a link now. It replaces the action "Go to page", which opened the page in the same tab (actions of an ILIAS data table cannot open a new tab).
+
 ### Notes on version 1.14.3
 
 - Fix: times shown by the plugin (last activity, state of resources, processing of files) were an hour late in winter and two hours in summer on servers whose time zone is not UTC. The plugin stores times in the time zone of the server, as ILIAS does, but read them as UTC for display.
