@@ -599,6 +599,7 @@ abstract class AIChatPageComponentLLM
             $session = ChatSession::getOrCreateForUserAndChat($user_id, $chat_id);
 
             $user_message = $session->addMessage('user', $message);
+            ChatConfig::recordMessage($chat_id);
 
             if (!empty($attachment_ids)) {
                 foreach ($attachment_ids as $attachment_id) {
@@ -732,6 +733,8 @@ abstract class AIChatPageComponentLLM
             if (!$chat_config->exists()) {
                 throw new AIChatPageComponentException('Chat configuration not found');
             }
+            // Without history, nothing else records that the chat is used
+            ChatConfig::recordMessage($chat_id);
 
             $this->setPrompt($chat_config->getSystemPrompt());
             $this->setMaxMemoryMessages($chat_config->getMaxMemory());

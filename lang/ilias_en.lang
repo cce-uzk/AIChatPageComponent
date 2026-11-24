@@ -241,6 +241,7 @@ tab_statistics#:#Statistics
 stat_title#:#Title
 stat_obj_id#:#Object ID
 stat_ref_id#:#Ref. ID
+stat_last_message_at#:#Last message
 stat_created_at#:#Created
 stat_session_count#:#No. of Sessions
 stat_rag#:#RAG?

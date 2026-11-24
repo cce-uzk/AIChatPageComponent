@@ -222,6 +222,51 @@ class ChatConfig
         return true;
     }
 
+    /** Seconds within which a further message does not update the time of the last message */
+    public const LAST_MESSAGE_PRECISION = 300;
+
+    /**
+     * Note that a message was sent in the chat; a visit of the page alone is no activity
+     *
+     * One UPDATE without reading before, so concurrent messages cannot conflict. It changes the
+     * row of the chat at most every LAST_MESSAGE_PRECISION seconds, so many learners writing at
+     * the same time do not wait for each other. The column is not part of save(): saving the
+     * settings of a chat cannot overwrite it. A failure never stops the message.
+     */
+    public static function recordMessage(string $chat_id): void
+    {
+        global $DIC;
+        try {
+            $db = $DIC->database();
+            $now = time();
+            $db->manipulateF(
+                "UPDATE pcaic_chats SET last_message_at = %s WHERE chat_id = %s"
+                . " AND (last_message_at IS NULL OR last_message_at < %s)",
+                ['timestamp', 'text', 'timestamp'],
+                [date('Y-m-d H:i:s', $now), $chat_id, date('Y-m-d H:i:s', $now - self::LAST_MESSAGE_PRECISION)]
+            );
+        } catch (\Throwable $e) {
+            $DIC->logger()->pcaic()->warning('Time of the last message not stored: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Time of the last message in the chat, see recordMessage()
+     *
+     * @return string|null "Y-m-d H:i:s" in the time zone of the server; null if there was none
+     */
+    public static function lastMessageAt(string $chat_id): ?string
+    {
+        global $DIC;
+        $db = $DIC->database();
+        $row = $db->fetchAssoc($db->queryF(
+            "SELECT last_message_at FROM pcaic_chats WHERE chat_id = %s",
+            ['text'],
+            [$chat_id]
+        ));
+        return isset($row['last_message_at']) && $row['last_message_at'] !== '' ? (string) $row['last_message_at'] : null;
+    }
+
     public function exists(): bool
     {
         global $DIC;
