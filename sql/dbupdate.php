@@ -1178,3 +1178,38 @@ if ($db->tableExists('pcaic_chats')) {
     }
 }
 ?>
+
+<#21>
+<?php
+/**
+ * Step 21: time of the last message in a chat (v1.14.5)
+ *
+ * pcaic_chats.last_message_at: set when a message is sent (also in chats without stored history),
+ * see ChatConfig::recordMessage(). Visiting the page is no activity. Existing chats get the time
+ * of their newest stored user message; chats without stored messages stay NULL.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_chats') && !$db->tableColumnExists('pcaic_chats', 'last_message_at')) {
+    $db->addTableColumn('pcaic_chats', 'last_message_at', ['type' => 'timestamp', 'notnull' => false]);
+
+    if ($db->tableExists('pcaic_messages') && $db->tableExists('pcaic_sessions')) {
+        $result = $db->query(
+            "SELECT s.chat_id, MAX(m.timestamp) AS last_message_at"
+            . " FROM pcaic_messages m JOIN pcaic_sessions s ON s.session_id = m.session_id"
+            . " WHERE m.role = " . $db->quote('user', 'text')
+            . " GROUP BY s.chat_id"
+        );
+        while ($row = $db->fetchAssoc($result)) {
+            if (!empty($row['last_message_at'])) {
+                $db->manipulateF(
+                    "UPDATE pcaic_chats SET last_message_at = %s WHERE chat_id = %s",
+                    ['timestamp', 'text'],
+                    [(string) $row['last_message_at'], (string) $row['chat_id']]
+                );
+            }
+        }
+    }
+}
+?>

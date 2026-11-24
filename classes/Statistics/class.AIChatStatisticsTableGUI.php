@@ -77,6 +77,8 @@ class AIChatStatisticsTableGUI
                 ->withIsSortable(true),
             'created_at' => $f->table()->column()->text($this->plugin->txt('stat_created_at'))
                 ->withIsSortable(true),
+            'last_message_at' => $f->table()->column()->text($this->plugin->txt('stat_last_message_at'))
+                ->withIsSortable(true),
             'is_online' => $f->table()->column()->statusIcon($this->plugin->txt('stat_is_online'))
                 ->withIsSortable(false),
             'session_count' => $f->table()->column()->number($this->plugin->txt('stat_session_count'))
