@@ -1158,3 +1158,23 @@ if ($db->tableExists('pcaic_resources')) {
     }
 }
 ?>
+
+<#20>
+<?php
+/**
+ * Step 20: system prompt and disclaimer of a chat as clob (v1.14.2)
+ *
+ * Both were text columns of 4000 characters, while the form allows 12000 characters for the system
+ * prompt: longer prompts could not be saved. The content is kept.
+ */
+global $DIC;
+$db = $DIC->database();
+
+if ($db->tableExists('pcaic_chats')) {
+    foreach (['system_prompt', 'disclaimer'] as $column) {
+        if ($db->tableColumnExists('pcaic_chats', $column)) {
+            $db->modifyTableColumn('pcaic_chats', $column, ['type' => 'clob', 'notnull' => false]);
+        }
+    }
+}
+?>
