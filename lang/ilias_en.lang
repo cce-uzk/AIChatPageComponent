@@ -301,6 +301,7 @@ section_background_files_label#:#Background Files
 section_background_files_info#:#Files provided to the AI as additional context
 section_legal_label#:#Legal
 section_legal_info#:#Optional disclaimer for this chat instance
+stat_chat_created_at#:#Created on
 stat_sessions#:#Sessions
 stat_messages#:#Messages
 stat_last_activity#:#Last Activity
