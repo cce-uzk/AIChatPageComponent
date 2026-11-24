@@ -20,6 +20,12 @@ namespace ILIAS\Plugin\pcaic\Model;
  */
 class ChatConfig
 {
+    /** Characters of the system prompt at most; stored as clob since step 20 */
+    public const MAX_SYSTEM_PROMPT_LENGTH = 12000;
+
+    /** Characters of the disclaimer at most; stored as clob since step 20 */
+    public const MAX_DISCLAIMER_LENGTH = 4000;
+
     private string $chat_id;
     private int $page_id = 0;
     private int $parent_id = 0;
@@ -291,7 +297,7 @@ class ChatConfig
     }
     public function setSystemPrompt(string $system_prompt): void
     {
-        $this->system_prompt = $system_prompt;
+        $this->system_prompt = \ILIAS\Plugin\pcaic\UI\LimitedTextarea::normalizeLineBreaks($system_prompt);
     }
     public function getAiService(): string
     {
@@ -388,7 +394,7 @@ class ChatConfig
     }
     public function setDisclaimer(string $disclaimer): void
     {
-        $this->disclaimer = $disclaimer;
+        $this->disclaimer = \ILIAS\Plugin\pcaic\UI\LimitedTextarea::normalizeLineBreaks($disclaimer);
     }
     public function getTemperature(): ?float
     {
