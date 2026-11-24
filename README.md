@@ -137,6 +137,7 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 
 - Fix: system prompts longer than about 4000 characters could not be saved, although the form allows 12000. System prompt and disclaimer of a chat are now stored without this limit (database step 20). The default system prompt of the plugin configuration allows 12000 characters too.
 - Fix: after saving, the counter of remaining characters showed too few and jumped up at the first input. ILIAS counts the saved text in bytes (an umlaut twice, a line break twice), the browser in characters. The counter now shows the characters left from the start, and line breaks are saved as the browser counts them.
+- Fix: in the page editor, menus opened over the chat preview (e.g. the add menu of the element above) could not be used: a transparent layer of the preview with the same z-index lay above them. The preview has no layer of its own any more; a click on it still opens the chat for editing.
 
 ### Notes on version 1.14.1
 

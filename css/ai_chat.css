@@ -2698,19 +2698,15 @@ a.ai-chat-footnote-link:hover,
 
 /* ── Editor preview (page editor) ────────────────────────────────────────────── */
 
-/* All interactions disabled; a click on the overlay opens the element for editing */
+/* All interactions disabled: a click goes through to the edit area of ILIAS around the
+   preview, which opens the element for editing. No overlay of its own: with a z-index, it lay
+   above menus of the page editor opened over the chat, e.g. the add menu of the element above. */
 .ai-chat-preview-mode {
-    position: relative;
     pointer-events: none;
 }
 
-.ai-chat-preview-mode::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: 10;
+[data-copg-ed-type="pc-area"]:has(.ai-chat-preview-mode) {
     cursor: pointer;
-    pointer-events: auto;
 }
 
 /* Same height as the header buttons */
