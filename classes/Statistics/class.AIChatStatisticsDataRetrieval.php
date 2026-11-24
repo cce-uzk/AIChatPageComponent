@@ -56,8 +56,8 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
             fn($carry, $field, $dir) => [$field, $dir]
         );
         if ($sort_field !== null) {
-            // 'created_at' displays a formatted string – sort on the raw timestamp instead
-            $sort_key = ($sort_field === 'created_at') ? 'created_at_ts' : $sort_field;
+            // Dates are formatted strings – sort on the raw timestamp instead
+            $sort_key = in_array($sort_field, ['created_at', 'last_message_at'], true) ? $sort_field . '_ts' : $sort_field;
             usort($rows, function (array $a, array $b) use ($sort_key, $sort_direction): int {
                 $result = $a[$sort_key] <=> $b[$sort_key];
                 return $sort_direction === 'DESC' ? -$result : $result;
@@ -77,6 +77,7 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
                 'obj_id' => $row['obj_id'],
                 'ref_id' => $row['ref_id'],
                 'created_at' => $row['created_at'],
+                'last_message_at' => $row['last_message_at'] !== '' ? $row['last_message_at'] : '–',
                 'is_online' => $row['is_online_icon'],
                 'session_count' => $row['session_count'],
                 'enable_rag' => $row['enable_rag_icon'],
@@ -136,6 +137,7 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
                 c.chat_id,
                 c.title,
                 c.created_at,
+                c.last_message_at,
                 c.parent_id,
                 c.enable_rag,
                 COALESCE(c.is_online, 1)     AS is_online,
@@ -151,7 +153,7 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
             LEFT JOIN pcaic_sessions    s ON s.chat_id = c.chat_id
             LEFT JOIN pcaic_attachments a ON a.chat_id = c.chat_id AND a.background_file = 1
             $where
-            GROUP BY c.chat_id, c.title, c.created_at, c.parent_id, c.enable_rag, c.is_online, orf.ref_id
+            GROUP BY c.chat_id, c.title, c.created_at, c.last_message_at, c.parent_id, c.enable_rag, c.is_online, orf.ref_id
             ORDER BY c.title ASC
         ";
 
@@ -170,6 +172,13 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
                 } catch (\Exception $e) {
                     $created_at = (string) $row['created_at'];
                 }
+            }
+
+            $last_message_at = '';
+            $last_message_at_ts = 0;
+            if (!empty($row['last_message_at'])) {
+                $last_message_at = \ILIAS\Plugin\pcaic\UI\StoredDateTime::format((string) $row['last_message_at']);
+                $last_message_at_ts = (new \DateTime((string) $row['last_message_at']))->getTimestamp();
             }
 
             $is_rag = (bool) $row['enable_rag'];
@@ -193,6 +202,8 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
                 'ref_id' => (int) $row['ref_id'],
                 'created_at' => $created_at,
                 'created_at_ts' => $created_at_ts,
+                'last_message_at' => $last_message_at,
+                'last_message_at_ts' => $last_message_at_ts,
                 'session_count' => (int) $row['session_count'],
                 'enable_rag_icon' => $rag_icon,
                 'is_online' => $is_online,
