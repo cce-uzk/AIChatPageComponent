@@ -38,6 +38,13 @@ class SnapshotService
             return false;
         }
 
+        // Store the new files first: if that fails, the resource keeps its previous snapshot
+        $stored_ids = [];
+        foreach ($documents as $document) {
+            $stored_ids[] = $document->getStoredId()
+                ?? ChatResource::storeText((string) $document->getText(), $document->getFilename());
+        }
+
         if ($resource->getId() !== null) {
             foreach ($resource->getAttachments() as $attachment) {
                 $attachment->delete();
@@ -51,9 +58,7 @@ class SnapshotService
         }
         $resource->save();
 
-        foreach ($documents as $document) {
-            $stored_id = $document->getStoredId()
-                ?? ChatResource::storeText((string) $document->getText(), $document->getFilename());
+        foreach ($stored_ids as $stored_id) {
             $resource->addFile($stored_id, $user_id);
         }
         return true;
