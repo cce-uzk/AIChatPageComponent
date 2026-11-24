@@ -27,9 +27,17 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
 {
     private ilAIChatPageComponentPlugin $plugin;
 
-    public function __construct(ilAIChatPageComponentPlugin $plugin)
+    /** @var \Closure(string): string|null URL that leads to the page of a chat */
+    private ?\Closure $page_url;
+
+    /**
+     * @param \Closure(string): string|null $page_url URL that leads to the page of the chat with this ID;
+     *        the title then opens it in a new tab
+     */
+    public function __construct(ilAIChatPageComponentPlugin $plugin, ?\Closure $page_url = null)
     {
         $this->plugin = $plugin;
+        $this->page_url = $page_url;
     }
 
     public function getRows(
@@ -41,6 +49,7 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
         mixed $filter_data,
         mixed $additional_parameters
     ): Generator {
+        global $DIC;
         $rows = $this->queryData($filter_data ?? []);
 
         [$sort_field, $sort_direction] = $order->join(
@@ -59,8 +68,13 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
         $rows = array_slice($rows, $range->getStart(), $range->getLength());
 
         foreach ($rows as $row) {
+            // Actions of a data table open in the same tab; a link column can open a new one
+            $title = $this->page_url === null
+                ? $row['title']
+                : $DIC->ui()->factory()->link()->standard($row['title'], ($this->page_url)($row['chat_id']))
+                    ->withOpenInNewViewport(true);
             $data_row = $row_builder->buildDataRow($row['chat_id'], [
-                'title' => $row['title'],
+                'title' => $title,
                 'obj_id' => $row['obj_id'],
                 'ref_id' => $row['ref_id'],
                 'created_at' => $row['created_at'],
