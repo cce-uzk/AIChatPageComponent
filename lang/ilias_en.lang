@@ -296,7 +296,7 @@ section_general_create_info#:#Title, visibility and system prompt. All other set
 section_ai_config_label#:#AI Service & Configuration
 section_ai_config_info#:#AI service, memory limit and character limit for this chat
 section_behavior_label#:#Chat Behaviour
-section_behavior_info#:#Persistence, page context, file uploads, streaming and RAG mode
+section_behavior_info#:#Persistence, file uploads, streaming and RAG mode
 section_background_files_label#:#Background Files
 section_background_files_info#:#Files provided to the AI as additional context
 section_legal_label#:#Legal

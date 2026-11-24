@@ -296,7 +296,7 @@ section_general_create_info#:#Titel, Sichtbarkeit und System-Prompt. Alle weiter
 section_ai_config_label#:#KI-Dienst & Konfiguration
 section_ai_config_info#:#KI-Dienst, Gedächtnis und Zeichenlimit für diesen Chat
 section_behavior_label#:#Chat-Verhalten
-section_behavior_info#:#Persistenz, Seitenkontext, Datei-Uploads, Streaming und RAG-Modus
+section_behavior_info#:#Persistenz, Datei-Uploads, Streaming und RAG-Modus
 section_background_files_label#:#Hintergrunddateien
 section_background_files_info#:#Dateien, die der KI als zusätzlicher Kontext zur Verfügung gestellt werden
 section_legal_label#:#Rechtliches
