@@ -36,6 +36,7 @@ return array(
     'ILIAS\\Plugin\\pcaic\\Service\\StreamKeepAlive' => $baseDir . '/src/Service/StreamKeepAlive.php',
     'ILIAS\\Plugin\\pcaic\\Storage\\ResourceStakeholder' => $baseDir . '/src/Storage/ResourceStakeholder.php',
     'ILIAS\\Plugin\\pcaic\\Table\\ResourceTableRetrieval' => $baseDir . '/src/Table/ResourceTableRetrieval.php',
+    'ILIAS\\Plugin\\pcaic\\UI\\LimitedTextarea' => $baseDir . '/src/UI/LimitedTextarea.php',
     'ILIAS\\Plugin\\pcaic\\Validation\\FileTypePolicy' => $baseDir . '/src/Validation/FileTypePolicy.php',
     'ILIAS\\Plugin\\pcaic\\Validation\\FileUploadValidator' => $baseDir . '/src/Validation/FileUploadValidator.php',
     'ai\\AIChatPageComponentLLM' => $baseDir . '/classes/ai/class.AIChatPageComponentLLM.php',
