@@ -133,6 +133,11 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 - When a chat is created, only title, visibility and system prompt are asked for; all other settings are made afterwards in the edit form.
 - 1.12.1: per resource, the display as source and the download can be restricted.
 
+### Notes on version 1.14.1
+
+- Fix: adding a learning module (or wiki) whose pages lie deep in chapters with long titles failed with "Data too long for column 'title'". The name of a stored page is now shortened to the 255 characters of the Resource Storage: the chapters between the object and the page are left out first ("Learning module › … › Page.txt"). The text of the page keeps the full path.
+- A snapshot of a resource is stored completely before the previous one is replaced; if storing fails, the resource keeps its previous content. A learning module added while the error occurred may have stored only part of its pages: remove it from the resources of the chat and add it again.
+
 ### Notes on version 1.14.0
 
 - New: material list for learners in the chat header, with the resources of the chat and the own files of the conversation (see [Usage for learners](#usage-for-learners)). It follows the settings of the resources: hidden resources and resources learners may not read are not listed, downloads and links only where allowed.

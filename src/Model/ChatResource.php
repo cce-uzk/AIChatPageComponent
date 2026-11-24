@@ -35,6 +35,9 @@ class ChatResource
     /** File name of the snapshot of the page content */
     public const PAGE_CONTEXT_FILENAME = 'page_content.txt';
 
+    /** Characters of a file name at most: the title of a revision in the Resource Storage */
+    public const MAX_FILENAME_LENGTH = 255;
+
     /** Shown as source with name, pages and passages */
     public const SOURCE_FULL = 'full';
     /** Shown as source with its name only: no passages, no download */
@@ -216,7 +219,54 @@ class ChatResource
     {
         global $DIC;
         $stream = \ILIAS\Filesystem\Stream\Streams::ofString($text);
-        return $DIC->resourceStorage()->manage()->stream($stream, new ResourceStakeholder(), $filename)->serialize();
+        return $DIC->resourceStorage()->manage()->stream($stream, new ResourceStakeholder(), self::fitFilename($filename))->serialize();
+    }
+
+    /**
+     * File name shortened to the length the Resource Storage keeps
+     *
+     * Names of pages are paths like "Learning module › Chapter › Section › Page.txt". The object
+     * and the page name the source best, so the chapters between them are left out first
+     * ("Learning module › … › Page.txt"), then the object and the page are cut.
+     */
+    public static function fitFilename(string $filename, int $max = self::MAX_FILENAME_LENGTH): string
+    {
+        if (mb_strlen($filename) <= $max) {
+            return $filename;
+        }
+        $suffix = preg_match('/\.[A-Za-z0-9]{1,5}$/', $filename, $match) ? $match[0] : '';
+        $parts = explode(' › ', mb_substr($filename, 0, mb_strlen($filename) - mb_strlen($suffix)));
+        $last = (string) array_pop($parts);
+        $first = $parts === [] ? null : (string) array_shift($parts);
+        $middle = $parts;
+        $omitted = false;
+
+        $compose = static function () use (&$first, &$middle, &$last, &$omitted, $suffix): string {
+            $path = $first === null ? [] : [$first];
+            if ($omitted) {
+                $path[] = '…';
+            }
+            return implode(' › ', [...$path, ...$middle, $last]) . $suffix;
+        };
+        $cut = static fn(string $text, int $length): string
+            => mb_strlen($text) <= $length ? $text : rtrim(mb_substr($text, 0, max(1, $length - 1))) . '…';
+
+        while ($middle !== [] && mb_strlen($compose()) > $max) {
+            array_shift($middle);
+            $omitted = true;
+        }
+        if ($first !== null && mb_strlen($compose()) > $max) {
+            $first = $cut($first, 60);
+        }
+        $over = mb_strlen($compose()) - $max;
+        if ($over > 0) {
+            $last = $cut($last, mb_strlen($last) - $over);
+        }
+        $name = $compose();
+        if (mb_strlen($name) <= $max) {
+            return $name;
+        }
+        return $cut(mb_substr($name, 0, mb_strlen($name) - mb_strlen($suffix)), $max - mb_strlen($suffix)) . $suffix;
     }
 
     /**
