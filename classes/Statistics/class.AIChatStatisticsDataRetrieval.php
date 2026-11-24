@@ -155,9 +155,9 @@ class AIChatStatisticsDataRetrieval implements DataRetrieval
             $created_at_ts = 0;
             if (!empty($row['created_at'])) {
                 try {
-                    $dt = new \DateTime($row['created_at']);
-                    $created_at = $dt->format('d.m.Y H:i');
-                    $created_at_ts = $dt->getTimestamp();
+                    // Stored in the time zone of the server, shown in the one of the user
+                    $created_at = \ILIAS\Plugin\pcaic\UI\StoredDateTime::format((string) $row['created_at']);
+                    $created_at_ts = (new \DateTime((string) $row['created_at']))->getTimestamp();
                 } catch (\Exception $e) {
                     $created_at = (string) $row['created_at'];
                 }

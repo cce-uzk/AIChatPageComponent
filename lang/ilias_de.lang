@@ -301,6 +301,7 @@ section_background_files_label#:#Hintergrunddateien
 section_background_files_info#:#Dateien, die der KI als zusätzlicher Kontext zur Verfügung gestellt werden
 section_legal_label#:#Rechtliches
 section_legal_info#:#Optionaler Disclaimer für die Chat-Instanz
+stat_chat_created_at#:#Erstellt am
 stat_sessions#:#Sessions
 stat_messages#:#Nachrichten
 stat_last_activity#:#Letzte Aktivität
