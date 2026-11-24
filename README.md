@@ -133,6 +133,11 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 - When a chat is created, only title, visibility and system prompt are asked for; all other settings are made afterwards in the edit form.
 - 1.12.1: per resource, the display as source and the download can be restricted.
 
+### Notes on version 1.14.2
+
+- Fix: system prompts longer than about 4000 characters could not be saved, although the form allows 12000. System prompt and disclaimer of a chat are now stored without this limit (database step 20). The default system prompt of the plugin configuration allows 12000 characters too.
+- Fix: after saving, the counter of remaining characters showed too few and jumped up at the first input. ILIAS counts the saved text in bytes (an umlaut twice, a line break twice), the browser in characters. The counter now shows the characters left from the start, and line breaks are saved as the browser counts them.
+
 ### Notes on version 1.14.1
 
 - Fix: adding a learning module (or wiki) whose pages lie deep in chapters with long titles failed with "Data too long for column 'title'". The name of a stored page is now shortened to the 255 characters of the Resource Storage: the chapters between the object and the page are left out first ("Learning module › … › Page.txt"). The text of the page keeps the full path.

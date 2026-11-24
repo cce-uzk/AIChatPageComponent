@@ -51,6 +51,7 @@ class ComposerStaticInit52975239271cd8444140239aa621a8e3
         'ILIAS\\Plugin\\pcaic\\Service\\StreamKeepAlive' => __DIR__ . '/../..' . '/src/Service/StreamKeepAlive.php',
         'ILIAS\\Plugin\\pcaic\\Storage\\ResourceStakeholder' => __DIR__ . '/../..' . '/src/Storage/ResourceStakeholder.php',
         'ILIAS\\Plugin\\pcaic\\Table\\ResourceTableRetrieval' => __DIR__ . '/../..' . '/src/Table/ResourceTableRetrieval.php',
+        'ILIAS\\Plugin\\pcaic\\UI\\LimitedTextarea' => __DIR__ . '/../..' . '/src/UI/LimitedTextarea.php',
         'ILIAS\\Plugin\\pcaic\\Validation\\FileTypePolicy' => __DIR__ . '/../..' . '/src/Validation/FileTypePolicy.php',
         'ILIAS\\Plugin\\pcaic\\Validation\\FileUploadValidator' => __DIR__ . '/../..' . '/src/Validation/FileUploadValidator.php',
         'ai\\AIChatPageComponentLLM' => __DIR__ . '/../..' . '/classes/ai/class.AIChatPageComponentLLM.php',

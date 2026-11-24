@@ -54,5 +54,6 @@ require_once $plugin_dir . '/src/Resource/ResourceProviderRegistry.php';
 require_once $plugin_dir . '/src/Resource/MaterialList.php';
 require_once $plugin_dir . '/src/Table/ResourceTableRetrieval.php';
 require_once $plugin_dir . '/src/Validation/FileUploadValidator.php';
+require_once $plugin_dir . '/src/UI/LimitedTextarea.php';
 require_once $plugin_dir . '/src/Validation/FileTypePolicy.php';
 require_once $plugin_dir . '/src/Service/StreamKeepAlive.php';

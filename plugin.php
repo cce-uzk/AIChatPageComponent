@@ -14,7 +14,7 @@
 // Plugin ID
 $id = "pcaic";
 
-$version = "1.14.1";
+$version = "1.14.2";
 
 $ilias_min_version = "9.0.0";
 $ilias_max_version = "9.999";

@@ -214,16 +214,16 @@ class ilAIChatPageComponentConfigGUI extends ilPluginConfigGUI
         $inputs = [];
 
         $default_prompt = \platform\AIChatPageComponentConfig::get('default_prompt');
-        $inputs['default_prompt'] = $ui_factory->input()->field()->textarea(
+        $inputs['default_prompt'] = \ILIAS\Plugin\pcaic\UI\LimitedTextarea::apply($ui_factory->input()->field()->textarea(
             $this->plugin->txt('config_default_prompt'),
             $this->plugin->txt('config_default_prompt_info')
-        )->withMaxLimit(4000)->withValue($default_prompt ?: 'You are a helpful AI assistant. Please provide accurate and helpful responses.');
+        ), \ILIAS\Plugin\pcaic\Model\ChatConfig::MAX_SYSTEM_PROMPT_LENGTH)->withValue($default_prompt ?: 'You are a helpful AI assistant. Please provide accurate and helpful responses.');
 
         $disclaimer = \platform\AIChatPageComponentConfig::get('default_disclaimer');
-        $inputs['default_disclaimer'] = $ui_factory->input()->field()->textarea(
+        $inputs['default_disclaimer'] = \ILIAS\Plugin\pcaic\UI\LimitedTextarea::apply($ui_factory->input()->field()->textarea(
             $this->plugin->txt('config_default_disclaimer'),
             $this->plugin->txt('config_default_disclaimer_info')
-        )->withMaxLimit(4000)->withValue($disclaimer ?: '');
+        ), \ILIAS\Plugin\pcaic\Model\ChatConfig::MAX_DISCLAIMER_LENGTH)->withValue($disclaimer ?: '');
 
         return $inputs;
     }
