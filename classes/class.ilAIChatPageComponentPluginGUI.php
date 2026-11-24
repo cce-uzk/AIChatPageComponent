@@ -265,7 +265,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $system_prompt = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('system_prompt_label'),
             $this->plugin->txt('system_prompt_info')
-        )->withDedicatedName('system_prompt')->withMaxLimit(12000)->withValue($prop['system_prompt'] ?? $defaults['prompt']);
+        )->withDedicatedName('system_prompt');
+        $system_prompt = \ILIAS\Plugin\pcaic\UI\LimitedTextarea::apply($system_prompt, \ILIAS\Plugin\pcaic\Model\ChatConfig::MAX_SYSTEM_PROMPT_LENGTH)
+            ->withValue($prop['system_prompt'] ?? $defaults['prompt']);
 
         // A new chat gets title, visibility and system prompt only; after saving, the edit
         // form with its tabs opens for all other settings (see create())
@@ -430,7 +432,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $disclaimer = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('legal_disclaimer_label'),
             $this->plugin->txt('legal_disclaimer_info')
-        )->withDedicatedName('disclaimer')->withMaxLimit(4000)->withValue($prop['disclaimer'] ?? $defaults['disclaimer']);
+        )->withDedicatedName('disclaimer');
+        $disclaimer = \ILIAS\Plugin\pcaic\UI\LimitedTextarea::apply($disclaimer, \ILIAS\Plugin\pcaic\Model\ChatConfig::MAX_DISCLAIMER_LENGTH)
+            ->withValue($prop['disclaimer'] ?? $defaults['disclaimer']);
 
         if ($a_create) {
             $form_action = $this->ctrl->getFormAction($this, 'create');
@@ -945,9 +949,9 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $disclaimer = $ui_factory->input()->field()->textarea(
             $this->plugin->txt('legal_disclaimer_label'),
             $this->plugin->txt('legal_disclaimer_info')
-        )->withDedicatedName('disclaimer')
-         ->withMaxLimit(4000)
-         ->withValue($prop['disclaimer'] ?? $defaults['disclaimer']);
+        )->withDedicatedName('disclaimer');
+        $disclaimer = \ILIAS\Plugin\pcaic\UI\LimitedTextarea::apply($disclaimer, \ILIAS\Plugin\pcaic\Model\ChatConfig::MAX_DISCLAIMER_LENGTH)
+            ->withValue($prop['disclaimer'] ?? $defaults['disclaimer']);
 
         $form_fields_adv = [];
         if ($ai_service_field !== null) {
