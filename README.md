@@ -133,6 +133,11 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 - When a chat is created, only title, visibility and system prompt are asked for; all other settings are made afterwards in the edit form.
 - 1.12.1: per resource, the display as source and the download can be restricted.
 
+### Notes on version 1.14.5
+
+- New: the statistics of the plugin configuration show when the last message was sent in each chat (column "Last message", sortable); the statistics tab of a chat shows it instead of the last activity of a session. Only messages count, a visit of the page does not; chats without stored history count too. The time is stored at most every five minutes per chat (one update without reading, so many learners writing at once do not wait for each other) and is not removed by the cleanup of sessions.
+- Database step 21 adds the column and takes the time of the newest stored user message of existing chats. Chats without stored messages show "–" until the next message.
+
 ### Notes on version 1.14.4
 
 - The statistics of the plugin configuration open the page of a chat in a new tab: the title of the chat is a link now. It replaces the action "Go to page", which opened the page in the same tab (actions of an ILIAS data table cannot open a new tab).

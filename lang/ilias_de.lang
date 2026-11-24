@@ -241,6 +241,7 @@ tab_statistics#:#Statistik
 stat_title#:#Titel
 stat_obj_id#:#Objekt-ID
 stat_ref_id#:#Ref.-ID
+stat_last_message_at#:#Letzte Nachricht
 stat_created_at#:#Erstellung
 stat_session_count#:#Anzahl Sitzungen
 stat_rag#:#RAG?

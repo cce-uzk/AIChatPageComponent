@@ -1051,14 +1051,14 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $db = $DIC->database();
 
         $res = $db->queryF(
-            "SELECT COUNT(*) AS session_count, MAX(last_activity) AS last_activity
-               FROM pcaic_sessions WHERE chat_id = %s",
+            "SELECT COUNT(*) AS session_count FROM pcaic_sessions WHERE chat_id = %s",
             ['text'],
             [$chat_id]
         );
         $row = $db->fetchAssoc($res) ?? [];
         $session_count = (int) ($row['session_count'] ?? 0);
-        $last_activity = $row['last_activity'] ?? null;
+        // The last message, also in chats without history; opening the page is no activity
+        $last_activity = \ILIAS\Plugin\pcaic\Model\ChatConfig::lastMessageAt($chat_id);
 
         $res = $db->queryF(
             "SELECT COUNT(*) AS message_count
@@ -1091,7 +1091,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             $this->plugin->txt('stat_chat_created_at') => $created_at_str,
             $this->plugin->txt('stat_sessions') => (string) $session_count,
             $this->plugin->txt('stat_messages') => (string) $message_count,
-            $this->plugin->txt('stat_last_activity') => $last_activity_str,
+            $this->plugin->txt('stat_last_message_at') => $last_activity_str,
             $this->plugin->txt('stat_background_files') => (string) $bg_count,
         ]);
         $file_status_panel = $this->getBackgroundFileStatusPanel($chat_id);
