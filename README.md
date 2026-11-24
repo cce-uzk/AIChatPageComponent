@@ -133,6 +133,12 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 - When a chat is created, only title, visibility and system prompt are asked for; all other settings are made afterwards in the edit form.
 - 1.12.1: per resource, the display as source and the download can be restricted.
 
+### Notes on version 1.14.3
+
+- Fix: times shown by the plugin (last activity, state of resources, processing of files) were an hour late in winter and two hours in summer on servers whose time zone is not UTC. The plugin stores times in the time zone of the server, as ILIAS does, but read them as UTC for display.
+- New: the statistics tab of a chat shows when the chat was created. The statistics of the plugin configuration show the creation in the time zone and date format of the user.
+- The description of the chat behaviour no longer names the page context, which is a resource since 1.12.0.
+
 ### Notes on version 1.14.2
 
 - Fix: system prompts longer than about 4000 characters could not be saved, although the form allows 12000. System prompt and disclaimer of a chat are now stored without this limit (database step 20). The default system prompt of the plugin configuration allows 12000 characters too.

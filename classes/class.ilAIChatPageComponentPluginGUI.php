@@ -1082,7 +1082,13 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
             ? $this->formatStoredDateTime($last_activity)
             : '–';
 
+        $created_at = isset($chat_config) && $chat_config->exists() ? $chat_config->getCreatedAt() : null;
+        $created_at_str = $created_at !== null
+            ? $this->formatStoredDateTime($created_at->format('Y-m-d H:i:s'))
+            : '–';
+
         $listing = $ui_factory->listing()->descriptive([
+            $this->plugin->txt('stat_chat_created_at') => $created_at_str,
             $this->plugin->txt('stat_sessions') => (string) $session_count,
             $this->plugin->txt('stat_messages') => (string) $message_count,
             $this->plugin->txt('stat_last_activity') => $last_activity_str,
@@ -1215,11 +1221,11 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
     }
 
     /**
-     * Date and time stored by the plugin (UTC) in the time zone and format of the user
+     * Date and time stored by the plugin (time zone of the server) in the time zone and format of the user
      */
     private function formatStoredDateTime(string $value): string
     {
-        return \ilDatePresentation::formatDate(new \ilDateTime($value, IL_CAL_DATETIME, 'UTC'));
+        return \ILIAS\Plugin\pcaic\UI\StoredDateTime::format($value);
     }
 
     /**
@@ -1259,7 +1265,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $details = [];
         if (!empty($row['rag_retry_at'])) {
             // The new upload is triggered by the next chat request or the cron job
-            $details[] = $row['rag_retry_at'] <= gmdate('Y-m-d H:i:s')
+            $details[] = $row['rag_retry_at'] <= date('Y-m-d H:i:s')
                 ? $this->plugin->txt('rag_file_retry_due')
                 : sprintf($this->plugin->txt('rag_file_retry_at'), $this->formatStoredDateTime($row['rag_retry_at']));
         } else {
