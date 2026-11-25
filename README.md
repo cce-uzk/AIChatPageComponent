@@ -137,6 +137,7 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 
 - Fix: an offline chat was only hidden from learners. A page opened before the chat went offline, or a direct request, could still send messages and upload files. The server now rejects both for persons without write permission on the object containing the chat, and the open chat shows "This chat is currently not available." and disables the input. Editors can still use an offline chat.
 - The selection of objects of the environment names the number of objects already added as "Number of objects already added that are not listed: N".
+- The README states what "the environment" offers depending on where the page of the chat lies; in a wiki or learning module that is the whole wiki or learning module.
 
 ### Notes on version 1.14.5
 
@@ -303,13 +304,23 @@ Resources are what a chat uses besides the conversation. Editors add them active
 | Page content | The visible text of the page containing the chat (paragraphs, without embedded files or sub-objects) |
 | File object (RAG only) | A file object of the environment of the chat (the course, group or folder containing the page, and its folders), as copy of its current version |
 | Wiki (RAG only) | A whole wiki of the environment, or the wiki containing the page: one text file per active page, named "Wiki › Page"; at most 500 pages. Offered only if TXT is a RAG file type |
-| Content page (RAG only) | A content page of the environment as one text file |
-| Learning module (RAG only) | A learning module of the environment: one text file per active page in the order of its chapters, named "Learning module › Chapter › Page"; pages outside the chapters and deactivated pages are left out |
+| Content page (RAG only) | A content page of the environment, or the content page containing the chat, as one text file. Offered only if TXT is a RAG file type |
+| Learning module (RAG only) | A whole learning module of the environment, or the learning module containing the page: one text file per active page in the order of its chapters, named "Learning module › Chapter › Page"; pages outside the chapters and deactivated pages are left out; at most 500 pages. Offered only if TXT is a RAG file type |
 
 - A resource is a **snapshot** from the time it was added or updated. Changes of the page only reach the chat with **Update** (shown with the date of the snapshot). An updated snapshot replaces the previous one, also in the RAG service.
 - **Use / Do not use** excludes a resource without removing it; it stays in the RAG service and can be included again at once.
 - **Remove** deletes the resource including its copy in the RAG service.
-- **Add from the environment** (RAG only) offers the file objects, wikis, content pages and learning modules of the environment that the editor may read and the RAG service can take. Each becomes a resource of its own.
+- **Add from the environment** (RAG only) offers the file objects, wikis, content pages and learning modules of the environment that the editor may read and the RAG service can take. Each becomes a resource of its own. What the environment is depends on where the page of the chat lies:
+
+  | Page of the chat in | Offered |
+  |---|---|
+  | Course, group, category or folder (its page) | The file objects, wikis, content pages and learning modules in it and in its folders, down to five folder levels |
+  | A wiki page | Only this wiki, as a whole: all its active pages, not only the page with the chat |
+  | A page of a learning module | Only this learning module, as a whole: all its active pages in the chapters, not only the page with the chat |
+  | A content page | Only this content page |
+  | Anything else (blog, portfolio, question pool, …) | Nothing |
+
+  Objects around a wiki or learning module, e.g. the files of the course containing it, are not offered there; add them from a chat on a page of the course, or upload them as files.
 - In the source list, pages of these objects are named "Object › Page" and show the icon ILIAS shows for the object.
 - For resources taken from an object, the table shows when the source changed ("New state available"), is gone ("Source not available") or the chat was moved to another environment ("No longer in the environment"). Nothing is updated on its own; gone and moved sources are no longer used.
 - Learners only get content of such a resource, in answers and in the source list, while they may read the object themselves (permission, online status, availability). Downloads of these sources link to the object in ILIAS.
