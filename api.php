@@ -129,6 +129,13 @@ try {
                 exit;
             }
 
+            // Offline: hidden from learners, so only editors may still use it
+            if (isChatOfflineForUser($chat_config)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'chat_offline']);
+                exit;
+            }
+
             // Daily message limit (logged-in users only)
             if (!$is_anonymous) {
                 $limit_error = checkDailyMessageLimit($chat_id, $user_id);
@@ -241,6 +248,13 @@ try {
             if (!checkChatAccess($chat_config)) {
                 http_response_code(403);
                 echo "data: " . json_encode(['error' => 'Access denied']) . "\n\n";
+                exit;
+            }
+
+            // Offline: hidden from learners, so only editors may still use it
+            if (isChatOfflineForUser($chat_config)) {
+                echo "data: " . json_encode(['type' => 'error', 'error' => 'chat_offline']) . "\n\n";
+                flush();
                 exit;
             }
 
@@ -372,6 +386,13 @@ try {
             if (!checkChatAccess($chat_config)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Access denied']);
+                exit;
+            }
+
+            // Offline: hidden from learners, so only editors may still use it
+            if (isChatOfflineForUser($chat_config)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'chat_offline']);
                 exit;
             }
 
@@ -1060,6 +1081,17 @@ function checkChatAccess(ChatConfig $chat_config, string $permission = 'read'): 
     }
 
     return false;
+}
+
+/**
+ * The chat is offline and the user may not edit the object containing it
+ *
+ * Offline chats are only rendered for editors; a page opened before the chat went offline,
+ * or a direct request, must not keep using it.
+ */
+function isChatOfflineForUser(ChatConfig $chat_config): bool
+{
+    return !$chat_config->isOnline() && !checkChatAccess($chat_config, 'write');
 }
 
 /**
