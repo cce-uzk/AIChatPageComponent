@@ -133,6 +133,11 @@ Then run the plugin update in **Administration > Extending ILIAS > Plugins** if 
 - When a chat is created, only title, visibility and system prompt are asked for; all other settings are made afterwards in the edit form.
 - 1.12.1: per resource, the display as source and the download can be restricted.
 
+### Notes on version 1.14.6
+
+- Fix: an offline chat was only hidden from learners. A page opened before the chat went offline, or a direct request, could still send messages and upload files. The server now rejects both for persons without write permission on the object containing the chat, and the open chat shows "This chat is currently not available." and disables the input. Editors can still use an offline chat.
+- The selection of objects of the environment names the number of objects already added as "Number of objects already added that are not listed: N".
+
 ### Notes on version 1.14.5
 
 - New: the statistics of the plugin configuration show when the last message was sent in each chat (column "Last message", sortable); the statistics tab of a chat shows it instead of the last activity of a session. Only messages count, a visit of the page does not; chats without stored history count too. The time is stored at most every five minutes per chat (one update without reading, so many learners writing at once do not wait for each other) and is not removed by the cleanup of sessions.
@@ -274,7 +279,7 @@ The edit form has the tabs **Settings**, **Resources**, **Advanced settings** an
 
 | Tab | Setting | Description |
 |---|---|---|
-| Settings | Chat title, online | Title shown above the chat; offline chats are not shown to learners |
+| Settings | Chat title, online | Title shown above the chat; offline chats are not shown to learners and do not answer them |
 | | System prompt | Role and behaviour of the AI |
 | | Persistent chat | Keeps the history when learners return |
 | | Enable chat file uploads | Learners may attach files |

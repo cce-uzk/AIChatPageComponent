@@ -1122,12 +1122,7 @@ class AIChatPageComponent {
         if (serverProvided || response.status === 429) {
           this.currentRequest = null;
           this.setLoading(false);
-          if (errorMessage === 'no_service_available') {
-            const notice = this.container.dataset.noServiceAvailable
-                            || 'No AI service is currently available.';
-            this.addMessageToDisplay('system', notice);
-            this.disableInputForUnavailableService(false);
-          } else {
+          if (!this.closeForUnavailability(errorMessage)) {
             this.addMessageToDisplay('system', errorMessage);
           }
           return;
@@ -1253,12 +1248,7 @@ class AIChatPageComponent {
         if (serverProvided2 || response.status === 429) {
           this.currentRequest = null;
           this.setLoading(false);
-          if (errorMessage === 'no_service_available') {
-            const notice = this.container.dataset.noServiceAvailable
-                            || 'No AI service is currently available.';
-            this.addMessageToDisplay('system', notice);
-            this.disableInputForUnavailableService(false);
-          } else {
+          if (!this.closeForUnavailability(errorMessage)) {
             this.addMessageToDisplay('system', errorMessage);
           }
           return;
@@ -1402,12 +1392,7 @@ class AIChatPageComponent {
             // currentEventSource must not be reset before, otherwise the cleanup is skipped
             const serverError = data.error || 'An error occurred.';
             this.cleanupStreaming(false);
-            if (serverError === 'no_service_available') {
-              const notice = this.container.dataset.noServiceAvailable
-                                || 'No AI service is currently available.';
-              this.addMessageToDisplay('system', notice);
-              this.disableInputForUnavailableService(false);
-            } else {
+            if (!this.closeForUnavailability(serverError)) {
               this.addMessageToDisplay('system', serverError);
             }
           } else if (data.type === 'chunk' && data.content) {
@@ -3520,6 +3505,12 @@ class AIChatPageComponent {
       this.updateAttachmentsDisplay();
     } catch (error) {
       debugError('File upload failed:', error);
+      if (this.closeForUnavailability(error.message)) {
+        if (uploadingThumbnail) {
+          this.clearThumbnailUploading(uploadingThumbnail);
+        }
+        return;
+      }
       let errorMessage = this.container.dataset.errorFileUploadFailed || `File upload failed: ${error.message}`;
       errorMessage = errorMessage.replace('%s', error.message);
       this.showAlert(errorMessage);
@@ -3867,6 +3858,41 @@ class AIChatPageComponent {
   /**
    * Disable input and show a notice when no AI service is configured
    */
+  /**
+   * Notice for a server error after which the chat cannot be used for now, null for other errors
+   *
+   * @param {string} error - Error sent by the server
+   * @returns {string|null}
+   */
+  unavailabilityNotice(error) {
+    if (error === 'no_service_available') {
+      return this.container.dataset.noServiceAvailable
+                || 'No AI service is currently available.';
+    }
+    // The chat was switched offline while the page was open
+    if (error === 'chat_offline') {
+      return this.container.dataset.chatOffline
+                || 'This chat is currently not available.';
+    }
+    return null;
+  }
+
+  /**
+   * Shows the notice and disables the input if the error means the chat cannot be used for now
+   *
+   * @param {string} error - Error sent by the server
+   * @returns {boolean} Whether the error was such an error
+   */
+  closeForUnavailability(error) {
+    const notice = this.unavailabilityNotice(error);
+    if (notice === null) {
+      return false;
+    }
+    this.addMessageToDisplay('system', notice);
+    this.disableInputForUnavailableService(false);
+    return true;
+  }
+
   disableInputForUnavailableService(showMessage = true) {
     this.serviceUnavailable = true;
 
@@ -4838,10 +4864,10 @@ class AIChatPageComponent {
    * @returns {string} User-friendly error message
    */
   getErrorMessage(error) {
-    // Sent by the server if no AI service is enabled
-    if (error.message === 'no_service_available') {
-      return this.container.dataset.noServiceAvailable
-                || 'No AI service is currently available. Please contact your administrator.';
+    // Sent by the server if no AI service is enabled or the chat is offline
+    const unavailable = this.unavailabilityNotice(error.message);
+    if (unavailable !== null) {
+      return unavailable;
     }
     // Session expired (redirect to the login)
     if (error.message.includes('302') || error.message.includes('redirect')) {
