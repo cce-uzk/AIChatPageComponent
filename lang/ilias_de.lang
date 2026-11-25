@@ -139,6 +139,7 @@ chat_online_label#:#Online
 chat_online_info#:#Inhalt ist veröffentlicht und kann von allen Personen mit dem Recht „Lesezugriff" genutzt werden.
 chat_orphaned_title#:#Verwaister Chat
 chat_offline_badge#:#Offline
+chat_offline_unavailable#:#Dieser Chat ist derzeit nicht verfügbar.
 config_anonymous_access_title#:#Anonymer Zugang
 config_anonymous_access_info#:#Steuert, ob nicht eingeloggte Benutzer den AI-Chat nutzen können.
 config_allow_anonymous_access#:#Anonymen Zugang erlauben
@@ -347,7 +348,7 @@ resource_type_obj_lm#:#Lernmodul
 resources_add_environment#:#Aus der Umgebung hinzufügen
 resources_env_select#:#Objekte
 resources_env_byline#:#Angeboten werden Objekte dieser Umgebung und ihrer Ordner, die Sie lesen dürfen und die die Dokumentensuche verarbeiten kann. Jedes Objekt wird eine eigene Ressource mit dem Stand von jetzt. Lernende erhalten Inhalte daraus nur, solange sie das Objekt selbst lesen dürfen.
-resources_env_already#:#%s bereits hinzugefügte Objekte sind nicht aufgeführt.
+resources_env_already#:#Anzahl bereits hinzugefügter Objekte, die nicht aufgeführt werden: %s
 resources_env_none#:#In der Umgebung dieses Chats gibt es keine Objekte, die hinzugefügt werden können.
 resources_env_added#:#%s Ressource(n) aus der Umgebung hinzugefügt.
 resources_env_failed#:#Kein Abbild möglich für: %s
