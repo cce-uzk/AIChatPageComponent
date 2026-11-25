@@ -139,6 +139,7 @@ chat_online_label#:#Online
 chat_online_info#:#Content is published and can be used by all persons with the "Read access" permission.
 chat_orphaned_title#:#Orphaned Chat
 chat_offline_badge#:#Offline
+chat_offline_unavailable#:#This chat is currently not available.
 config_anonymous_access_title#:#Anonymous Access
 config_anonymous_access_info#:#Controls whether non-logged-in users can use the AI chat.
 config_allow_anonymous_access#:#Allow anonymous access
@@ -347,7 +348,7 @@ resource_type_obj_lm#:#Learning module
 resources_add_environment#:#Add from the environment
 resources_env_select#:#Objects
 resources_env_byline#:#Offered are objects of this environment and its folders that you may read and the document search can process. Each object becomes a resource of its own, as it is now. Learners only get content from it as long as they may read the object themselves.
-resources_env_already#:#%s objects already added are not listed.
+resources_env_already#:#Number of objects already added that are not listed: %s
 resources_env_none#:#There are no objects in the environment of this chat that can be added.
 resources_env_added#:#%s resource(s) added from the environment.
 resources_env_failed#:#No snapshot possible for: %s

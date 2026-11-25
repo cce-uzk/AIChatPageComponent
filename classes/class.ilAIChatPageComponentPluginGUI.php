@@ -1745,6 +1745,7 @@ class ilAIChatPageComponentPluginGUI extends ilPageComponentPluginGUI
         $tpl->setVariable("IS_ANONYMOUS", $is_anonymous ? 'true' : 'false');
         $tpl->setVariable("SERVICE_UNAVAILABLE", $service_unavailable ? 'true' : 'false');
         $tpl->setVariable("NO_SERVICE_AVAILABLE", htmlspecialchars($this->plugin->txt('no_service_available')));
+        $tpl->setVariable("CHAT_OFFLINE_UNAVAILABLE", htmlspecialchars($this->plugin->txt('chat_offline_unavailable')));
 
         $enable_streaming = ($config_properties['enable_streaming'] ?? true);
         $is_streaming_enabled = ($enable_streaming === true || $enable_streaming === '1' || $enable_streaming === 1);
